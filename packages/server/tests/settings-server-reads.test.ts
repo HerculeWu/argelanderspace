@@ -12,7 +12,7 @@ import { configFilePath } from "@argelanderspace/infra";
 import { afterEach, describe, expect, test } from "vitest";
 import { USER_DIRS_ISOLATION } from "../../infra/tests/user-dirs-guard-key.js";
 import { createServer, type RunningServer } from "../src/server.js";
-import { makeDataDir, stubPipelines } from "./helpers.js";
+import { isolatedGlobalDirs, makeDataDir, stubPipelines } from "./helpers.js";
 
 const MARK = "zqxmark-credential";
 const running: RunningServer[] = [];
@@ -47,6 +47,7 @@ async function server(): Promise<{ url: string; dataDir: string; srv: RunningSer
   const dataDir = makeDataDir();
   roots.push(dirname(dataDir));
   const srv = createServer({
+    globalDirs: isolatedGlobalDirs(),
     dataDir,
     port: 0,
     heartbeatMs: 0,

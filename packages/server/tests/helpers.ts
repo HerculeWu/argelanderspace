@@ -6,14 +6,36 @@
 
 import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { TexDocIr, WsServerMessage } from "@argelanderspace/contracts";
 import type { IngestPipelines, MetadataSources } from "@argelanderspace/core";
+import { type GlobalDirs, resolveGlobalDirsLeniently } from "@argelanderspace/infra";
+import { USER_DIRS_ISOLATION } from "../../infra/tests/user-dirs-guard-key.js";
 
 const REPO_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 const GOLDEN = join(REPO_ROOT, "tests", "golden", "tex");
 const CORE_FIXTURES = join(REPO_ROOT, "packages", "core", "tests", "fixtures");
+
+/**
+ * The global data and cache directories a test server pins (`createServer` / `createNoProjectServer` require them):
+ * the operating system's defaults below this test file's throwaway home (infra `tests/isolate-user-dirs.ts`) — where
+ * a server without a config file put them when it still resolved them itself. Refused if they are anywhere else.
+ */
+export function isolatedGlobalDirs(): GlobalDirs {
+  const isolation = (globalThis as Record<symbol, unknown>)[USER_DIRS_ISOLATION] as
+    | { root: string }
+    | undefined;
+  if (!isolation) throw new Error("isolate-user-dirs.ts did not run");
+  const { dirs } = resolveGlobalDirsLeniently({});
+  for (const dir of [dirs.dataDir, dirs.cacheDir]) {
+    const rel = relative(isolation.root, dir);
+    if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) {
+      throw new Error("a global directory of this test run is outside its throwaway home");
+    }
+  }
+  return dirs;
+}
 
 /** A work that exists in the library fixture (for patch tests). */
 export const KNOWN_WORK_ID = "arxiv:2603.03522";

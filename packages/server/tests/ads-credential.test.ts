@@ -29,7 +29,7 @@ import {
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { realSources } from "../src/deps.js";
 import { createServer, type RunningServer } from "../src/server.js";
-import { makeDataDir, stubSources } from "./helpers.js";
+import { isolatedGlobalDirs, makeDataDir, stubSources } from "./helpers.js";
 
 const TOKEN = "zqxAdsTokenMARK0123456789abcdef";
 const OTHER = "zqxOtherTokenMARK9876543210";
@@ -81,6 +81,7 @@ async function start(extra: Partial<Parameters<typeof createServer>[0]> = {}): P
   devKeyDir = mkdtempSync(join(tmpdir(), "aspace-ads-cred-home-"));
   made.push(dirname(dataDir), globalDir, devKeyDir);
   srv = createServer({
+    globalDirs: isolatedGlobalDirs(),
     dataDir,
     port: 0,
     heartbeatMs: 0,

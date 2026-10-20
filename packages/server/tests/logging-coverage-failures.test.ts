@@ -53,7 +53,7 @@ import {
   PAGE_ERRORS_PER_MINUTE,
 } from "../src/page-errors.js";
 import { createServer, type RunningServer } from "../src/server.js";
-import { makeZip, stubPipelines } from "./helpers.js";
+import { isolatedGlobalDirs, makeZip, stubPipelines } from "./helpers.js";
 import { logText, markersInText, ROOT } from "./log-markers.js";
 
 const LATEX = haveLatexmk() && haveTexEngine("pdflatex") && haveTexEngine("xelatex");
@@ -181,6 +181,7 @@ beforeAll(async () => {
   for (const name of REAL_SCRIPTS) writeFileSync(join(webDist, "assets", name), "/* built */");
   writeFileSync(join(webDist, "assets", "index-BOe1kVrW.css"), "/* built */");
   srv = createServer({
+    globalDirs: isolatedGlobalDirs(),
     dataDir,
     port: 0,
     webDist,
@@ -360,6 +361,7 @@ describe("a failed ingest", () => {
     store.save(paths);
     const from = mark();
     const stub = createServer({
+      globalDirs: isolatedGlobalDirs(),
       dataDir: dir,
       port: 0,
       webDist: null,
@@ -550,6 +552,7 @@ describe("a failed ingest", () => {
     mkdirSync(jobs, { recursive: true });
     writeFileSync(join(jobs, names.fresh), "source line");
     const booted = createServer({
+      globalDirs: isolatedGlobalDirs(),
       dataDir: join(dir, "data"),
       port: 0,
       webDist: null,
@@ -974,6 +977,7 @@ describe("an error the page reports", () => {
   test("a server that closes before the window is over writes the count of what it dropped", async () => {
     const dir = mkdtempSync(join(tmpdir(), "aspace-closing-"));
     const closing = createServer({
+      globalDirs: isolatedGlobalDirs(),
       dataDir: dir,
       port: 0,
       webDist: null,
@@ -1004,6 +1008,7 @@ describe("an error the page reports", () => {
   test("a server without a log answers that nothing was recorded; the route is behind the same guard", async () => {
     const dir = mkdtempSync(join(tmpdir(), "aspace-nolog-"));
     const quiet = createServer({
+      globalDirs: isolatedGlobalDirs(),
       dataDir: dir,
       port: 0,
       webDist: null,

@@ -35,7 +35,7 @@ import { CopilotHost } from "../src/copilot.js";
 import { JobRunner } from "../src/jobs.js";
 import { AsyncLock } from "../src/lock.js";
 import { ProviderSettings } from "../src/providers.js";
-import { stubPipelines, stubSources } from "./helpers.js";
+import { isolatedGlobalDirs, stubPipelines, stubSources } from "./helpers.js";
 
 const failure = vi.hoisted(() => ({ target: "", once: false, after: -1 }));
 vi.mock("node:fs", async (original) => {
@@ -927,6 +927,7 @@ test("real WS: a dropped page, a repeated send and a Stop all agree with the sav
   const { createServer } = await import("../src/server.js");
   const { WebSocket } = await import("ws");
   const server = createServer({
+    globalDirs: isolatedGlobalDirs(),
     dataDir,
     port: 0,
     heartbeatMs: 0,

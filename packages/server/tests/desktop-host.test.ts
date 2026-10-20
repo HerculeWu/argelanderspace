@@ -54,7 +54,7 @@ import { MailComposeService } from "../src/mail-compose.js";
 import { MailOutbox } from "../src/mail-outbox.js";
 import { disposeMailSendServices, MailSendService } from "../src/mail-send.js";
 import { createServer, type RunningServer } from "../src/server.js";
-import { makeDataDir } from "./helpers.js";
+import { isolatedGlobalDirs, makeDataDir } from "./helpers.js";
 
 beforeAll(() => __setWriterSandboxForTests(false));
 afterAll(() => __setWriterSandboxForTests(null));
@@ -329,6 +329,56 @@ describe("what the shell is told about the log and the language (desktop-app tic
     expect(h.lines[0]).toMatchObject({ type: "ready", logLevel: "warn" });
   });
 
+  test("the ready line's language, log level and log directory come from one reading of config.toml", async () => {
+    const globalRoot = mkdtempSync(join(tmpdir(), "aspace-host-one-reading-"));
+    roots.push(globalRoot);
+    const startDir = join(globalRoot, "start");
+    const laterDir = join(globalRoot, "later");
+    // A program holds the configured port. When the host asks it who it is — after the host has read config.toml and
+    // before the server starts — the file changes: a second reading would see the new one.
+    let taken = 0;
+    const other: Server = createHttpServer((_req, res) => {
+      writeConfig(
+        `port = ${taken}\nlog_level = "error"\nglobal_dir = "${laterDir}"\n[ui]\nlanguage = "zh-CN"\n`
+      );
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ hello: "not the workbench" }));
+    });
+    await new Promise<void>((r) => other.listen(0, "127.0.0.1", r));
+    closers.push(() => new Promise<void>((r) => other.close(() => r())));
+    taken = (other.address() as { port: number }).port;
+    writeConfig(
+      `port = ${taken}\nlog_level = "warn"\nglobal_dir = "${startDir}"\n[ui]\nlanguage = "en"\n`
+    );
+    const input = new PassThrough();
+    const output = new PassThrough();
+    let text = "";
+    output.on("data", (chunk: Buffer) => {
+      text += chunk.toString("utf8");
+    });
+    const host = await runDesktopHost({
+      input,
+      output,
+      keychainProbe: KEYCHAIN,
+      webDist: join(project, "web"),
+    });
+    closers.push(() => host.stop());
+    await sleep(0);
+    const ready = text
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as HostOutLine)
+      .find((line) => line.type === "ready");
+    expect(ready).toMatchObject({
+      portOccupant: "other",
+      language: "en",
+      logLevel: "warn",
+      logDir: join(startDir, "logs"),
+    });
+    expect(readdirSync(join(startDir, "logs"))).toHaveLength(1);
+    expect(existsSync(laterDir)).toBe(false);
+  });
+
   test("a server that cannot start: the failed line names the log directory, the start's stage", async () => {
     writeConfig("port = 0\n");
     // The project's data directory cannot be made: a file stands where it would be.
@@ -399,6 +449,7 @@ describe("port fallback", () => {
   test("a port another ArgelanderSpace server holds: told apart from another program", async () => {
     const port = await freePort();
     const own: RunningServer = createServer({
+      globalDirs: isolatedGlobalDirs(),
       dataDir: makeDataDir(),
       port,
       webDist: null,
@@ -798,7 +849,13 @@ describe("graceful shutdown", () => {
 
 describe("the browser form", () => {
   test("`serve` has no host: the page is told browser, and a native request is 404", async () => {
-    const srv = createServer({ dataDir: makeDataDir(), port: 0, webDist: null, heartbeatMs: 0 });
+    const srv = createServer({
+      dataDir: makeDataDir(),
+      globalDirs: isolatedGlobalDirs(),
+      port: 0,
+      webDist: null,
+      heartbeatMs: 0,
+    });
     const port = await srv.ready();
     closers.push(() => srv.close());
     const url = `http://127.0.0.1:${port}`;

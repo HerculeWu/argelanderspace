@@ -18,13 +18,17 @@ import {
 } from "@argelanderspace/infra";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { USER_DIRS_ISOLATION } from "../../infra/tests/user-dirs-guard-key.js";
+import type { HostBridge } from "../src/host-routes.js";
 import {
   createServer,
   type RunningServer,
   resolveServerConfig,
+  type ServeStart,
+  serveStart,
+  startNoProjectServer,
   startServer,
 } from "../src/server.js";
-import { makeDataDir, stubPipelines, stubSources } from "./helpers.js";
+import { isolatedGlobalDirs, makeDataDir, stubPipelines, stubSources } from "./helpers.js";
 
 const running: RunningServer[] = [];
 const roots: string[] = [];
@@ -286,6 +290,90 @@ describe("the global directories are fixed when serve starts", () => {
   });
 });
 
+describe("a start reading handed in (the desktop host's, architecture-deepening ticket 10)", () => {
+  /** A desktop host that takes no request: the start needs one, and these tests ask it nothing. */
+  const bridge = (project: "open" | "none"): HostBridge => ({
+    portFallback: null,
+    requests: [],
+    request: () => false,
+    cli: null,
+    project,
+    recent: {
+      list: () => ({ version: 1, projects: [], lastMissing: null }),
+      open: () => "unknown_project",
+      remove: () => ({ version: 1, projects: [], lastMissing: null }),
+    },
+    switching: { confirm: () => "unknown_switch", cancel: () => {} },
+    useWorkbench: () => {},
+  });
+
+  /**
+   * The file as the host read it at its start, then the file as it is when the server starts: the start must not read
+   * it a second time, so everything it fixes comes from the first.
+   */
+  function handedAndChanged(): {
+    reading: ServeStart;
+    startDir: string;
+    laterDir: string;
+    cwd: string;
+  } {
+    const globalRoot = mkdtempSync(join(tmpdir(), "aspace-settings-serve-handed-"));
+    roots.push(globalRoot);
+    const startDir = join(globalRoot, "start");
+    const laterDir = join(globalRoot, "later");
+    writeConfig(`data_dir = "papers"\nglobal_dir = "${startDir}"\nlog_level = "debug"\n`);
+    const reading = serveStart(configFilePath());
+    writeConfig(`global_dir = "${laterDir}"\nlog_level = "error"\n`);
+    const cwd = mkdtempSync(join(tmpdir(), "aspace-settings-serve-handed-cwd-"));
+    roots.push(cwd);
+    vi.spyOn(process, "cwd").mockReturnValue(cwd);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    return { reading, startDir, laterDir, cwd };
+  }
+
+  test("startServer: the pin, the log directory, the start locations and the values at the start are the handed-in reading's", async () => {
+    const { reading, startDir, laterDir, cwd } = handedAndChanged();
+    const srv = await startServer(["--web-dist", cwd], {
+      desktop: { host: bridge("open"), listenPort: 0, atStart: reading },
+    });
+    running.push(srv);
+    expect(pinnedGlobalDirs()?.dataDir).toBe(startDir);
+    expect(srv.logDir).toBe(join(startDir, "logs"));
+    const { existsSync, readdirSync } = await import("node:fs");
+    expect(readdirSync(join(startDir, "logs")).length).toBe(1);
+    expect(existsSync(laterDir)).toBe(false);
+    expect(srv.log.level()).toBe("debug");
+    const body = await settings(`http://127.0.0.1:${srv.port}`);
+    // The data directory of that reading, against the working directory of the start.
+    expect(body.running.data_dir?.path).toBe(join(cwd, "papers"));
+    expect(body.startup).toEqual({
+      data_dir: { source: "file", problem: null },
+      global_dir: { source: "file", problem: null },
+      global_cache_dir: { source: "default", problem: null },
+    });
+    // The file now differs from the reading in `data_dir` and `global_dir`: both are pending a restart, so the values
+    // at the start are the reading's, not a second reading of the file (which would leave nothing pending).
+    expect(body.values).toMatchObject({ global_dir: laterDir, log_level: "error" });
+    expect(body.restartPending).toEqual(["data_dir", "global_dir"]);
+  });
+
+  test("startNoProjectServer: the pin, the log directory and the start locations are the handed-in reading's", async () => {
+    const { reading, startDir, laterDir, cwd } = handedAndChanged();
+    const srv = await startNoProjectServer(["--web-dist", cwd], {
+      desktop: { host: bridge("none"), listenPort: 0, atStart: reading },
+    });
+    running.push(srv as unknown as RunningServer);
+    expect(pinnedGlobalDirs()?.dataDir).toBe(startDir);
+    expect(srv.logDir).toBe(join(startDir, "logs"));
+    const { existsSync } = await import("node:fs");
+    expect(existsSync(laterDir)).toBe(false);
+    expect(srv.log.level()).toBe("debug");
+    const body = await settings(`http://127.0.0.1:${srv.port}`);
+    expect(body.running.global_dir.path).toBe(startDir);
+    expect(body.startup?.global_dir).toEqual({ source: "file", problem: null });
+  });
+});
+
 describe("a config.toml broken while the server runs", () => {
   test("requests that have nothing to do with it go on working, and the settings say what is wrong", async () => {
     const file = writeConfig("port = 1860\n");
@@ -306,6 +394,7 @@ describe("a config.toml broken while the server runs", () => {
     const configPath = join(dir, "config.toml");
     const dataDir = project();
     const srv = createServer({
+      globalDirs: isolatedGlobalDirs(),
       dataDir,
       port: 0,
       heartbeatMs: 0,

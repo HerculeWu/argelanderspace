@@ -36,7 +36,7 @@ import { MailCache } from "../src/mail-cache.js";
 import { MailReadService } from "../src/mail-read.js";
 import { MailWatcher } from "../src/mail-watch.js";
 import { createServer, type RunningServer } from "../src/server.js";
-import { makeDataDir, stubPipelines, stubSources } from "./helpers.js";
+import { isolatedGlobalDirs, makeDataDir, stubPipelines, stubSources } from "./helpers.js";
 
 const ID = "acc-0123456789ab";
 let root: string;
@@ -101,6 +101,7 @@ async function startServer(
   backoff: { maxTemporaryRefusals?: number } = {}
 ): Promise<{ port: number; mail: WsMailChanged[] }> {
   srv = createServer({
+    globalDirs: isolatedGlobalDirs(),
     dataDir: makeDataDir(),
     port: 0,
     heartbeatMs: 0,
@@ -262,6 +263,7 @@ test("removing the account closes its connection; closing the server leaves none
 
 test("a server started without mailWatch never reads accounts or connects", async () => {
   srv = createServer({
+    globalDirs: isolatedGlobalDirs(),
     dataDir: makeDataDir(),
     port: 0,
     heartbeatMs: 0,

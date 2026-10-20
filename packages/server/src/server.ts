@@ -35,6 +35,7 @@ import {
   configOfReading,
   createAdsCredentialStore,
   currentToolchain,
+  dataDirOf,
   type FetchImpl,
   f,
   fetchArxivPdf as fetchCurrentArxivPdf,
@@ -44,6 +45,7 @@ import {
   logDirIn,
   observedFetch,
   pinGlobalDirs,
+  portOf,
   readAdsToken,
   readConfigLeniently,
   resolveGlobalDirsLeniently,
@@ -139,10 +141,10 @@ export interface ServerOptions {
   /**
    * The global data and cache directories for as long as this server runs (infra `pinGlobalDirs`): Mail, the
    * credential store and every other user of the global directories in this process get these, whatever config.toml
-   * says later. `startServer` hands in the ones it resolved at the start; default: the lenient reading of the config
-   * file when the server is created.
+   * says later. Required: `startServer` hands in the ones its start resolved (`serveStart`); a test hands in
+   * directories of its own. The server reads no config for them.
    */
-  globalDirs?: GlobalDirs;
+  globalDirs: GlobalDirs;
   /** Where `serve` keeps the process's data (settings.ts `startupLocations`), for `GET /api/settings`; default null. */
   startup?: StartupLocations;
   /** The values config.toml gave at the start (`serveStart`), for `restartPending`; default: the reading at creation. */
@@ -327,10 +329,7 @@ export function createServer(opts: ServerOptions): RunningServer {
   copilot.useViewDelivery((viewId, message) => hub.sendToView(viewId, message));
   // The global directories are fixed for this server's life (released at close): a change of config.toml takes effect
   // at a restart, and a file broken meanwhile fails no request.
-  const releaseGlobalDirs = pinGlobalDirs(
-    opts.globalDirs ??
-      resolveGlobalDirsLeniently(readConfigLeniently(opts.configPath ?? configFilePath())).dirs
-  );
+  const releaseGlobalDirs = pinGlobalDirs(opts.globalDirs);
   mailWatcher?.start();
 
   // Agent/CLI writes mutate the library and plans.json behind the server's
@@ -459,9 +458,9 @@ export function resolveServerConfig(
   cwd: string = process.cwd(),
   config: AppConfig = getConfig()
 ): ResolvedConfig {
-  const dataDir = resolve(argValue(argv, "data-dir") ?? config.data_dir ?? "./literatures");
+  const dataDir = dataDirOf(config, argValue(argv, "data-dir"));
   const portRaw = argValue(argv, "port");
-  const port = portRaw === undefined ? (config.port ?? DEFAULT_PORT) : Number.parseInt(portRaw, 10);
+  const port = portRaw === undefined ? portOf(config) : Number.parseInt(portRaw, 10);
   const webRaw = argValue(argv, "web-dist");
   let webDist: string | null;
   if (webRaw !== undefined) {
@@ -511,6 +510,9 @@ export function serveStart(
   };
 }
 
+/** What `serve` starts with: one lenient reading of config.toml. */
+export type ServeStart = ReturnType<typeof serveStart>;
+
 export interface StartOptions {
   /** The version of the program that is starting the server, for the start record. */
   version?: string;
@@ -529,6 +531,13 @@ export interface StartOptions {
     listenPort: number;
     /** Called with the bound port once listening, before the start record is written. */
     onListening?: (port: number) => void;
+    /**
+     * The host's own reading at its start (`serveStart` of the config file this start would read): the start uses it
+     * instead of reading the file a second time, so that the ready line, the failed line, the log, the pinned global
+     * directories, the start locations and the values at the start all come from one reading. Absent: the start reads
+     * the file itself, as `serve` does.
+     */
+    atStart?: ServeStart;
   };
 }
 
@@ -612,7 +621,9 @@ async function startWith<S extends { ready(): Promise<number>; close(): Promise<
     cfg: ResolvedConfig
   ) => { srv: S; project: { root: string; dataDir: string } | null }
 ): Promise<S & StartedExtras> {
-  const { config, globalDirs, problems, startup, values } = serveStart(configFilePath(), argv);
+  const { config, globalDirs, problems, startup, values } =
+    start.desktop?.atStart ?? serveStart(configFilePath(), argv);
+  // The data directory against the working directory now — the host's, once it has changed into the Project.
   const cfg = resolveServerConfig(argv, process.cwd(), config);
   const mode: ServerMode = start.desktop === undefined ? "browser" : "desktop";
   // The log is in the global data directory this run uses, the one Mail and the credentials use too.

@@ -8,7 +8,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import { createServer, type RunningServer } from "../src/server.js";
-import { makeDataDir, stubSources } from "./helpers.js";
+import { isolatedGlobalDirs, makeDataDir, stubSources } from "./helpers.js";
 
 const running: RunningServer[] = [];
 const roots: string[] = [];
@@ -27,6 +27,7 @@ test("a route that throws answers 500 with the plain text `Internal Server Error
   mkdirSync(join(dirname(dataDir), "status"), { recursive: true });
   writeFileSync(join(dirname(dataDir), "status", "plans.json"), "{ this is not JSON");
   const srv = createServer({
+    globalDirs: isolatedGlobalDirs(),
     dataDir,
     port: 0,
     heartbeatMs: 0,

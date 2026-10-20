@@ -26,7 +26,7 @@ import { createMemorySink, type MemorySink } from "../../infra/tests/log-memory-
 import { SERVER_LOG_EVENTS, type ServerLog } from "../src/log.js";
 import { createServer, type RunningServer, startServer } from "../src/server.js";
 import { displayPath } from "../src/settings.js";
-import { makeDataDir, stubPipelines } from "./helpers.js";
+import { isolatedGlobalDirs, makeDataDir, stubPipelines } from "./helpers.js";
 
 const MARK = "contact.mark-91c2@example.org";
 
@@ -68,6 +68,7 @@ async function start(configAt: string = configPath): Promise<void> {
   const made = memoryLog();
   sink = made.sink;
   srv = createServer({
+    globalDirs: isolatedGlobalDirs(),
     dataDir,
     port: 0,
     heartbeatMs: 0,

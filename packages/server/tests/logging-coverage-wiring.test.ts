@@ -34,6 +34,7 @@ import {
   observedCredentials,
 } from "../src/log-observers.js";
 import { createServer, type RunningServer } from "../src/server.js";
+import { isolatedGlobalDirs } from "./helpers.js";
 import { markersInText } from "./log-markers.js";
 
 const MARK = {
@@ -145,6 +146,7 @@ describe("a server made by createServer with a log", () => {
     const made = memoryLog();
     sink = made.sink;
     srv = createServer({
+      globalDirs: isolatedGlobalDirs(),
       dataDir,
       port: 0,
       webDist: null,

@@ -37,6 +37,7 @@ import { USER_DIRS_ISOLATION } from "../../infra/tests/user-dirs-guard-key.js";
 import { type DesktopHost, type HostOutLine, runDesktopHost } from "../src/desktop-host.js";
 import { RECENT_REQUEST_MAX_BYTES, SWITCH_REQUEST_MAX_BYTES } from "../src/host-routes.js";
 import { createServer } from "../src/server.js";
+import { isolatedGlobalDirs } from "./helpers.js";
 
 beforeAll(() => __setWriterSandboxForTests(false));
 afterAll(() => __setWriterSandboxForTests(null));
@@ -519,7 +520,12 @@ describe("with a project open", () => {
 });
 
 test("the browser form has no recent projects and always a project", async () => {
-  const srv = createServer({ dataDir: join(start, "literatures"), port: 0, heartbeatMs: 0 });
+  const srv = createServer({
+    dataDir: join(start, "literatures"),
+    globalDirs: isolatedGlobalDirs(),
+    port: 0,
+    heartbeatMs: 0,
+  });
   closers.push(() => srv.close());
   const port = await srv.ready();
   const host = (await (await fetch(`http://127.0.0.1:${port}/api/host`)).json()) as HostInfo;

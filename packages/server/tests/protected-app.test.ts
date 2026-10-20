@@ -24,7 +24,7 @@ import {
   listeningPort,
   originRule,
 } from "../src/protected-app.js";
-import { makeDataDir, stubPipelines, stubSources } from "./helpers.js";
+import { isolatedGlobalDirs, makeDataDir, stubPipelines, stubSources } from "./helpers.js";
 
 const FOREIGN = "http://evil.example";
 const DEV = "http://localhost:5173";
@@ -335,7 +335,12 @@ afterEach(async () => {
 });
 
 async function noProjectApp(): Promise<Hono> {
-  const srv = createNoProjectServer({ host: {} as HostBridge, heartbeatMs: 0, webDist: null });
+  const srv = createNoProjectServer({
+    host: {} as HostBridge,
+    globalDirs: isolatedGlobalDirs(),
+    heartbeatMs: 0,
+    webDist: null,
+  });
   noProjectServers.push(srv);
   await srv.ready();
   return srv.app;

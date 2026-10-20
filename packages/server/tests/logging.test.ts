@@ -34,7 +34,7 @@ import { createApp } from "../src/app.js";
 import { JobRunner } from "../src/jobs.js";
 import { logRequests, SERVER_LOG_EVENTS, type ServerLog } from "../src/log.js";
 import { createServer, type RunningServer, startServer } from "../src/server.js";
-import { makeDataDir, stubPipelines, stubSources } from "./helpers.js";
+import { isolatedGlobalDirs, makeDataDir, stubPipelines, stubSources } from "./helpers.js";
 
 type Record_ = Record<string, unknown>;
 
@@ -108,6 +108,7 @@ function project(): string {
 async function serve(log?: ServerLog): Promise<{ url: string; dataDir: string }> {
   const dataDir = project();
   const srv = createServer({
+    globalDirs: isolatedGlobalDirs(),
     dataDir,
     port: 0,
     heartbeatMs: 0,
@@ -539,6 +540,7 @@ describe("what used to be printed by the server", () => {
     // … and a file where the project's own `logs/` directory should be.
     writeFileSync(join(dataDir, "logs"), "FETCH-LOG-MARKER");
     const srv = createServer({
+      globalDirs: isolatedGlobalDirs(),
       dataDir,
       port: 0,
       heartbeatMs: 0,

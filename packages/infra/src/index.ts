@@ -12,6 +12,7 @@
 export * from "./arxiv-pdf.js";
 export * from "./cli-launcher.js";
 export * from "./config.js";
+export * from "./config-chain.js";
 // The proposing step of the line editor (`proposeConfigEdit`) stays inside the package: callers get the checked edit.
 export {
   CONFIG_EDIT_REFUSALS,
