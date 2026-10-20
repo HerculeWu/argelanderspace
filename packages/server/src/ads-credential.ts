@@ -28,12 +28,11 @@ import {
   type SetCredentialResult,
   testAdsToken,
 } from "@argelanderspace/infra";
-import type { Context, Hono } from "hono";
+import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { readLimited } from "./page-errors.js";
+import type { ProtectedRoutes } from "./protected-app.js";
 import { shownPath } from "./settings.js";
-
-type Guard = (origin: string | undefined) => { body: { detail: string }; status: 403 } | null;
 
 export interface AdsCredentialRouteOptions {
   /** The `ads` credential store (production: over the OS keychain, wrapped for the log). */
@@ -125,10 +124,10 @@ function devKeyExists(path: string): boolean {
 }
 
 export function mountAdsCredentialRoutes(
-  app: Hono,
-  guardCsrf: Guard,
+  routes: ProtectedRoutes,
   options: AdsCredentialRouteOptions
 ): void {
+  const app = routes.withDefaults({ noStore: true });
   const { store } = options;
   const devKeyPath = options.devKeyPath ?? (() => join(homedir(), ".ads", "dev_key"));
 
@@ -167,16 +166,9 @@ export function mountAdsCredentialRoutes(
     );
   };
 
-  const guarded = (c: Context) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    return rejected ? c.json(rejected.body, rejected.status, NO_STORE) : null;
-  };
-
   app.get("/api/credentials/ads", async (c) => c.json(await status(), 200, NO_STORE));
 
   app.put("/api/credentials/ads", async (c) => {
-    const blocked = guarded(c);
-    if (blocked) return blocked;
     const body = await jsonBody(c);
     if (!isObject(body) || typeof body.token !== "string") return refuse(c, "invalid_request");
     const token = body.token.trim();
@@ -185,8 +177,6 @@ export function mountAdsCredentialRoutes(
   });
 
   app.delete("/api/credentials/ads", async (c) => {
-    const blocked = guarded(c);
-    if (blocked) return blocked;
     const result = await store.delete(ADS_TOKEN_ID);
     if (result.status === "keychain-unavailable") return refuse(c, "keychain_unavailable");
     if (result.status === "error")
@@ -199,8 +189,6 @@ export function mountAdsCredentialRoutes(
   });
 
   app.post("/api/credentials/ads/test", async (c) => {
-    const blocked = guarded(c);
-    if (blocked) return blocked;
     const body = await jsonBody(c);
     if (!isObject(body) || (body.token !== undefined && typeof body.token !== "string"))
       return refuse(c, "invalid_request");
@@ -223,8 +211,6 @@ export function mountAdsCredentialRoutes(
   });
 
   app.post("/api/credentials/ads/import", async (c) => {
-    const blocked = guarded(c);
-    if (blocked) return blocked;
     const body = await jsonBody(c);
     if (!isObject(body)) return refuse(c, "invalid_request");
     const read = readDevKey(devKeyPath());

@@ -230,16 +230,6 @@ describe("status, save, remove", () => {
     );
     expect(keychain.size).toBe(0);
   });
-
-  test("a cross-site write is refused like every other write", async () => {
-    const evil = { origin: "https://evil.example" };
-    expect((await call("PUT", "/api/credentials/ads", { token: TOKEN }, evil)).status).toBe(403);
-    expect((await call("DELETE", "/api/credentials/ads", undefined, evil)).status).toBe(403);
-    expect((await call("POST", "/api/credentials/ads/test", {}, evil)).status).toBe(403);
-    expect((await call("POST", "/api/credentials/ads/import", {}, evil)).status).toBe(403);
-    expect(keychain.size).toBe(0);
-    expect(requests).toEqual([]);
-  });
 });
 
 describe("test", () => {

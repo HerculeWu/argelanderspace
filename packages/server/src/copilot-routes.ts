@@ -11,20 +11,14 @@ import {
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { CopilotError, type CopilotHost } from "./copilot.js";
+import type { ProtectedRoutes } from "./protected-app.js";
 import { ProviderSettingsError } from "./providers.js";
 
-export function mountCopilotRoutes(
-  host: Hono,
-  copilot: CopilotHost,
-  guard: (origin: string | undefined) => { body: { detail: string }; status: 403 } | null
-): void {
+export function mountCopilotRoutes(host: ProtectedRoutes, copilot: CopilotHost): void {
   const app = new Hono();
+  // Every method but GET is guarded where this router is mounted (protected-app.ts), before anything below.
   app.use("*", async (c, next) => {
     c.header("Cache-Control", "no-store");
-    if (c.req.method !== "GET") {
-      const denied = guard(c.req.header("Origin"));
-      if (denied) return c.json(denied.body, denied.status);
-    }
     await next();
   });
   const jsonLimit = bodyLimit({
@@ -121,5 +115,5 @@ export function mountCopilotRoutes(
       await copilot.undo(c.req.param("id"), c.req.param("toolCallId"), input.data.viewId)
     );
   });
-  host.route("/api/copilot", app);
+  host.mount("/api/copilot", app, { guard: "non-GET", noStore: true });
 }

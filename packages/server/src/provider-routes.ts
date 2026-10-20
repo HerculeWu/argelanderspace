@@ -5,23 +5,20 @@ import {
 } from "@argelanderspace/contracts";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import type { ProtectedRoutes } from "./protected-app.js";
 import { ProviderSettings, ProviderSettingsError } from "./providers.js";
 
 export function mountProviderRoutes(
-  host: Hono,
-  injected: ProviderSettings | undefined,
-  guardCsrf: (origin: string | undefined) => { body: { detail: string }; status: 403 } | null
+  host: ProtectedRoutes,
+  injected: ProviderSettings | undefined
 ): void {
   let settings = injected;
   const get = () => (settings ??= new ProviderSettings());
   const app = new Hono();
   const prefix = "";
+  // Every method but GET is guarded where this router is mounted (protected-app.ts), before anything below.
   app.use("*", async (c, next) => {
     c.header("Cache-Control", "no-store");
-    if (c.req.method !== "GET") {
-      const blocked = guardCsrf(c.req.header("Origin"));
-      if (blocked) return c.json(blocked.body, blocked.status);
-    }
     await next();
   });
   app.onError((error, c) => {
@@ -95,5 +92,5 @@ export function mountProviderRoutes(
   app.post(`${prefix}/:id/logout`, async (c) =>
     c.json({ saved: true, provider: await get().logout(c.req.param("id")) })
   );
-  host.route("/api/copilot/providers", app);
+  host.mount("/api/copilot/providers", app, { guard: "non-GET", noStore: true });
 }

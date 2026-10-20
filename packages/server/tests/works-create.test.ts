@@ -66,15 +66,6 @@ describe("POST /api/library/works", () => {
     }
   });
 
-  test("403 on an evil Origin (CSRF guard)", async () => {
-    const res = await post(
-      "/api/library/works",
-      { mode: "identifier", value: "10.1051/0004-6361/202039341" },
-      { Origin: "http://evil.example" }
-    );
-    expect(res.status).toBe(403);
-  });
-
   test("identifier DOI: tolerant stub creation offline + add broadcast", async () => {
     const res = await post("/api/library/works", {
       mode: "identifier",

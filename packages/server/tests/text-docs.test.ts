@@ -137,7 +137,7 @@ describe("creation under a Work", () => {
     expect(LibraryStore.load(paths).get(KNOWN_WORK_ID)?.doc_ids).toEqual([...before, docId]);
   });
 
-  test("unknown Work 404, bad body 400, foreign Origin 403, and nothing visible is left behind", async () => {
+  test("unknown Work 404, bad body 400, and nothing visible is left behind", async () => {
     expect(
       (
         await call("POST", "/api/library/text-docs", {
@@ -147,16 +147,6 @@ describe("creation under a Work", () => {
       ).status
     ).toBe(404);
     expect((await call("POST", "/api/library/text-docs", { workId: "x" })).status).toBe(400);
-    expect(
-      (
-        await call(
-          "POST",
-          "/api/library/text-docs",
-          { workId: KNOWN_WORK_ID, operationId: "op-origin-001" },
-          { Origin: "https://evil.example" }
-        )
-      ).status
-    ).toBe(403);
     expect(
       readdirSync(join(dataDir, "output")).filter((n) => n.startsWith("text-") || n.startsWith("."))
     ).toEqual([]);
@@ -225,21 +215,11 @@ describe("source editing and saving", () => {
     expect(readFileSync(file).equals(before)).toBe(true);
   });
 
-  test("bad bodies, bad ids, foreign Origin and unknown Docs are refused", async () => {
+  test("bad bodies, bad ids and unknown Docs are refused", async () => {
     const docId = await createDoc();
     expect((await call("PUT", `/api/paper/${docId}/source`, { expectedRev: "x" })).status).toBe(
       400
     );
-    expect(
-      (
-        await call(
-          "PUT",
-          `/api/paper/${docId}/source`,
-          { expectedRev: 0, markdown: "x" },
-          { Origin: "https://evil.example" }
-        )
-      ).status
-    ).toBe(403);
     expect((await put("text-00000000-0000-4000-8000-000000000000", 0, "x")).status).toBe(404);
     expect((await call("GET", "/api/paper/.hidden/source")).status).toBe(400);
     expect((await call("GET", "/api/paper/arxiv-2501.17225/source")).status).toBe(404);

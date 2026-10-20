@@ -28,6 +28,7 @@ import { MailComposeError, MailComposeService } from "./mail-compose.js";
 import { mailHttpStatus } from "./mail-failures.js";
 import { MailOutbox } from "./mail-outbox.js";
 import { MailSendService } from "./mail-send.js";
+import type { ProtectedRoutes } from "./protected-app.js";
 
 export interface MailComposeServices {
   compose: MailComposeService;
@@ -57,20 +58,16 @@ export function createDefaultMailComposeServices(log: ServerLog = silentLog): Ma
 }
 
 export function mountMailComposeRoutes(
-  host: Hono,
+  host: ProtectedRoutes,
   injected: MailComposeServices | undefined,
-  guardCsrf: (origin: string | undefined) => { body: { detail: string }; status: 403 } | null,
   log: ServerLog = silentLog
 ): () => MailComposeServices {
   let services = injected;
   const svc = () => (services ??= createDefaultMailComposeServices(log));
   const app = new Hono();
+  // Every method but GET is guarded where this router is mounted (protected-app.ts), before anything below.
   app.use("*", async (c, next) => {
     c.header("Cache-Control", "no-store");
-    if (c.req.method !== "GET") {
-      const blocked = guardCsrf(c.req.header("Origin"));
-      if (blocked) return c.json(blocked.body, blocked.status);
-    }
     await next();
   });
   const tooLarge = (c: import("hono").Context) =>
@@ -162,6 +159,6 @@ export function mountMailComposeRoutes(
   });
   app.get("/outbox", (c) => c.json({ sends: svc().send.list() }));
 
-  host.route("/api/mail/compose", app);
+  host.mount("/api/mail/compose", app, { guard: "non-GET", noStore: true });
   return svc;
 }

@@ -56,14 +56,12 @@ import {
   type SettingWriteRefusal,
   writeSetting,
 } from "@argelanderspace/infra";
-import type { Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { readLimited } from "./page-errors.js";
+import type { ProtectedRoutes } from "./protected-app.js";
 
 /** The longest body a change may have; a value is a short scalar. */
 export const SETTING_CHANGE_BODY_MAX_BYTES = 4096;
-
-type Guard = (origin: string | undefined) => { body: { detail: string }; status: 403 } | null;
 
 export interface SettingsRouteOptions {
   /** The config file; default `configFilePath()`, resolved at each request. */
@@ -440,11 +438,8 @@ function changeOf(body: unknown): ConfigChange | null {
   return typeof value === "string" || typeof value === "boolean" ? { set: value } : null;
 }
 
-export function mountSettingsRoutes(
-  app: Hono,
-  guardCsrf: Guard,
-  options: SettingsRouteOptions
-): void {
+export function mountSettingsRoutes(routes: ProtectedRoutes, options: SettingsRouteOptions): void {
+  const app = routes.withDefaults({ noStore: true });
   const pathNow = (): string => options.path ?? configFilePath();
   const processSettings: ProcessSettings = {
     startup: options.startup ?? null,
@@ -457,8 +452,6 @@ export function mountSettingsRoutes(
   );
 
   app.put("/api/settings/:key", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status, NO_STORE);
     const refuse = (reason: SettingChangeRefusal) =>
       c.json({ ok: false, reason } satisfies SettingChangeResponse, statusOf(reason), NO_STORE);
 

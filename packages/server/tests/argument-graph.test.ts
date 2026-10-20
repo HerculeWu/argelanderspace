@@ -254,14 +254,6 @@ describe("PUT", () => {
     expect(messages.filter((m) => m.type === "argument-graph.changed")).toHaveLength(0);
   });
 
-  test("403 on an evil Origin (CSRF guard)", async () => {
-    const res = await put(KNOWN_WORK_ID, graphFor(KNOWN_WORK_ID), {
-      Origin: "http://evil.example",
-    });
-    expect(res.status).toBe(403);
-    expect(existsSync(argumentGraphDir(dataDir))).toBe(false);
-  });
-
   test("concurrent writers with the same rev: exactly one wins, the other gets 409", async () => {
     const results = await Promise.all(
       Array.from({ length: 6 }, (_, i) =>

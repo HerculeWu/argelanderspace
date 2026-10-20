@@ -24,10 +24,8 @@ import {
   type SandboxViewOptions,
   sandboxTexState,
 } from "@argelanderspace/infra";
-import type { Hono } from "hono";
+import type { ProtectedRoutes } from "./protected-app.js";
 import { shownPath } from "./settings.js";
-
-type Guard = (origin: string | undefined) => { body: { detail: string }; status: 403 } | null;
 
 export interface EnvironmentRouteOptions {
   /** The config file the TeX directory is read from, at each check; default `configFilePath()`. */
@@ -84,15 +82,13 @@ export async function environmentReport(
 }
 
 export function mountEnvironmentRoutes(
-  app: Hono,
-  guardCsrf: Guard,
+  routes: ProtectedRoutes,
   options: EnvironmentRouteOptions = {}
 ): void {
+  const app = routes.withDefaults({ noStore: true });
   // Checks running now, by the TeX directory they were started with (`null` = not set).
   const inflight = new Map<string | null, Promise<EnvironmentReport>>();
-  app.get("/api/environment", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status, NO_STORE);
+  app.get("/api/environment", { guard: true }, async (c) => {
     const texDir = configuredTexDir(options.configPath ?? configFilePath());
     let running = inflight.get(texDir);
     if (running === undefined) {

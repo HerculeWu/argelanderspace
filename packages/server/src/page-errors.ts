@@ -34,8 +34,9 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { PANE_VIEWS } from "@argelanderspace/contracts";
 import { f } from "@argelanderspace/infra";
-import type { Context, Hono } from "hono";
+import type { Context } from "hono";
 import { type ServerLog, silentLog } from "./log.js";
+import type { ProtectedRoutes } from "./protected-app.js";
 
 export const PAGE_ERRORS_PER_MINUTE = 20;
 export const PAGE_ERRORS_PER_LAUNCH = 200;
@@ -96,8 +97,6 @@ export interface PageErrorOptions {
    */
   atClose?: ((writePending: () => void) => void) | undefined;
 }
-
-type Guard = (origin: string | undefined) => { body: { detail: string }; status: 403 } | null;
 
 function checkedName(value: unknown): string {
   if (typeof value !== "string") return UNRECOGNIZED_NAME;
@@ -169,9 +168,8 @@ export async function readLimited(c: Context, limit: number): Promise<Uint8Array
  * nothing and says so; it counts nothing either.
  */
 export function mountPageErrorRoute(
-  app: Hono,
+  app: ProtectedRoutes,
   log: ServerLog,
-  guardCsrf: Guard,
   options: PageErrorOptions = {}
 ): void {
   const windowMs = options.windowMs ?? WINDOW_MS;
@@ -205,8 +203,6 @@ export function mountPageErrorRoute(
     c.json({ recorded: false, reason }, status);
 
   app.post("/api/page-errors", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const silent = log === silentLog;
 
     let bytes: Uint8Array | null;

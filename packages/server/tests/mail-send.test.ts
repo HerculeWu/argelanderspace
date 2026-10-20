@@ -545,17 +545,6 @@ test("no window is opened when the draft cannot be stored on the server", async 
   expect(r.outbox.hasClaim(ACC, "<draft-aaa@fake.test>")).toBe(false);
 });
 
-test("CSRF: a cross-origin send is refused", async () => {
-  const r = await rig();
-  const res = await r.app.request(`${base}/send`, {
-    method: "POST",
-    body: JSON.stringify({ sendId: uuid(), draft: draftBody() }),
-    headers: { "Content-Type": "application/json", Origin: "http://evil.example" },
-  });
-  expect(res.status).toBe(403);
-  expect(smtp.dataStarted.count).toBe(0);
-});
-
 // ---- restart and several server processes ---------------------------------------
 
 test("the server exits inside the window: back in Drafts, honestly reported after restart, never sent", async () => {

@@ -36,10 +36,9 @@ import {
   SWITCH_CONFIRMATION_CODE,
   type WsHostSwitchConfirmation,
 } from "@argelanderspace/contracts";
-import type { Context, Hono } from "hono";
+import type { Context } from "hono";
 import { readLimited } from "./page-errors.js";
-
-type Guard = (origin: string | undefined) => { body: { detail: string }; status: 403 } | null;
+import type { ProtectedRoutes } from "./protected-app.js";
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 
@@ -218,17 +217,14 @@ export function hostInfo(bridge: HostBridge | undefined): HostInfo {
       };
 }
 
-export function mountHostRoutes(app: Hono, guardCsrf: Guard, bridge: HostBridge | undefined): void {
-  app.get("/api/host", (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status, NO_STORE);
+export function mountHostRoutes(routes: ProtectedRoutes, bridge: HostBridge | undefined): void {
+  const app = routes.withDefaults({ noStore: true });
+  app.get("/api/host", { guard: true }, (c) => {
     return c.json(hostInfo(bridge), 200, NO_STORE);
   });
 
   // The body is never read: a path or an address the page puts there goes nowhere.
   app.post("/api/host/requests/:kind", (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status, NO_STORE);
     if (bridge === undefined)
       return c.json({ code: "not_desktop", detail: "no desktop host" }, 404, NO_STORE);
     const kind = c.req.param("kind");
@@ -245,8 +241,6 @@ export function mountHostRoutes(app: Hono, guardCsrf: Guard, bridge: HostBridge 
     act: (cli: HostCli) => Response,
     failure: "unreadable" | "write_failed" | "remove_failed"
   ) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status, NO_STORE);
     if (bridge === undefined)
       return c.json({ code: "not_desktop", detail: "no desktop host" }, 404, NO_STORE);
     if (bridge.cli === null) {
@@ -269,7 +263,7 @@ export function mountHostRoutes(app: Hono, guardCsrf: Guard, bridge: HostBridge 
       return c.json({ code: failure, detail }, 500, NO_STORE);
     }
   };
-  app.get("/api/host/cli", (c) =>
+  app.get("/api/host/cli", { guard: true }, (c) =>
     withCli(c, (cli) => c.json(cli.status(), 200, NO_STORE), "unreadable")
   );
   app.post("/api/host/cli/install", (c) =>
@@ -298,17 +292,13 @@ export function mountHostRoutes(app: Hono, guardCsrf: Guard, bridge: HostBridge 
   );
 
   // Recently opened projects (desktop-app ticket 18). The path of a request is only ever compared with the list's.
-  app.get("/api/host/recent-projects", (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status, NO_STORE);
+  app.get("/api/host/recent-projects", { guard: true }, (c) => {
     if (bridge === undefined)
       return c.json({ code: "not_desktop", detail: "no desktop host" }, 404, NO_STORE);
     return c.json(bridge.recent.list(), 200, NO_STORE);
   });
 
   app.post("/api/host/recent-projects/open", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status, NO_STORE);
     if (bridge === undefined)
       return c.json({ code: "not_desktop", detail: "no desktop host" }, 404, NO_STORE);
     const body = await objectOfBody(c, SWITCH_REQUEST_MAX_BYTES);
@@ -334,8 +324,6 @@ export function mountHostRoutes(app: Hono, guardCsrf: Guard, bridge: HostBridge 
   });
 
   app.post("/api/host/recent-projects/remove", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status, NO_STORE);
     if (bridge === undefined)
       return c.json({ code: "not_desktop", detail: "no desktop host" }, 404, NO_STORE);
     const body = await objectOfBody(c, RECENT_REQUEST_MAX_BYTES);
@@ -355,8 +343,6 @@ export function mountHostRoutes(app: Hono, guardCsrf: Guard, bridge: HostBridge 
 
   // Switching to a folder the shell picked, held until the user confirms (desktop-app ticket 19).
   app.post("/api/host/switch/confirm", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status, NO_STORE);
     if (bridge === undefined)
       return c.json({ code: "not_desktop", detail: "no desktop host" }, 404, NO_STORE);
     const body = await objectOfBody(c, SWITCH_REQUEST_MAX_BYTES);
@@ -381,8 +367,6 @@ export function mountHostRoutes(app: Hono, guardCsrf: Guard, bridge: HostBridge 
   });
 
   app.post("/api/host/switch/cancel", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status, NO_STORE);
     if (bridge === undefined)
       return c.json({ code: "not_desktop", detail: "no desktop host" }, 404, NO_STORE);
     const body = await objectOfBody(c, RECENT_REQUEST_MAX_BYTES);

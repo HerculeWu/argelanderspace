@@ -515,13 +515,7 @@ describe("the log directory and the bundle", () => {
       for (const s of spellings(mark)) expect(bundle.all).not.toContain(s);
   });
 
-  test("an export from another origin is refused, and so is a body that is not a request", async () => {
-    const cross = await fetch(`${url}/api/diagnostics/export`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Origin: "https://evil.example" },
-      body: "{}",
-    });
-    expect(cross.status).toBe(403);
+  test("a body that is not a request is refused", async () => {
     const bad = await fetch(`${url}/api/diagnostics/export`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

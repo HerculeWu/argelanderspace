@@ -18,7 +18,7 @@ import {
   pdfFallbackFont,
   pdfFontFallbackConfig,
 } from "@argelanderspace/contracts";
-import type { Hono } from "hono";
+import type { ProtectedRoutes } from "./protected-app.js";
 
 let fromEngines: NodeJS.Require | undefined;
 
@@ -55,7 +55,7 @@ export function serverFontFallback() {
  * `GET /api/pdf-fonts/<name>/<version>/<file>`: one font of the table for the page's PDFium worker (same origin, so
  * the page never fetches fonts from the network). The path carries the package version, so the answer is immutable.
  */
-export function mountPdfFontRoutes(app: Hono): void {
+export function mountPdfFontRoutes(app: ProtectedRoutes): void {
   app.get(`${PDF_FONT_ROUTE}/:name/:version/:file`, async (c) => {
     const found = pdfFallbackFont(c.req.param("name"), c.req.param("version"), c.req.param("file"));
     if (!found) return c.json({ detail: "Not Found" }, 404);

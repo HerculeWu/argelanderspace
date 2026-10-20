@@ -19,7 +19,7 @@ import {
   type WsServerMessage,
 } from "@argelanderspace/contracts";
 import { WebSocket, WebSocketServer } from "ws";
-import { DEV_ORIGINS, ownOrigins } from "./origins.js";
+import { listeningPort, originRule } from "./protected-app.js";
 
 export interface WsHubOptions {
   /** Upgrade path (default `/ws`); any other upgrade request is refused. */
@@ -38,6 +38,8 @@ export class WsHub {
 
   constructor(server: Server, opts: WsHubOptions = {}) {
     const path = opts.path ?? "/ws";
+    // The same rule as the REST guard (protected-app.ts): the Vite dev origin, plus the port this server is bound to.
+    const origins = originRule(() => listeningPort(server));
     server.on("upgrade", (req, socket, head) => {
       let pathname: string | null = null;
       try {
@@ -49,18 +51,10 @@ export class WsHub {
         socket.destroy();
         return;
       }
-      if (req.headers.origin !== undefined) {
-        // Same rule as the REST CSRF guard: the Vite dev origin, plus the port this server is bound to.
-        const address = server.address();
-        const origins = new Set<string>([
-          ...DEV_ORIGINS,
-          ...(address && typeof address === "object" ? ownOrigins(address.port) : []),
-        ]);
-        if (!origins.has(req.headers.origin)) {
-          socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
-          socket.destroy();
-          return;
-        }
+      if (!origins.allows(req.headers.origin)) {
+        socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+        socket.destroy();
+        return;
       }
       this.wss.handleUpgrade(req, socket, head, (ws) => {
         this.wss.emit("connection", ws, req);

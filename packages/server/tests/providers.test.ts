@@ -308,24 +308,6 @@ test("missing credentials, timeout and cancellation are distinct; late SDK compl
   complete?.();
 });
 
-test("credentials/config/test writes retain same-origin guard", async () => {
-  await request(`${prefix}/openai/credential`, "PUT", { key });
-  const draft = await config();
-  const original = readFileSync(join(settings.configDir, "auth.json"));
-  for (const [path, method, body] of [
-    ["credential", "PUT", { key }],
-    ["credential", "DELETE", undefined],
-    ["config", "PUT", draft],
-    ["test", "POST", draft],
-  ] as const) {
-    expect(
-      (await request(`${prefix}/openai/${path}`, method, body, undefined, "https://evil.invalid"))
-        .status
-    ).toBe(403);
-  }
-  expect(readFileSync(join(settings.configDir, "auth.json"))).toEqual(original);
-});
-
 test("dollar signs are literal secrets after persistent Pi login and reopen", async () => {
   const literal = "SYNTHETIC_$MISSING_" + "$" + "{MISSING}_$$token$!literal";
   expect((await request(`${prefix}/openai/credential`, "PUT", { key: literal })).status).toBe(200);

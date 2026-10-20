@@ -63,11 +63,11 @@ import {
   TextAssetError,
   TextDocError,
 } from "@argelanderspace/core";
-import type { Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { badDocId } from "./doc-id.js";
 import type { DocMutationRegistry } from "./doc-mutations.js";
 import { AsyncLock } from "./lock.js";
+import type { ProtectedRoutes } from "./protected-app.js";
 
 /** The longest Markdown source accepted in one save. */
 export const TEXT_SOURCE_MAX_CHARS = 8 * 1024 * 1024;
@@ -798,12 +798,8 @@ export class TextDocService {
   }
 }
 
-/** Mount the text Doc routes. `guardCsrf` is the app's same-origin check for mutations. */
-export function mountTextDocRoutes(
-  app: Hono,
-  service: TextDocService,
-  guardCsrf: (origin: string | undefined) => { body: { detail: string }; status: 403 } | null
-): void {
+/** Mount the text Doc routes; their writes are guarded by the protected base (protected-app.ts). */
+export function mountTextDocRoutes(app: ProtectedRoutes, service: TextDocService): void {
   const answer = <T>(c: import("hono").Context, result: Result<T>) =>
     result.ok
       ? c.json(result.value as never, result.status ?? 200, { "Cache-Control": "no-store" })
@@ -814,8 +810,6 @@ export function mountTextDocRoutes(
   };
 
   app.post("/api/library/text-docs", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const body: unknown = await c.req.json().catch(() => null);
     return answer(c, await service.create(body));
   });
@@ -831,16 +825,12 @@ export function mountTextDocRoutes(
     return answer(c, service.read(id));
   });
   app.put("/api/paper/:doc_id/source", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const id = idOf(c);
     if (!id) return c.json({ detail: "bad doc id" }, 400);
     const body: unknown = await c.req.json().catch(() => null);
     return answer(c, await service.save(id, body));
   });
   app.post("/api/paper/:doc_id/source/assets", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const id = idOf(c);
     if (!id) return c.json({ detail: "bad doc id" }, 400);
     const expectedRev = Number(c.req.query("expectedRev"));
@@ -862,24 +852,18 @@ export function mountTextDocRoutes(
     );
   });
   app.post("/api/paper/:doc_id/source/assets/from-pdf", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const id = idOf(c);
     if (!id) return c.json({ detail: "bad doc id" }, 400);
     const body: unknown = await c.req.json().catch(() => null);
     return answer(c, await service.addPdfImage(id, body));
   });
   app.post("/api/paper/:doc_id/source/validate", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const id = idOf(c);
     if (!id) return c.json({ detail: "bad doc id" }, 400);
     const body: unknown = await c.req.json().catch(() => null);
     return answer(c, service.validate(id, body));
   });
   app.post("/api/paper/:doc_id/source/generate", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const id = idOf(c);
     if (!id) return c.json({ detail: "bad doc id" }, 400);
     const body: unknown = await c.req.json().catch(() => null);

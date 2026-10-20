@@ -1,7 +1,7 @@
 /**
  * HTTP routes of mail management and search (Mail ticket 06), mounted under
- * /api/mail by mail-routes.ts, which already applies CSRF, no-store and the body
- * limit. Each route answers only after the IMAP server did. Error bodies carry
+ * /api/mail by mail-routes.ts, which already applies no-store and the body
+ * limit (the CSRF guard of the prefix comes first, where it is mounted: protected-app.ts). Each route answers only after the IMAP server did. Error bodies carry
  * a fixed text per code: server responses and mail content never reach them.
  * Failures that are not management failures (unknown account, missing
  * credential, ...) are rethrown to the parent's error handler.
