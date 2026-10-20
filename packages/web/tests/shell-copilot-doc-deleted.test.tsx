@@ -4,47 +4,30 @@
  * (`docDeleted`): a deleted non-current Doc only leaves the paper list; the current Doc moves to the keeper Work's
  * new main Doc or, with nothing left, to none. The confirmation click asks the same leave guard as the dialog.
  */
-import { act, cleanup, render, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Shell } from "../src/argelander/Shell";
+import { act, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { registerWorkspaceLeaveGuard, type Workspace } from "../src/argelander/workspace";
-import i18n from "../src/i18n";
+import { installShellHarness, renderShell, stubShellFetch } from "./shell-harness";
 
 const h = vi.hoisted(() => ({
   ws: null as Workspace | null,
   viewAction: null as null | ((action: unknown) => Promise<{ ok: boolean; detail?: string }>),
   beforeDelete: null as null | ((docId: string) => boolean),
 }));
-vi.mock("../src/api/ws", () => ({
-  onPlanChanged: () => () => {},
-  onLibraryChanged: () => () => {},
-  onJobEvent: () => () => {},
-  onAnnotationChanged: () => () => {},
-  onWriterChanged: () => () => {},
-}));
-vi.mock("../src/copilot/Copilot", () => ({
-  Copilot: ({ onViewAction, guards }: { onViewAction: typeof h.viewAction; guards: { leaveDoc: NonNullable<typeof h.beforeDelete> } }) => {
-    h.viewAction = onViewAction;
-    h.beforeDelete = guards.leaveDoc;
-    return null;
-  },
-}));
-vi.mock("../src/doc/DocPane", async () => {
-  const { useWorkspace } = await import("../src/argelander/workspace");
-  return { DocPane: () => { h.ws = useWorkspace(); return null; } };
-});
+vi.mock("../src/api/ws", async () => (await import("./shell-stubs")).quietWs());
+vi.mock("../src/copilot/Copilot", async () =>
+  (await import("./shell-stubs")).copilotProbe(h, { also: ({ guards }) => { h.beforeDelete = guards!.leaveDoc!; } })
+);
+vi.mock("../src/doc/DocPane", async () => (await import("./shell-stubs")).workspaceProbe(h));
 
 async function boot(papers: string[], route: string) {
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input) === "/api/papers"
-    ? ({ ok: true, status: 200, json: async () => ({ papers }) } as Response)
-    : ({ ok: false, status: 404, json: async () => ({}) } as unknown as Response)));
-  window.history.replaceState(null, "", route);
-  render(<Shell />);
+  stubShellFetch({ papers: () => papers });
+  renderShell(route);
   await waitFor(() => expect(h.ws?.papers).toEqual(papers));
   await waitFor(() => expect(h.viewAction).not.toBeNull());
 }
-beforeEach(async () => { await i18n.changeLanguage("en"); h.ws = null; h.viewAction = null; h.beforeDelete = null; });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.history.replaceState(null, "", "/"); void i18n.changeLanguage("zh-CN"); });
+installShellHarness();
+beforeEach(() => { h.ws = null; h.viewAction = null; h.beforeDelete = null; });
 
 describe("the bound view applies the page's own three-state update", () => {
   it("a non-current Doc leaves the paper list; the open Doc and the URL stay", async () => {

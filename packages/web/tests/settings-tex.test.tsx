@@ -6,18 +6,18 @@
  */
 import type { EnvironmentReport } from "@argelanderspace/contracts";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Shell } from "../src/argelander/Shell";
-import i18n from "../src/i18n";
 import { type FakeSettings, fakeSettings } from "./settings-fake";
+import { installShellHarness } from "./shell-harness";
 
 vi.mock("../src/api/ws", async () => (await import("./fake-ws")).wsModule());
-vi.mock("../src/copilot/Copilot", () => ({ Copilot: () => <div data-ui="stub-copilot" /> }));
-vi.mock("../src/plan/PlanView", () => ({ PlanView: () => <div data-ui="stub-plan" /> }));
-vi.mock("../src/writer/WriterView", () => ({ WriterView: () => <div data-ui="stub-write" /> }));
-vi.mock("../src/library/LibraryView", () => ({ LibraryView: () => <div data-ui="stub-library" /> }));
-vi.mock("../src/doc/DocPane", () => ({ DocPane: () => <div data-ui="stub-doc" /> }));
-vi.mock("../src/mail/MailView", () => ({ MailView: () => <div data-ui="stub-mail" /> }));
+vi.mock("../src/copilot/Copilot", async () => (await import("./shell-stubs")).copilotStub("stub-copilot"));
+vi.mock("../src/plan/PlanView", async () => (await import("./shell-stubs")).pageStub("plan"));
+vi.mock("../src/writer/WriterView", async () => (await import("./shell-stubs")).pageStub("write"));
+vi.mock("../src/library/LibraryView", async () => (await import("./shell-stubs")).pageStub("library"));
+vi.mock("../src/doc/DocPane", async () => (await import("./shell-stubs")).pageStub("doc"));
+vi.mock("../src/mail/MailView", async () => (await import("./shell-stubs")).pageStub("mail"));
 
 const EN = { "ui.language": "en" } as const;
 let settings: FakeSettings;
@@ -58,41 +58,30 @@ function allFound(): EnvironmentReport {
   } as EnvironmentReport;
 }
 
-beforeEach(async () => {
-  await i18n.changeLanguage("en");
-  window.localStorage.clear();
+installShellHarness({
+  settings: () => settings,
+  routes: async (url) => {
+    if (url === "/api/environment") {
+      environmentCalls += 1;
+      const next = queued.shift();
+      if (next) {
+        await next.until;
+        const body = structuredClone(next.report);
+        return { ok: true, status: 200, json: async () => body } as Response;
+      }
+      if (hold) await hold;
+      const body = structuredClone(report);
+      return { ok: true, status: 200, json: async () => body } as Response;
+    }
+    return null;
+  },
+});
+beforeEach(() => {
   settings = fakeSettings(EN);
   report = allFound();
   environmentCalls = 0;
   hold = null;
   queued = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const answer = settings.handle(input, init);
-      if (answer) return answer;
-      if (String(input) === "/api/environment") {
-        environmentCalls += 1;
-        const next = queued.shift();
-        if (next) {
-          await next.until;
-          const body = structuredClone(next.report);
-          return { ok: true, status: 200, json: async () => body } as Response;
-        }
-        if (hold) await hold;
-        const body = structuredClone(report);
-        return { ok: true, status: 200, json: async () => body } as Response;
-      }
-      if (String(input) === "/api/papers") return { ok: true, status: 200, json: async () => ({ papers: [] }) } as Response;
-      return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
-    })
-  );
-});
-afterEach(async () => {
-  cleanup();
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
-  await i18n.changeLanguage("zh-CN");
 });
 
 const q = (selector: string) => document.querySelector<HTMLElement>(selector);

@@ -4,11 +4,11 @@
  * pane manager and the two route buses run; the Library page is a stub that registers on the buses exactly as the real
  * LibraryView does (the view itself is covered by argument-entry.test.tsx and argument-view.test.tsx).
  */
-import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Shell } from "../src/argelander/Shell";
 import { registerWorkspaceLeaveGuard } from "../src/argelander/workspace";
-import i18n from "../src/i18n";
+import { installShellHarness, renderShell } from "./shell-harness";
 
 const h = vi.hoisted(() => ({
   /** pane id -> the Work whose graph that Library pane shows */
@@ -20,10 +20,10 @@ const h = vi.hoisted(() => ({
   exploring: new Set<number>(),
 }));
 vi.mock("../src/api/ws", async () => (await import("./fake-ws")).wsModule());
-vi.mock("../src/copilot/Copilot", () => ({ Copilot: () => null }));
-vi.mock("../src/plan/PlanView", () => ({ PlanView: () => <div data-ui="plan-stub" /> }));
-vi.mock("../src/writer/WriterView", () => ({ WriterView: () => <div data-ui="writer-stub" /> }));
-vi.mock("../src/mail/MailView", () => ({ MailView: () => <div data-ui="mail-stub" /> }));
+vi.mock("../src/copilot/Copilot", async () => (await import("./shell-stubs")).copilotStub());
+vi.mock("../src/plan/PlanView", async () => (await import("./shell-stubs")).pageStub("plan", "plan-stub"));
+vi.mock("../src/writer/WriterView", async () => (await import("./shell-stubs")).pageStub("write", "writer-stub"));
+vi.mock("../src/mail/MailView", async () => (await import("./shell-stubs")).pageStub("mail", "mail-stub"));
 vi.mock("../src/doc/DocPane", async () => {
   const { useWorkspace: workspace } = await import("../src/argelander/workspace");
   return {
@@ -91,30 +91,14 @@ vi.mock("../src/library/LibraryView", async () => {
   };
 });
 
-const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as Response;
-beforeEach(async () => {
-  await i18n.changeLanguage("en");
-  window.sessionStorage.clear();
-  window.localStorage.clear();
+installShellHarness({ papers: () => ["d1", "d2"] });
+beforeEach(() => {
   h.open.clear();
   h.opens.length = 0;
   h.requests.length = 0;
   h.exits.length = 0;
   h.explores.length = 0;
   h.exploring.clear();
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url === "/api/papers") return ok({ papers: ["d1", "d2"] });
-      return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
-    })
-  );
-});
-afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
-  window.history.replaceState(null, "", "/");
 });
 
 const q = (selector: string) => document.querySelector<HTMLElement>(selector);
@@ -122,8 +106,7 @@ const qa = (selector: string) => [...document.querySelectorAll<HTMLElement>(sele
 const libraries = () => qa('[data-ui="library-stub"]').map((el) => Number(el.getAttribute("data-ui-key")));
 /** A Shell showing a Doc in pane 1 (the Reader's situation). */
 async function bootInDoc() {
-  window.history.replaceState(null, "", "/doc/d1");
-  render(<Shell />);
+  renderShell("/doc/d1");
   await waitFor(() => expect(q('[data-ui="doc-stub"]')).not.toBeNull());
 }
 const popTo = (url: string) => {

@@ -3,32 +3,19 @@
  * view state, not from mounted rows, and the bound-view actions drive the same state the controls do.
  * The real Shell and LibraryView are rendered; only the Copilot panel and the WebSocket are replaced.
  */
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { fireEvent, render, waitFor } from "@testing-library/react";
 import { type CopilotViewAction, type PageContext, PageContextSchema } from "@argelanderspace/contracts";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Shell } from "../src/argelander/Shell";
-import i18n from "../src/i18n";
 import type { LibraryData, LibraryRef } from "../src/library/types";
+import { installShellHarness } from "./shell-harness";
 
 const h = vi.hoisted(() => ({
   viewAction: null as null | ((action: unknown) => Promise<{ ok: boolean; detail?: string }>),
   context: null as null | PageContext,
 }));
-vi.mock("../src/api/ws", () => ({
-  onArgumentGraphChanged: () => () => {},
-  onPlanChanged: () => () => {},
-  onLibraryChanged: () => () => {},
-  onJobEvent: () => () => {},
-  onAnnotationChanged: () => () => {},
-  onWriterChanged: () => () => {},
-}));
-vi.mock("../src/copilot/Copilot", () => ({
-  Copilot: ({ onViewAction, context }: { onViewAction: typeof h.viewAction; context: PageContext }) => {
-    h.viewAction = onViewAction;
-    h.context = context;
-    return null;
-  },
-}));
+vi.mock("../src/api/ws", async () => (await import("./shell-stubs")).quietWs({ onArgumentGraphChanged: () => () => {} }));
+vi.mock("../src/copilot/Copilot", async () => (await import("./shell-stubs")).copilotProbe(h));
 const g = vi.hoisted(() => ({ calls: [] as string[] }));
 vi.mock("../src/graph/GraphCanvas", async () => {
   const { useEffect } = await import("react");
@@ -67,10 +54,20 @@ let writes: { url: string; method: string }[];
 let down: false | "unreachable" | "error";
 const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as Response;
 
-beforeEach(async () => {
-  await i18n.changeLanguage("en");
-  window.sessionStorage.clear();
-  window.localStorage.clear();
+installShellHarness({
+  routes: (url, init) => {
+    const method = init?.method ?? "GET";
+    if (method !== "GET") writes.push({ url, method });
+    if (url === "/api/plans") return ok({ version: 1, rev: 1, plans: [] });
+    if (url === "/api/library") {
+      libraryGets++;
+      if (down === "unreachable") throw new TypeError("network down");
+      return down ? ({ ok: false, status: 500, json: async () => ({}) } as unknown as Response) : ok(data);
+    }
+    return null;
+  },
+});
+beforeEach(() => {
   const refs = Array.from({ length: COUNT }, (_, i) => ref(i + 1));
   data = {
     project: { name: "P" },
@@ -88,27 +85,6 @@ beforeEach(async () => {
   g.calls = [];
   h.viewAction = null;
   h.context = null;
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      const method = init?.method ?? "GET";
-      if (method !== "GET") writes.push({ url, method });
-      if (url === "/api/plans") return ok({ version: 1, rev: 1, plans: [] });
-      if (url === "/api/library") {
-        libraryGets++;
-        if (down === "unreachable") throw new TypeError("network down");
-        return down ? ({ ok: false, status: 500, json: async () => ({}) } as unknown as Response) : ok(data);
-      }
-      if (url === "/api/papers") return ok({ papers: [] });
-      return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
-    })
-  );
-});
-afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
-  window.history.replaceState(null, "", "/");
 });
 
 const q = (selector: string) => document.querySelector<HTMLElement>(selector);

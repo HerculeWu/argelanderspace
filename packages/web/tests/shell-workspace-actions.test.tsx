@@ -3,7 +3,7 @@
  * callbacks as the Shell's controls, so the pane limit, the divider rule and the leave-draft protection are
  * the UI's own, and the result it reports is what the page really did.
  */
-import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import type { CopilotViewAction, PageContext, PlansFile } from "@argelanderspace/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StrictMode } from "react";
@@ -12,6 +12,7 @@ import { Shell } from "../src/argelander/Shell";
 import { registerWorkspaceLeaveGuard } from "../src/argelander/workspace";
 import i18n from "../src/i18n";
 import { type FakeSettings, fakeSettings } from "./settings-fake";
+import { installShellHarness, stubShellFetch } from "./shell-harness";
 
 const h = vi.hoisted(() => ({
   viewAction: null as null | ((action: unknown) => Promise<{ ok: boolean; detail?: string }>),
@@ -21,21 +22,17 @@ const h = vi.hoisted(() => ({
   ready: true,
   writerApply: null as null | ((action: unknown) => Promise<{ ok: boolean; detail?: string }>),
 }));
-vi.mock("../src/api/ws", () => ({
-  onPlanChanged: () => () => {},
-  onLibraryChanged: () => () => {},
-  onJobEvent: () => () => {},
-  onAnnotationChanged: () => () => {},
-  onWriterChanged: () => () => {},
-}));
-vi.mock("../src/copilot/Copilot", () => ({
-  Copilot: ({ onViewAction, context, onOpenPanel, open, viewReady }: { onViewAction: typeof h.viewAction; context: PageContext; onOpenPanel: () => void; open: boolean; viewReady?: boolean }) => {
-    h.viewAction = onViewAction; h.context = context; h.openPanel = onOpenPanel; h.open = open; h.ready = viewReady !== false;
-    return <textarea data-ui="copilot-input" aria-label="copilot-input" />;
-  },
-}));
-vi.mock("../src/doc/DocPane", () => ({ DocPane: () => <div data-ui="doc-stub" /> }));
-vi.mock("../src/library/LibraryView", () => ({ LibraryView: () => <div data-ui="library-stub" /> }));
+vi.mock("../src/api/ws", async () => (await import("./shell-stubs")).quietWs());
+vi.mock("../src/copilot/Copilot", async () =>
+  (await import("./shell-stubs")).copilotProbe(h, {
+    also: ({ onOpenPanel, open, viewReady }) => {
+      h.openPanel = onOpenPanel!; h.open = open; h.ready = viewReady !== false;
+    },
+    show: () => <textarea data-ui="copilot-input" aria-label="copilot-input" />,
+  })
+);
+vi.mock("../src/doc/DocPane", async () => (await import("./shell-stubs")).pageStub("doc", "doc-stub"));
+vi.mock("../src/library/LibraryView", async () => (await import("./shell-stubs")).pageStub("library", "library-stub"));
 vi.mock("../src/writer/WriterView", async () => {
   const react = await import("react");
   return {
@@ -73,24 +70,22 @@ let papers: string[];
 let settings: FakeSettings;
 const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as Response;
 
-beforeEach(async () => {
-  await i18n.changeLanguage("en");
-  window.sessionStorage.clear(); window.localStorage.clear();
+installShellHarness({
+  settings: () => settings,
+  papers: () => papers,
+  routes: (url, init) => {
+    const method = init?.method ?? "GET";
+    if (url === "/api/plans" && method === "GET") return ok(serverDoc);
+    if (url === "/api/library") return ok({ project: { name: "P" }, refs: [], tags: [], graph: { nodes: [], links: [] } });
+    return null;
+  },
+});
+beforeEach(() => {
   papers = ["d1", "d2"];
   settings = fakeSettings();
   serverDoc = { version: 1, rev: 3, plans: [plan("p_0000000a", "Alpha", [task(1), task(2, { status: "done" })])] } as PlansFile;
   h.viewAction = null; h.context = null; h.writerApply = null;
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input), method = init?.method ?? "GET";
-    if (url === "/api/plans" && method === "GET") return ok(serverDoc);
-    if (url === "/api/library") return ok({ project: { name: "P" }, refs: [], tags: [], graph: { nodes: [], links: [] } });
-    if (url === "/api/papers") return ok({ papers });
-    const settingsAnswer = settings.handle(input, init);
-    if (settingsAnswer) return settingsAnswer;
-    return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
-  }));
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); window.history.replaceState(null, "", "/"); });
 
 const q = (selector: string) => document.querySelector<HTMLElement>(selector);
 const qa = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)];
@@ -167,13 +162,12 @@ describe("view switching, split, close and select go through the Shell's own cal
 describe("the Plan page's load-failure Retry is a view action (ticket 32 gap G1)", () => {
   it("retry_plans presses Retry on the failed Plan page and reports what the page then showed", async () => {
     let planStatus = 500;
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input), method = init?.method ?? "GET";
+    stubShellFetch({ papers: () => papers, routes: (url, init) => {
+      const method = init?.method ?? "GET";
       if (url === "/api/plans" && method === "GET") return planStatus === 200 ? ok(serverDoc) : ({ ok: false, status: planStatus, json: async () => ({}) } as unknown as Response);
       if (url === "/api/library") return ok({ project: { name: "P" }, refs: [], tags: [], graph: { nodes: [], links: [] } });
-      if (url === "/api/papers") return ok({ papers });
-      return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
-    }));
+      return null;
+    } });
     render(<Shell />);
     await waitFor(() => expect(h.viewAction).not.toBeNull());
     await waitFor(() => expect(q('[data-ui="retry-plans"]')).not.toBeNull());
@@ -214,17 +208,16 @@ describe("retry_plans presses only a Retry that exists (ticket 32 fix round 1, S
   it("a Plan page whose first load is still running has no Retry button: disabled, nothing reloaded", async () => {
     const gate: { release: () => void } = { release: () => {} };
     let gets = 0;
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input), method = init?.method ?? "GET";
+    stubShellFetch({ papers: () => papers, routes: async (url, init) => {
+      const method = init?.method ?? "GET";
       if (url === "/api/plans" && method === "GET") {
         gets++;
         await new Promise<void>((resolve) => { gate.release = resolve; });
         return ok(serverDoc);
       }
       if (url === "/api/library") return ok({ project: { name: "P" }, refs: [], tags: [], graph: { nodes: [], links: [] } });
-      if (url === "/api/papers") return ok({ papers });
-      return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
-    }));
+      return null;
+    } });
     render(<Shell />);
     await waitFor(() => expect(h.viewAction).not.toBeNull());
     await waitFor(() => expect(gets).toBe(1));

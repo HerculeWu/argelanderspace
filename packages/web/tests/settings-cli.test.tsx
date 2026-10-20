@@ -9,19 +9,20 @@
 import type { HostCliStatus, HostInfo } from "@argelanderspace/contracts";
 import { HOST_REQUEST_KINDS } from "@argelanderspace/contracts";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Shell } from "../src/argelander/Shell";
 import { resetHostInfoForTests } from "../src/host";
 import i18n from "../src/i18n";
 import { type FakeSettings, fakeSettings } from "./settings-fake";
+import { installShellHarness } from "./shell-harness";
 
 vi.mock("../src/api/ws", async () => (await import("./fake-ws")).wsModule());
-vi.mock("../src/copilot/Copilot", () => ({ Copilot: () => <div data-ui="stub-copilot" /> }));
-vi.mock("../src/plan/PlanView", () => ({ PlanView: () => <div data-ui="stub-plan" /> }));
-vi.mock("../src/writer/WriterView", () => ({ WriterView: () => <div data-ui="stub-write" /> }));
-vi.mock("../src/library/LibraryView", () => ({ LibraryView: () => <div data-ui="stub-library" /> }));
-vi.mock("../src/doc/DocPane", () => ({ DocPane: () => <div data-ui="stub-doc" /> }));
-vi.mock("../src/mail/MailView", () => ({ MailView: () => <div data-ui="stub-mail" /> }));
+vi.mock("../src/copilot/Copilot", async () => (await import("./shell-stubs")).copilotStub("stub-copilot"));
+vi.mock("../src/plan/PlanView", async () => (await import("./shell-stubs")).pageStub("plan"));
+vi.mock("../src/writer/WriterView", async () => (await import("./shell-stubs")).pageStub("write"));
+vi.mock("../src/library/LibraryView", async () => (await import("./shell-stubs")).pageStub("library"));
+vi.mock("../src/doc/DocPane", async () => (await import("./shell-stubs")).pageStub("doc"));
+vi.mock("../src/mail/MailView", async () => (await import("./shell-stubs")).pageStub("mail"));
 
 const EN = { "ui.language": "en" } as const;
 const DESKTOP: HostInfo = { version: 1, app: "argelanderspace", mode: "desktop", requests: [...HOST_REQUEST_KINDS], portFallback: null, project: "open" };
@@ -47,44 +48,32 @@ let cli: HostCliStatus | number | { status: number; body: unknown };
 let change: { status: number; body: unknown } | null;
 let calls: Array<{ url: string; method: string | undefined; body: unknown }>;
 
-beforeEach(async () => {
-  await i18n.changeLanguage("en");
-  window.localStorage.clear();
+const ok = (body: unknown, status = 200) => ({ ok: status < 300, status, json: async () => structuredClone(body) }) as Response;
+installShellHarness({
+  settings: () => settings,
+  routes: (url, init) => {
+    if (url === "/api/host") return typeof host === "number" ? ok({ detail: "x" }, host) : ok(host);
+    if (url.startsWith("/api/host/requests/") || url.startsWith("/api/host/cli/")) {
+      calls.push({ url, method: init?.method, body: init?.body });
+      if (url.startsWith("/api/host/requests/")) return ok({ ok: true }, 202);
+      const reply = change ?? { status: 500, body: { code: "write_failed", detail: "EIO" } };
+      return ok(reply.body, reply.status);
+    }
+    if (url === "/api/host/cli") {
+      if (typeof cli === "number") return ok({ code: "x" }, cli);
+      if ("body" in cli) return ok(cli.body, cli.status);
+      return ok(cli);
+    }
+    return null;
+  },
+});
+beforeEach(() => {
   resetHostInfoForTests();
   settings = fakeSettings(EN);
   host = DESKTOP;
   cli = STATUS();
   change = null;
   calls = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const answer = settings.handle(input, init);
-      if (answer) return answer;
-      const url = String(input);
-      const ok = (body: unknown, status = 200) => ({ ok: status < 300, status, json: async () => structuredClone(body) }) as Response;
-      if (url === "/api/host") return typeof host === "number" ? ok({ detail: "x" }, host) : ok(host);
-      if (url.startsWith("/api/host/requests/") || url.startsWith("/api/host/cli/")) {
-        calls.push({ url, method: init?.method, body: init?.body });
-        if (url.startsWith("/api/host/requests/")) return ok({ ok: true }, 202);
-        const reply = change ?? { status: 500, body: { code: "write_failed", detail: "EIO" } };
-        return ok(reply.body, reply.status);
-      }
-      if (url === "/api/host/cli") {
-        if (typeof cli === "number") return ok({ code: "x" }, cli);
-        if ("body" in cli) return ok(cli.body, cli.status);
-        return ok(cli);
-      }
-      if (url === "/api/papers") return ok({ papers: [] });
-      return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
-    })
-  );
-});
-afterEach(async () => {
-  cleanup();
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
-  await i18n.changeLanguage("zh-CN");
 });
 
 const q = (selector: string, root: ParentNode = document) => root.querySelector<HTMLElement>(selector);
