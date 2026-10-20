@@ -573,9 +573,15 @@ pub fn id_value(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
+
     use super::*;
+    use crate::download::Outcome;
+    use crate::navigation::Verdict;
     // The test lines are written with Unix paths (`parse_test_line`).
-    use crate::protocol::{parse_test_line as parse_host_line, Ready};
+    use crate::protocol::{
+        corpus, corpus_records, parse_test_line as parse_host_line, LineRead, Ready,
+    };
 
     fn ready(project: Option<&str>) -> HostLine {
         HostLine::Ready(Ready {
@@ -611,6 +617,280 @@ mod tests {
                 _ => vec![],
             })
             .collect()
+    }
+
+    /// The events of one run of the supervisor, with their levels: those it wrote to the shell's file and those still
+    /// waiting (no host is ever ready here, so none goes out without its level).
+    fn take_events(s: &mut Supervisor, actions: Vec<Action>, out: &mut Vec<ShellEvent>) {
+        for action in actions {
+            if let Action::WriteEvents { events, .. } = action {
+                out.extend(events);
+            }
+        }
+        out.append(&mut s.pending);
+    }
+
+    /// Every event the shell gives the host, each way it comes about. The values are the shell's own where it has a
+    /// list of them (menu items, crash answers, download outcomes, signal names, request kinds, the navigation
+    /// verdicts of navigation.rs); the words main.rs passes in itself are written here (why the single instance is not
+    /// guarded, the window's stage, the two kinds of skipped line, where a navigation came from, which requests can
+    /// fail): a new such word in main.rs is not seen by this test.
+    fn every_shell_event() -> Vec<ShellEvent> {
+        let fresh = || {
+            let mut s = Supervisor::new();
+            // Where the shell's file would be: the events of a crash are written, not lost.
+            s.log_dir = Some("/h/logs".into());
+            s
+        };
+        let mut out = Vec::new();
+        for unguarded in [None, Some("unavailable"), Some("foreign_owner")] {
+            let mut s = fresh();
+            let actions = s.start("0.1.0", "2.52.6", unguarded);
+            take_events(&mut s, actions, &mut out);
+        }
+        let mut s = fresh();
+        s.spawned(None, 12);
+        take_events(&mut s, vec![], &mut out);
+        let mut s = fresh();
+        let actions = s.spawn_failed(None);
+        take_events(&mut s, actions, &mut out);
+        // Asked to quit: an exit code, or killed after the limit.
+        for (code, signal) in [(Some(0), None), (None, Some(9))] {
+            let mut s = fresh();
+            s.spawned(None, 1);
+            let mut actions = s.on_close_requested();
+            actions.extend(s.on_exit(code, signal, 1234.56));
+            take_events(&mut s, actions, &mut out);
+        }
+        // Nobody asked: an exit code, or any signal.
+        let crashes = std::iter::once((Some(1), None)).chain((0..=64).map(|n| (None, Some(n))));
+        for (code, signal) in crashes {
+            let mut s = fresh();
+            s.spawned(None, 1);
+            let actions = s.on_exit(code, signal, 3000.0);
+            take_events(&mut s, actions, &mut out);
+        }
+        let choices = [
+            CrashChoice::Restart,
+            CrashChoice::ShowLogFolder,
+            CrashChoice::Quit,
+        ];
+        for choice in choices {
+            // Stops compiling when an answer is added and not listed above.
+            match choice {
+                CrashChoice::Restart | CrashChoice::ShowLogFolder | CrashChoice::Quit => {}
+            }
+            let mut s = fresh();
+            let actions = s.on_crash_choice(choice);
+            take_events(&mut s, actions, &mut out);
+        }
+        // main.rs: the folder dialog never fails; every other request can.
+        for request in crate::protocol::every_request() {
+            if matches!(request, Request::PickFolder { .. }) {
+                continue;
+            }
+            let mut s = fresh();
+            let actions = s.request_failed(request.kind(), "open_failed");
+            take_events(&mut s, actions, &mut out);
+        }
+        for stage in ["create", "guard"] {
+            let mut s = fresh();
+            let actions = s.on_window_failed(stage);
+            take_events(&mut s, actions, &mut out);
+        }
+        // What navigation.rs makes of each kind of address, from a navigation of the window or a new window.
+        let page = tauri::Url::parse("http://127.0.0.1:1859/").unwrap();
+        for address in [
+            "http://127.0.0.1:1859/x",
+            "http://example.org/",
+            "https://example.org/",
+            "file:///etc/passwd",
+            "mailto:a@example.org",
+            "javascript:alert(1)",
+            "data:text/plain,x",
+            "ftp://example.org/",
+            "custom-app:open",
+        ] {
+            let target = tauri::Url::parse(address).unwrap();
+            for (source, verdict) in [
+                (
+                    "navigation",
+                    crate::navigation::on_navigation(&target, Some(&page)),
+                ),
+                ("new_window", crate::navigation::on_new_window(&target)),
+            ] {
+                let mut s = fresh();
+                let actions = match verdict {
+                    Verdict::Stay => vec![],
+                    Verdict::Blocked(scheme) => s.on_navigation_blocked(scheme, source),
+                    Verdict::Browser(_) => {
+                        let mut actions = s.on_link_opened(source, true);
+                        actions.extend(s.on_link_opened(source, false));
+                        actions
+                    }
+                };
+                take_events(&mut s, actions, &mut out);
+            }
+        }
+        let outcomes = [Outcome::Saved, Outcome::Cancelled, Outcome::Failed];
+        for outcome in outcomes {
+            match outcome {
+                Outcome::Saved | Outcome::Cancelled | Outcome::Failed => {}
+            }
+            let mut s = fresh();
+            let actions = s.on_download(outcome.name());
+            take_events(&mut s, actions, &mut out);
+        }
+        for choice in every_menu_choice() {
+            let mut s = fresh();
+            let actions = s.on_menu(choice);
+            take_events(&mut s, actions, &mut out);
+        }
+        // main.rs: the two ways a line of the host is skipped.
+        for reason in line_rejected_reasons() {
+            let mut s = fresh();
+            let actions = s.on_line_rejected(reason);
+            take_events(&mut s, actions, &mut out);
+        }
+        out
+    }
+
+    fn every_menu_choice() -> Vec<MenuChoice> {
+        let all = vec![
+            MenuChoice::OpenFolder,
+            MenuChoice::OpenRecent("m1-0".into()),
+            MenuChoice::Quit,
+            MenuChoice::OpenInBrowser,
+            MenuChoice::OpenDevtools,
+            MenuChoice::About,
+        ];
+        for choice in &all {
+            // Stops compiling when an item is added and not listed above.
+            match choice {
+                MenuChoice::OpenFolder
+                | MenuChoice::OpenRecent(_)
+                | MenuChoice::Quit
+                | MenuChoice::OpenInBrowser
+                | MenuChoice::OpenDevtools
+                | MenuChoice::About => {}
+            }
+        }
+        all
+    }
+
+    /// main.rs's words for the two ways `read_lines` skips a line.
+    fn line_rejected_reasons() -> Vec<&'static str> {
+        [
+            LineRead::TooLong,
+            LineRead::NotUtf8,
+            LineRead::Line(String::new()),
+        ]
+        .into_iter()
+        .filter_map(|read| match read {
+            LineRead::TooLong => Some("too_long"),
+            LineRead::NotUtf8 => Some("not_utf8"),
+            LineRead::Line(_) => None,
+        })
+        .collect()
+    }
+
+    /// An event as the corpus compares it: its name, its level and its words (the fields the corpus says are words;
+    /// identifiers, numbers and durations differ from one run to the next).
+    fn signature(
+        event: &str,
+        level: &str,
+        fields: &Map<String, Value>,
+        words: &BTreeSet<String>,
+    ) -> String {
+        let words: Map<String, Value> = fields
+            .iter()
+            .filter(|(name, _)| words.contains(*name))
+            .map(|(name, value)| (name.clone(), value.clone()))
+            .collect();
+        json!({"event": event, "level": level, "words": words}).to_string()
+    }
+
+    #[test]
+    fn the_events_the_shell_gives_the_host_are_the_corpus_s() {
+        let corpus = corpus();
+        let records: Vec<&Value> = corpus_records(&corpus, "toHost")
+            .iter()
+            .filter(|r| r["valid"] == json!(true) && r["shell"].get("event").is_some())
+            .collect();
+        // Each event's fields, and which of them are words, as the corpus (the host's table) has them.
+        let mut fields: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        let mut words: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for r in &records {
+            let event = r["shell"]["event"].as_str().unwrap().to_owned();
+            let line_fields = r["line"]["fields"].as_object().unwrap();
+            fields
+                .entry(event.clone())
+                .or_default()
+                .extend(line_fields.keys().cloned());
+            words
+                .entry(event)
+                .or_default()
+                .extend(r["shell"]["words"].as_object().unwrap().keys().cloned());
+        }
+        let mut emitted = BTreeSet::new();
+        for e in every_shell_event() {
+            let known = fields
+                .get(e.event)
+                .unwrap_or_else(|| panic!("{} is not in the corpus", e.event));
+            for name in e.fields.keys() {
+                assert!(
+                    known.contains(name),
+                    "{}: field {name} is not in the corpus",
+                    e.event
+                );
+            }
+            emitted.insert(signature(e.event, e.level, &e.fields, &words[e.event]));
+        }
+        let of = |r: &Value| {
+            let shell = &r["shell"];
+            json!({"event": shell["event"], "level": shell["level"], "words": shell["words"]})
+                .to_string()
+        };
+        let (never, expected): (Vec<&Value>, Vec<&Value>) = records
+            .iter()
+            .partition(|r| r.get("shellEmits") == Some(&json!(false)));
+        let expected: BTreeSet<String> = expected.into_iter().map(of).collect();
+        let missing: Vec<_> = expected.difference(&emitted).collect();
+        let extra: Vec<_> = emitted.difference(&expected).collect();
+        assert!(
+            missing.is_empty() && extra.is_empty(),
+            "in the corpus, not given by the shell: {missing:#?}\ngiven by the shell, not in the corpus: {extra:#?}"
+        );
+        // A value the shell does not give is marked so in the corpus; once the shell gives it, the mark must go.
+        for r in never {
+            assert!(
+                !emitted.contains(&of(r)),
+                "{} is given by the shell now",
+                r["id"]
+            );
+        }
+        assert_eq!(
+            corpus["constants"]["shellLineRejectReasons"],
+            json!(line_rejected_reasons())
+        );
+    }
+
+    #[test]
+    fn the_menu_asks_the_host_for_the_corpus_s_requests() {
+        let mut items = Vec::new();
+        for choice in every_menu_choice() {
+            // A ready host each time: quit ends the app.
+            let mut s = Supervisor::new();
+            s.start("v", "w", None);
+            s.spawned(None, 1);
+            s.on_line(ready(None));
+            for line in sent_lines(&s.on_menu(choice)) {
+                if line["type"] == "menu" && line["item"] != "open_recent" {
+                    items.push(line["item"].clone());
+                }
+            }
+        }
+        assert_eq!(corpus()["constants"]["menuRequests"], Value::Array(items));
     }
 
     #[test]
@@ -1106,23 +1386,6 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_request_is_recorded_with_its_kind_and_code() {
-        let mut s = Supervisor::new();
-        s.start("v", "w", None);
-        s.spawned(None, 1);
-        s.on_line(ready(None));
-        let actions = s.request_failed("open_config_file", "not_found");
-        let Action::Send(line) = &actions[0] else {
-            panic!("{actions:?}")
-        };
-        let v: Value = serde_json::from_str(line).unwrap();
-        assert_eq!(
-            v,
-            json!({"type":"shell_event","event":"shell.request_failed","fields":{"request":"open_config_file","code":"not_found"}})
-        );
-    }
-
-    #[test]
     fn identifier_values() {
         assert_eq!(id_value("2.52.6"), "2.52.6");
         assert_eq!(id_value("0.1.0-beta.1"), "0.1.0-beta.1");
@@ -1131,12 +1394,5 @@ mod tests {
         assert_eq!(id_value(""), "<invalid-id>");
         assert_eq!(id_value("版本"), "<invalid-id>");
         assert_eq!(id_value(&"x".repeat(129)), "<invalid-id>");
-    }
-
-    #[test]
-    fn signal_names() {
-        assert_eq!(signal_name(9), "SIGKILL");
-        assert_eq!(signal_name(15), "SIGTERM");
-        assert_eq!(signal_name(64), "other");
     }
 }

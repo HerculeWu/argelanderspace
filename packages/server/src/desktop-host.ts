@@ -174,7 +174,7 @@ export interface HostMenuRecent {
 }
 
 /** Why a line from the shell was not acted on (recorded as `desktop.protocol_rejected`). */
-const REJECT_REASONS = [
+export const REJECT_REASONS = [
   "too_long",
   "not_json",
   "unknown_type",

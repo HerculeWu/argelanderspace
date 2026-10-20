@@ -481,7 +481,7 @@ describe("native requests", () => {
     expect(h.lines.length).toBe(before);
   });
 
-  test("the folder picked comes back by the request's id; an unknown id or a relative path is not taken", async () => {
+  test("the folder picked comes back by the request's id, once; its path is not in the log", async () => {
     writeConfig("port = 0\n");
     const picked: Array<string | null> = [];
     const h = await startHost({ onFolderPicked: (p) => picked.push(p) });
@@ -490,10 +490,7 @@ describe("native requests", () => {
       headers: ORIGIN(h.url),
     });
     const req = (await h.next("request")) as { id: string };
-    h.input.write(`${JSON.stringify({ type: "folder_picked", id: "nope", path: "/tmp/x" })}\n`);
-    h.input.write(
-      `${JSON.stringify({ type: "folder_picked", id: req.id, path: "relative/dir" })}\n`
-    );
+    // An unknown id and a relative path: the line protocol's corpus (desktop-line-protocol.test.ts).
     h.input.write(
       `${JSON.stringify({ type: "folder_picked", id: req.id, path: "/somewhere/picked" })}\n`
     );
@@ -506,7 +503,7 @@ describe("native requests", () => {
       { outcome: "picked" },
     ]);
     expect(log.filter((r) => r.event === "desktop.protocol_rejected").map((r) => r.reason)).toEqual(
-      ["unknown_id", "bad_shape", "unknown_id"]
+      ["unknown_id"]
     );
     // The picked path is not in the log.
     expect(JSON.stringify(log)).not.toContain("somewhere");
@@ -514,20 +511,12 @@ describe("native requests", () => {
 });
 
 describe("the shell's events", () => {
-  test("are written into the host's log by the same field rules; others are rejected or dropped", async () => {
+  // What each event, field and value is written as, and which lines are rejected: the line protocol's corpus
+  // (desktop-line-protocol.test.ts). Here: none of a line's own text reaches the log.
+  test("no text of a line reaches the log: a field, a value or an event outside the table", async () => {
     writeConfig("port = 0\n");
     const h = await startHost();
     const send = (o: unknown) => h.input.write(`${JSON.stringify(o)}\n`);
-    send({
-      type: "shell_event",
-      event: "shell.started",
-      fields: { version: "0.1.0", webview: "webkitgtk-2.52.6" },
-    });
-    send({
-      type: "shell_event",
-      event: "shell.host_exited",
-      fields: { exit_code: 1, expected: "no", signal: "SIGKILL" },
-    });
     send({
       type: "shell_event",
       event: "shell.dialog_answered",
@@ -536,21 +525,6 @@ describe("the shell's events", () => {
         choice: "a sentence the shell made up",
         extra: "SECRET-SHELL-TEXT",
       },
-    });
-    // The crash dialog has three answers; closing it is a quit (user ruling 3), there is no "closed".
-    send({
-      type: "shell_event",
-      event: "shell.dialog_answered",
-      fields: { dialog: "host_crashed", choice: "closed" },
-    });
-    // The review round's events: no window, a navigation stopped, a line the shell could not read, no single instance.
-    send({ type: "shell_event", event: "shell.window_failed", fields: { stage: "guard" } });
-    send({ type: "shell_event", event: "shell.navigation_blocked", fields: { scheme: "https" } });
-    send({ type: "shell_event", event: "shell.line_rejected", fields: { reason: "not_utf8" } });
-    send({
-      type: "shell_event",
-      event: "shell.instance_unguarded",
-      fields: { reason: "foreign_owner" },
     });
     send({
       type: "shell_event",
@@ -562,95 +536,6 @@ describe("the shell's events", () => {
       event: "shell.started",
       fields: { version: "has spaces SECRET-SHELL-TEXT" },
     });
-    h.input.write("not json at all\n");
-    send({ type: "dance" });
-    send([1, 2, 3]);
-    h.input.write(
-      `{"type":"shell_event","event":"shell.started","fields":{"version":"${"x".repeat(70 * 1024)}"}}\n`
-    );
-    await sleep(150);
-    const log = h.logFile();
-    const shell = log.filter(
-      (r) => String(r.event).startsWith("shell.") || r.event === "log.rejected"
-    );
-    expect(shell).toEqual([
-      {
-        t: expect.any(String),
-        level: "info",
-        event: "shell.started",
-        version: "0.1.0",
-        webview: "webkitgtk-2.52.6",
-      },
-      {
-        t: expect.any(String),
-        level: "warn",
-        event: "shell.host_exited",
-        exit_code: 1,
-        expected: "no",
-        signal: "SIGKILL",
-      },
-      {
-        t: expect.any(String),
-        level: "info",
-        event: "shell.dialog_answered",
-        dialog: "host_crashed",
-        choice: "<invalid-enum>",
-        dropped_fields: 1,
-      },
-      {
-        t: expect.any(String),
-        level: "info",
-        event: "shell.dialog_answered",
-        dialog: "host_crashed",
-        choice: "<invalid-enum>",
-      },
-      { t: expect.any(String), level: "warn", event: "shell.window_failed", stage: "guard" },
-      { t: expect.any(String), level: "warn", event: "shell.navigation_blocked", scheme: "https" },
-      { t: expect.any(String), level: "warn", event: "shell.line_rejected", reason: "not_utf8" },
-      {
-        t: expect.any(String),
-        level: "warn",
-        event: "shell.instance_unguarded",
-        reason: "foreign_owner",
-      },
-      { t: expect.any(String), level: "info", event: "shell.started", version: "<invalid-id>" },
-    ]);
-    expect(log.filter((r) => r.event === "desktop.protocol_rejected").map((r) => r.reason)).toEqual(
-      ["unknown_event", "not_json", "unknown_type", "bad_shape", "too_long"]
-    );
-    expect(JSON.stringify(log)).not.toContain("SECRET-SHELL-TEXT");
-    expect(JSON.stringify(log)).not.toContain("something_else");
-    // The host still answers after all of that.
-    expect((await fetch(`${h.url}/api/host`)).status).toBe(200);
-  });
-});
-
-describe("the shell's events of the page's links, downloads and menu (desktop-app ticket 21)", () => {
-  test("are written with their fixed words only; a path or an address in a field is not", async () => {
-    writeConfig("port = 0\n");
-    const h = await startHost();
-    const send = (o: unknown) => h.input.write(`${JSON.stringify(o)}\n`);
-    send({
-      type: "shell_event",
-      event: "shell.link_opened",
-      fields: { source: "new_window", outcome: "opened" },
-    });
-    send({
-      type: "shell_event",
-      event: "shell.link_opened",
-      fields: { source: "navigation", outcome: "open_failed" },
-    });
-    send({
-      type: "shell_event",
-      event: "shell.navigation_blocked",
-      fields: { scheme: "other", source: "new_window" },
-    });
-    send({ type: "shell_event", event: "shell.download", fields: { outcome: "saved" } });
-    send({ type: "shell_event", event: "shell.download", fields: { outcome: "cancelled" } });
-    send({ type: "shell_event", event: "shell.download", fields: { outcome: "failed" } });
-    send({ type: "shell_event", event: "shell.menu_chosen", fields: { item: "about" } });
-    send({ type: "shell_event", event: "shell.menu_chosen", fields: { item: "open_recent" } });
-    send({ type: "shell_event", event: "shell.menu_chosen", fields: { item: "quit" } });
     send({
       type: "shell_event",
       event: "shell.link_opened",
@@ -667,28 +552,20 @@ describe("the shell's events of the page's links, downloads and menu (desktop-ap
     });
     await sleep(150);
     const log = h.logFile();
-    const pick = (event: string) =>
-      log.filter((r) => r.event === event).map(({ t: _t, event: _e, ...rest }) => rest);
-    expect(pick("shell.link_opened")).toEqual([
-      { level: "info", source: "new_window", outcome: "opened" },
-      { level: "info", source: "navigation", outcome: "open_failed" },
-      { level: "info", source: "<invalid-enum>", outcome: "opened", dropped_fields: 1 },
+    // Written, with placeholders: four records of the shell's, one rejection.
+    expect(log.filter((r) => String(r.event).startsWith("shell.")).map((r) => r.event)).toEqual([
+      "shell.dialog_answered",
+      "shell.started",
+      "shell.link_opened",
+      "shell.download",
     ]);
-    expect(pick("shell.navigation_blocked")).toEqual([
-      { level: "warn", scheme: "other", source: "new_window" },
-    ]);
-    expect(pick("shell.download")).toEqual([
-      { level: "info", outcome: "saved" },
-      { level: "info", outcome: "cancelled" },
-      { level: "warn", outcome: "failed" },
-      { level: "info", outcome: "<invalid-enum>" },
-    ]);
-    expect(pick("shell.menu_chosen")).toEqual([
-      { level: "info", item: "about" },
-      { level: "info", item: "open_recent" },
-      { level: "info", item: "quit" },
-    ]);
+    expect(log.filter((r) => r.event === "desktop.protocol_rejected").map((r) => r.reason)).toEqual(
+      ["unknown_event"]
+    );
     expect(JSON.stringify(log)).not.toContain("SECRET");
+    expect(JSON.stringify(log)).not.toContain("something_else");
+    // The host still answers after all of that.
+    expect((await fetch(`${h.url}/api/host`)).status).toBe(200);
   });
 });
 
