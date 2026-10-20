@@ -15,7 +15,7 @@
  * `readVerifiedPdf`) and against the hash the caller expects. A known failure is answered, never repaired: nothing
  * is reset, migrated, archived, rebound or written.
  */
-import type { PdfAnnotationOperation } from "@argelanderspace/contracts";
+import { DOCUMENT_BUSY, type PdfAnnotationOperation } from "@argelanderspace/contracts";
 import {
   commitPdfAnnotationChange,
   type LibraryPaths,
@@ -333,7 +333,7 @@ export function createPdfAccess(deps: PdfAccessDeps): PdfAccess {
       case "bad_id":
         return detail("bad doc id", 400);
       case "busy":
-        return { body: { detail: "document busy" }, status: 409 as const };
+        return { body: { detail: DOCUMENT_BUSY }, status: 409 as const };
       case "not_found":
         return detail(`paper ${pyRepr(docId)} not found`, 404);
       case "changed":

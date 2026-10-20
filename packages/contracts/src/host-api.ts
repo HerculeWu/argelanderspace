@@ -66,6 +66,7 @@
  */
 
 import { z } from "zod";
+import { JobFormatSchema } from "./job-payload.js";
 import { JobKindSchema } from "./job-status.js";
 
 /** The name every answer carries, so a program on the port can be told from the workbench. */
@@ -230,7 +231,7 @@ export const HostSwitchJobSchema = z.object({
   /** The Work it is for, when the job says. */
   workId: z.string().nullable(),
   /** What an `upload` job takes in: an uploaded PDF, an arXiv PDF; null for a LaTeX archive and the other kinds. */
-  format: z.enum(["pdf", "arxiv-pdf"]).nullable(),
+  format: JobFormatSchema.nullable(),
   /** The arXiv id, for the jobs that fetch from arXiv. */
   arxivId: z.string().nullable(),
 });

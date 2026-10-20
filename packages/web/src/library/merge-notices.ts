@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { type ArgumentGraphMergeNote, ArgumentGraphMergeNoteSchema, type Job } from "@argelanderspace/contracts";
+import { type ArgumentGraphMergeNote, ArgumentGraphMergeNoteSchema, type Job, jobTarget } from "@argelanderspace/contracts";
 import { onJobEvent } from "../api/ws";
 
 /*
@@ -21,14 +21,6 @@ export interface MergeNotice {
 
 const DISMISSED_KEY = "argelander.dismissedGraphMergeNotices";
 const DISMISSED_CAP = 300;
-
-/** The Work a job was started for (`payload.workId`). */
-function targetWork(job: Job): string | null {
-  const p = job.payload;
-  if (p === null || p === undefined || typeof p !== "object" || Array.isArray(p)) return null;
-  const w = (p as Record<string, unknown>).workId;
-  return typeof w === "string" && w !== "" ? w : null;
-}
 
 /** The notes a finished job carries in its result (a foreign shape yields none). */
 export function jobMergeNotes(job: Job): ArgumentGraphMergeNote[] {
@@ -63,7 +55,8 @@ function publish(): void {
  */
 export function ingestMergeNotice(job: Job): void {
   if (job.status === "queued" || job.status === "running") return;
-  const workId = targetWork(job);
+  // The Work the task was started for; an empty one is none.
+  const workId = jobTarget(job).workId || null;
   const notes = workId ? jobMergeNotes(job) : [];
   if (!workId || notes.length === 0) return;
   entries.set(job.id, { jobId: job.id, workId, notes });

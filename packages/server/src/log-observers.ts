@@ -19,6 +19,7 @@ import type { Job } from "@argelanderspace/contracts";
 import {
   ENVIRONMENT_TOOLS,
   JobKindSchema,
+  jobTarget,
   KEYCHAIN_STATES as KEYCHAIN_PROBE_STATES,
   KEYCHAIN_REASONS,
   MAIL_ACCOUNT_ID_PATTERN,
@@ -171,11 +172,11 @@ export function jobLogger(log: ServerLog): ((transition: JobTransition) => void)
         case "created": {
           // The Work and the Doc a job is about, when it says so: written by the Work / Doc id rules (one made
           // from a title or a folder name is a hash).
-          const payload = (job.payload ?? {}) as { workId?: unknown; docId?: unknown };
+          const target = jobTarget(job);
           log.info("job.created", {
             ...base,
-            ...(typeof payload.workId === "string" ? { work: f.workId(payload.workId) } : {}),
-            ...(typeof payload.docId === "string" ? { doc: f.docId(payload.docId) } : {}),
+            ...(target.workId !== null ? { work: f.workId(target.workId) } : {}),
+            ...(target.docId !== null ? { doc: f.docId(target.docId) } : {}),
           });
           break;
         }

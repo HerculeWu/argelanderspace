@@ -22,6 +22,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DEFAULT_PORT,
+  jobTarget,
   type RunningFlagKey,
   type SettingsValues,
   type StartupLocations,
@@ -220,13 +221,13 @@ export function createServer(opts: ServerOptions): RunningServer {
     // iterating on too — it lands in the same plain-text JSONL log.
     onInterrupted: (job) => {
       if (job.kind !== "ingest") return;
-      const p = (job.payload ?? {}) as { workId?: unknown; arxivId?: unknown };
+      const target = jobTarget(job);
       try {
         appendArxivFetchLog(opts.dataDir, {
           time: job.finishedAt ?? new Date().toISOString(),
           jobId: job.id,
-          workId: typeof p.workId === "string" ? p.workId : null,
-          arxivId: typeof p.arxivId === "string" ? p.arxivId : null,
+          workId: target.workId,
+          arxivId: target.arxivId,
           stage: "interrupted",
           error: "job interrupted by server restart (never re-run)",
         });

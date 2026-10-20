@@ -5,6 +5,7 @@ import {
   type CopilotOperation,
   type DocReplaceImpact,
   type Job,
+  jobTarget,
   type LibraryImportWorks,
   type LibraryPayload,
   type LibraryReadJobs,
@@ -587,11 +588,6 @@ export interface JobView {
   argumentGraphMerges?: ArgumentGraphMergeNote[];
 }
 
-const payloadOf = (job: Job): { workId?: string; format?: string } =>
-  job.payload !== null && typeof job.payload === "object" && !Array.isArray(job.payload)
-    ? (job.payload as { workId?: string; format?: string })
-    : {};
-
 /** The Doc a finished job produced, from its result (arXiv PDF: `doc`, LaTeX attach: `docId`, zip: `ref`). */
 function jobDocId(job: Job): string | undefined {
   const result = job.result as Record<string, unknown> | null;
@@ -610,15 +606,15 @@ function jobMerges(job: Job): ArgumentGraphMergeNote[] {
 }
 
 export function jobView(job: Job): JobView {
-  const payload = payloadOf(job);
+  const target = jobTarget(job);
   const docId = job.status === "done" ? jobDocId(job) : undefined;
   const merges = jobMerges(job);
   return {
     id: job.id,
     kind: job.kind,
-    ...(typeof payload.format === "string" ? { format: payload.format } : {}),
+    ...(target.format !== null ? { format: target.format } : {}),
     status: job.status,
-    workId: typeof payload.workId === "string" ? payload.workId : null,
+    workId: target.workId,
     createdAt: job.createdAt,
     finishedAt: job.finishedAt,
     progress: job.progress.at(-1)?.message ?? null,
@@ -639,7 +635,7 @@ export function readJobs(deps: LibraryOpDeps, op: LibraryReadJobs): ReadJobsOutc
     return { ok: false, status: "unsupported", detail: "jobs are not available in this host" };
   const all = deps.acquisition.jobs
     .list()
-    .filter((job) => (op.refId === undefined ? true : payloadOf(job).workId === op.refId))
+    .filter((job) => (op.refId === undefined ? true : jobTarget(job).workId === op.refId))
     // Refresh jobs belong to no work; the status lines of a Work only show its own acquisitions.
     .filter((job) => op.refId !== undefined || job.kind !== "refresh");
   return { ok: true, total: all.length, jobs: all.slice(0, op.limit ?? 10).map(jobView) };

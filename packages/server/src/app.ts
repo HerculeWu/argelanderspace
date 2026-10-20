@@ -51,6 +51,7 @@ import {
   ArgumentGraphSchema,
   buildReaderReading,
   DEFAULT_COPILOT_FILE_TOOLS,
+  DOCUMENT_BUSY,
   DocDescriptionSchema,
   ManualWorkRequestSchema,
   ManuscriptSchema,
@@ -1205,7 +1206,7 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("bad doc id", 400);
       return c.json(e.body, e.status);
     }
-    if (docMutations.isDocumentContentBusy(docId)) return c.json({ detail: "document busy" }, 409);
+    if (docMutations.isDocumentContentBusy(docId)) return c.json({ detail: DOCUMENT_BUSY }, 409);
     const owners = pdfAccess.owners(docId);
     if (owners.length === 0) {
       const e = detail(`paper ${pyRepr(docId)} not found`, 404);
@@ -1247,7 +1248,7 @@ export function createApp(deps: AppDeps): Hono {
     c.header("Cache-Control", "no-store");
     const docId = c.req.param("doc_id");
     if (!docId.trim() || badDocId(docId)) return c.json({ detail: "bad doc id" }, 400);
-    if (docMutations.isDocumentContentBusy(docId)) return c.json({ detail: "document busy" }, 409);
+    if (docMutations.isDocumentContentBusy(docId)) return c.json({ detail: DOCUMENT_BUSY }, 409);
     const owners = pdfAccess.owners(docId);
     if (owners.length === 0) return c.json({ detail: `paper ${pyRepr(docId)} not found` }, 404);
     if (owners.length !== 1)
@@ -1320,7 +1321,7 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("bad doc id", 400);
       return c.json(e.body, e.status);
     }
-    if (docMutations.isDocumentContentBusy(docId)) return c.json({ detail: "document busy" }, 409);
+    if (docMutations.isDocumentContentBusy(docId)) return c.json({ detail: DOCUMENT_BUSY }, 409);
     const owners = pdfAccess.owners(docId);
     if (owners.length === 0) {
       const e = detail(`paper ${pyRepr(docId)} not found`, 404);
@@ -1503,7 +1504,7 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("bad doc id", 400);
       return c.json(e.body, e.status);
     }
-    if (docMutations.isDocumentContentBusy(docId)) return c.json({ detail: "document busy" }, 409);
+    if (docMutations.isDocumentContentBusy(docId)) return c.json({ detail: DOCUMENT_BUSY }, 409);
     const owners = pdfAccess.owners(docId);
     if (owners.length === 0) {
       const e = detail(`paper ${pyRepr(docId)} not found`, 404);
@@ -1607,7 +1608,7 @@ export function createApp(deps: AppDeps): Hono {
       }
       throw err;
     }
-    if (read.kind === "busy") return c.json({ detail: "document busy" }, 409);
+    if (read.kind === "busy") return c.json({ detail: DOCUMENT_BUSY }, 409);
     if (read.kind === "pdf")
       return c.json({ detail: "PDF annotations use the PDF reader contract" }, 400);
     const result = read.epoch;
@@ -1657,7 +1658,7 @@ export function createApp(deps: AppDeps): Hono {
       }
       throw err;
     }
-    if (outcome.kind === "busy") return c.json({ detail: "document busy" }, 409);
+    if (outcome.kind === "busy") return c.json({ detail: DOCUMENT_BUSY }, 409);
     if (outcome.kind === "pdf")
       return c.json({ detail: "PDF annotations use the PDF reader contract" }, 400);
     if (outcome.kind === "document_changed") {
@@ -1687,7 +1688,7 @@ export function createApp(deps: AppDeps): Hono {
         return c.json(e.body, e.status);
       }
       case "busy": {
-        const e = detail("document busy", 409);
+        const e = detail(DOCUMENT_BUSY, 409);
         return c.json(e.body, e.status);
       }
       case "failed": {
@@ -2426,7 +2427,7 @@ export function createApp(deps: AppDeps): Hono {
 
     const started = acquisition.startPdfUpload(workId, bytes, filename);
     if (started.kind === "busy") {
-      const e = detail("document busy", 409);
+      const e = detail(DOCUMENT_BUSY, 409);
       return c.json(e.body, e.status);
     }
     if (started.kind === "failed") {
@@ -2468,7 +2469,7 @@ export function createApp(deps: AppDeps): Hono {
       // Legacy behavior (app.py verbatim): the response waits for the ingest (acquisition.ts attachZipSync).
       const attached = await acquisition.attachZipSync(query, data);
       if (attached.kind === "busy") {
-        const e = detail("document busy", 409);
+        const e = detail(DOCUMENT_BUSY, 409);
         return c.json(e.body, e.status);
       }
       // Python: ValueError/FileNotFoundError → 404, anything else → 500.
@@ -2495,7 +2496,7 @@ export function createApp(deps: AppDeps): Hono {
     // Async (new default): spool the bytes, queue the ingest job, answer 202.
     const started = acquisition.startZipJob(query, data);
     if (started.kind === "busy") {
-      const e = detail("document busy", 409);
+      const e = detail(DOCUMENT_BUSY, 409);
       return c.json(e.body, e.status);
     }
     return c.json({ job: started.job }, 202);
@@ -2564,7 +2565,7 @@ export function createApp(deps: AppDeps): Hono {
       return c.json(e.body, e.status);
     }
     if (started.kind === "busy") {
-      const e = detail("document busy", 409);
+      const e = detail(DOCUMENT_BUSY, 409);
       return c.json(e.body, e.status);
     }
     if (started.kind !== "queued") {
@@ -2586,7 +2587,7 @@ export function createApp(deps: AppDeps): Hono {
       return c.json({ detail: "bad asset sha256" }, 400);
     }
     if (docMutations.isDocumentContentBusy(docId)) {
-      return c.json({ detail: "document busy" }, 409);
+      return c.json({ detail: DOCUMENT_BUSY }, 409);
     }
     try {
       const asset = readDocumentAsset(join(outputDir, docId), imgPath);
