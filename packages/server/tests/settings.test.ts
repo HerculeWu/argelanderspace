@@ -404,6 +404,17 @@ describe("PUT /api/settings/:key", () => {
     expect(readFileSync(configPath, "utf-8")).toBe(text);
   });
 
+  test("the value is judged before the file's layout: a bad value in a file that is not TOML is invalid_value", async () => {
+    // The order of contracts `settings-change.ts` (file, value, text), as the server runs it.
+    const text = 'port = 1860\n[ui\ntheme = "dark"\n';
+    writeFileSync(configPath, text);
+    await start();
+    const { res, body } = await put("ui.theme", { set: "purple" });
+    expect(res.status).toBe(400);
+    expect(body).toEqual({ ok: false, reason: "invalid_value" });
+    expect(readFileSync(configPath, "utf-8")).toBe(text);
+  });
+
   test("a value the key does not take, without repeating it", async () => {
     writeFileSync(configPath, COMMENTED);
     await start();

@@ -81,53 +81,53 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
-  type CopilotFileToolsSetting,
   evaluateSettings,
   isSettingKey,
   SETTING_KEYS,
+  type SETTINGS_SCHEMA,
   SETTINGS_TABLES,
-  type SETTINGS_UI_ACCENTS,
-  type SETTINGS_UI_DENSITIES,
-  type SETTINGS_UI_LANGUAGES,
-  type SETTINGS_UI_THEMES,
   type SettingKey,
   type SettingsEvaluation,
   type SettingsProblem,
+  type SettingType,
   settingDef,
+  type TopLevelSettingKey,
 } from "@argelanderspace/contracts";
 import { parse as parseToml } from "smol-toml";
-import type { LogLevel } from "./log/logger.js";
 
-/** The `[ui]` table: how the page looks. Defined and checked here; nothing reads it yet. */
-export interface AppUiConfig {
-  language?: (typeof SETTINGS_UI_LANGUAGES)[number];
-  theme?: (typeof SETTINGS_UI_THEMES)[number];
-  accent?: (typeof SETTINGS_UI_ACCENTS)[number];
-  density?: (typeof SETTINGS_UI_DENSITIES)[number];
-  labels?: boolean;
-}
+/** What a key of the schema holds in the file, by its schema type (an enum: the union of its values). */
+type ConfigValueOf<T extends SettingType> = T extends { kind: "string" }
+  ? string
+  : T extends { kind: "integer" }
+    ? number
+    : T extends { kind: "boolean" }
+      ? boolean
+      : T extends { kind: "enum"; values: readonly (infer V)[] }
+        ? V
+        : never;
+type ConfigDefOf<K extends SettingKey> = (typeof SETTINGS_SCHEMA)[K];
+type UiSettingKey = {
+  [K in SettingKey]: ConfigDefOf<K>["table"] extends "ui" ? K : never;
+}[SettingKey];
 
-/** The config object; property names mirror the TOML keys verbatim. */
-export interface AppConfig {
-  data_dir?: string;
-  port?: number;
-  openalex_api_key?: string;
-  ads_dev_key?: string;
-  /** Global data dir override (ADR 0007); must be absolute. */
-  global_dir?: string;
-  /** Global cache dir override; must be absolute. */
-  global_cache_dir?: string;
-  auto_ingest_arxiv?: boolean;
-  /** The lowest level written to the user-level log; unset means `info`. */
-  log_level?: LogLevel;
-  /** As written; a blank string means not set. */
-  contact_email?: string;
-  /** As written; a blank string means not set. Absolute otherwise. */
-  tex_dir?: string;
-  /** Copilot's file and command tools: `off`, `ask` (default) or `auto` (copilot ticket 57). */
-  copilot_file_tools?: CopilotFileToolsSetting;
-  ui?: AppUiConfig;
-}
+/**
+ * The `[ui]` table: how the page looks. Derived from the Settings schema (its `ui` keys, by name), on types only.
+ */
+export type AppUiConfig = {
+  [K in UiSettingKey as ConfigDefOf<K>["name"]]?: ConfigValueOf<ConfigDefOf<K>["type"]>;
+};
+
+/**
+ * The config object; property names mirror the TOML keys verbatim. Derived from the Settings schema, on types only:
+ * every top-level key, of the type its schema type gives (`log_level`: `LogLevel`), and the `[ui]` table; all
+ * optional. What each key means is the schema's (contracts `settings-schema.ts`); a blank string of a key that
+ * treats blank as unset is returned as written.
+ */
+export type AppConfig = {
+  [K in TopLevelSettingKey | "ui"]?: K extends TopLevelSettingKey
+    ? ConfigValueOf<ConfigDefOf<K>["type"]>
+    : AppUiConfig;
+};
 
 /**
  * Every key this build knows in config.toml, by identifier (`port`, `ui.theme`) and in the Settings schema's order.

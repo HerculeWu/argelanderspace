@@ -27,9 +27,9 @@ import { homedir } from "node:os";
 import { sep } from "node:path";
 import {
   defaultSettings,
-  isSettingKey,
   type RunningSettings,
   redactSettingsValues,
+  restartPendingKeys,
   SETTING_KEYS,
   SETTING_VALUE_PROBLEMS,
   SETTINGS_TABLES,
@@ -44,6 +44,9 @@ import {
   type SettingValue,
   type ShownPath,
   type StartupLocations,
+  settingChangeKey,
+  settingChangeRequestOf,
+  settingChangeStatus,
   settingDef,
 } from "@argelanderspace/contracts";
 import {
@@ -56,7 +59,6 @@ import {
   type SettingWriteRefusal,
   writeSetting,
 } from "@argelanderspace/infra";
-import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { readLimited } from "./page-errors.js";
 import type { ProtectedRoutes } from "./protected-app.js";
 
@@ -197,18 +199,6 @@ export function shownPath(path: string, home: string = homedir()): ShownPath {
   return { path, display: displayPath(path, home) };
 }
 
-const RESTART_KEYS = SETTING_KEYS.filter((key) => settingDef(key).restart);
-
-/** The restart-only keys whose value in the file now is not the one it had when the server was made. */
-export function restartPending(
-  now: SettingsValues,
-  atStart: SettingsValues,
-  fromFlag: readonly SettingKey[] = []
-): SettingKey[] {
-  // A key given on the command line does not take the file's value at a restart either (with the same flag).
-  return RESTART_KEYS.filter((key) => !fromFlag.includes(key) && now[key] !== atStart[key]);
-}
-
 /** The lenient reading of the config file; never throws. */
 export function readSettings(path: string = configFilePath()): SettingsReading {
   return readWithText(path).reading;
@@ -285,7 +275,10 @@ export function settingsSnapshot(path: string, proc: ProcessSettings): SettingsS
     startup: proc.startup,
     running,
     // A file that cannot be read says nothing about what it sets: nothing is reported as pending then.
-    restartPending: readonly ? [] : restartPending(reading.values, proc.atStart, running.from_flag),
+    restartPending: restartPendingKeys(reading.values, proc.atStart, {
+      readonly,
+      fromFlag: running.from_flag,
+    }),
   };
 }
 
@@ -403,41 +396,6 @@ export function configProblemLines(
 // Changing one key
 // --------------------------------------------------------------------------- //
 
-/** A request for something that is not a change of a key the page can change. */
-const REQUEST_STATUS: Partial<Record<SettingChangeRefusal, ContentfulStatusCode>> = {
-  invalid_request: 400,
-  invalid_value: 400,
-  unrepresentable_value: 400,
-  unknown_key: 404,
-  not_editable: 422,
-};
-/** The file or its directory could not be read or written. */
-const FILE_FAILURES = new Set<SettingChangeRefusal>([
-  "unreadable",
-  "invalid_encoding",
-  "not_writable",
-  "write_failed",
-]);
-
-/** 400 / 404 / 422 for the request, 500 for a file that cannot be read or written, 409 for everything about how the
- * file is written now (and `busy`). */
-function statusOf(reason: SettingChangeRefusal): ContentfulStatusCode {
-  return REQUEST_STATUS[reason] ?? (FILE_FAILURES.has(reason) ? 500 : 409);
-}
-
-/** Exactly `{ set: scalar }` or `{ reset: true }`; anything else is `null`. */
-function changeOf(body: unknown): ConfigChange | null {
-  if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
-  const keys = Object.keys(body);
-  if (keys.length !== 1) return null;
-  const record = body as Record<string, unknown>;
-  if (keys[0] === "reset") return record.reset === true ? { reset: true } : null;
-  if (keys[0] !== "set") return null;
-  const value = record.set;
-  if (typeof value === "number") return Number.isFinite(value) ? { set: value } : null;
-  return typeof value === "string" || typeof value === "boolean" ? { set: value } : null;
-}
-
 export function mountSettingsRoutes(routes: ProtectedRoutes, options: SettingsRouteOptions): void {
   const app = routes.withDefaults({ noStore: true });
   const pathNow = (): string => options.path ?? configFilePath();
@@ -452,12 +410,17 @@ export function mountSettingsRoutes(routes: ProtectedRoutes, options: SettingsRo
   );
 
   app.put("/api/settings/:key", async (c) => {
+    // The status of each refusal, and the stages that need no file, are contracts `settings-change.ts`.
     const refuse = (reason: SettingChangeRefusal) =>
-      c.json({ ok: false, reason } satisfies SettingChangeResponse, statusOf(reason), NO_STORE);
+      c.json(
+        { ok: false, reason } satisfies SettingChangeResponse,
+        settingChangeStatus(reason),
+        NO_STORE
+      );
 
-    const key = c.req.param("key");
-    if (!isSettingKey(key)) return refuse("unknown_key");
-    if (settingDef(key).ui !== "edit") return refuse("not_editable");
+    const keyed = settingChangeKey(c.req.param("key"), "page");
+    if (!keyed.ok) return refuse(keyed.reason);
+    const { key } = keyed;
 
     // The limit holds while the body is read (page-errors.ts `readLimited`): reading stops at the first chunk over it.
     let body: unknown;
@@ -468,7 +431,7 @@ export function mountSettingsRoutes(routes: ProtectedRoutes, options: SettingsRo
     } catch {
       return refuse("invalid_request");
     }
-    const change = changeOf(body);
+    const change = settingChangeRequestOf(body);
     if (change === null) return refuse("invalid_request");
 
     const path = pathNow();
