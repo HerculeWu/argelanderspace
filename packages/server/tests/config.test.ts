@@ -1,15 +1,13 @@
 /**
- * `resolveServerConfig` precedence (decision 23): CLI flag > config file >
- * default, for both `data_dir` and `port`. The config object is injected (no
- * disk); the workbench's former environment variables take no part; web-dist
- * resolution keeps its explicit-flag short-circuit and falls back to the
- * bundle/dev directory candidates.
+ * `resolveServerConfig` (decision 23): what it adds to the chains it shares with the CLI and the desktop host (infra
+ * `dataDirOf` / `portOf`, tested in infra `config-chain.test.ts`) — the `--data-dir` / `--port` flags in both
+ * spellings, the guard against a garbage `--port`, and the web dist (explicit flag, else the bundle/dev directory
+ * candidates). The config object is injected (no disk); the workbench's former environment variables take no part.
  */
 
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { DEFAULT_PORT } from "@argelanderspace/contracts";
 import { afterEach, describe, expect, test } from "vitest";
 import { resolveServerConfig } from "../src/server.js";
 
@@ -25,22 +23,6 @@ afterEach(() => {
 });
 
 describe("resolveServerConfig", () => {
-  test("defaults: ./literatures, port 1859, web dist null outside the repo", () => {
-    const cwd = mkdtempSync(join(tmpdir(), "aspace-cfg-"));
-    const cfg = resolveServerConfig([], cwd, {});
-    expect(cfg.dataDir).toBe(resolve("./literatures"));
-    expect(DEFAULT_PORT).toBe(1859);
-    expect(cfg.port).toBe(1859);
-    expect(cfg.webDist).toBeNull();
-  });
-
-  test("config file supplies data_dir and port when the flags are absent", () => {
-    const cwd = mkdtempSync(join(tmpdir(), "aspace-cfg-"));
-    const cfg = resolveServerConfig([], cwd, { data_dir: "srv/papers", port: 8123 });
-    expect(cfg.dataDir).toBe(resolve("srv/papers"));
-    expect(cfg.port).toBe(8123);
-  });
-
   test("flag beats config; a flag may give an absolute data dir", () => {
     const cwd = mkdtempSync(join(tmpdir(), "aspace-cfg-"));
     const config = { data_dir: "from-config", port: 9001 };

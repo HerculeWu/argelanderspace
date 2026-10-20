@@ -85,7 +85,7 @@ import { MailCache } from "../src/mail-cache.js";
 import { MailReadService } from "../src/mail-read.js";
 import { ProviderSettings } from "../src/providers.js";
 import { createServer, type RunningServer } from "../src/server.js";
-import { makeZip, stubPipelines, stubSources } from "./helpers.js";
+import { isolatedGlobalDirs, makeZip, stubPipelines, stubSources } from "./helpers.js";
 import { logText, markersInText, ROOT } from "./log-markers.js";
 
 // --------------------------------------------------------------------------- //
@@ -335,6 +335,7 @@ beforeAll(async () => {
   }));
 
   srv = createServer({
+    globalDirs: isolatedGlobalDirs(),
     dataDir,
     port: 0,
     webDist: null,

@@ -66,7 +66,6 @@ import { createServer as createNetServer } from "node:net";
 import { basename, isAbsolute, join } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import {
-  DEFAULT_PORT,
   DEFAULT_UI_LANGUAGE,
   EMPTY_SWITCH_IMPACT,
   HOST_REQUEST_KINDS,
@@ -94,6 +93,7 @@ import {
   type LogField,
   type LogLevel,
   logDirIn,
+  portOf,
   RECENT_PROJECTS_FILE,
   RECENT_PROJECTS_PROBLEMS,
   readConfigLeniently,
@@ -428,7 +428,7 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
   // The port: the configured one when it is free, else one the system picks (and whose the configured one is).
   const configPath = configFilePath();
   const atStart = serveStart(configPath);
-  const configuredPort = atStart.config.port ?? DEFAULT_PORT;
+  const configuredPort = portOf(atStart.config);
 
   // The project: the current directory, or the most recent one when its folder is still there, or none.
   const recentFile = join(atStart.globalDirs.dataDir, RECENT_PROJECTS_FILE);
@@ -767,6 +767,10 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
           if (occupant !== null)
             portFallback = { configured: configuredPort, actual: port, occupant };
         },
+        // The start uses this reading instead of a second one. Only for an absolute path: a relative one (a relative
+        // `XDG_CONFIG_HOME`) names another file once the host has changed into the Project, and that file is the
+        // one the start reads, as before. The host's argv has no `--data-dir`, so the start locations are the same.
+        ...(isAbsolute(configPath) ? { atStart } : {}),
       },
     };
     server =

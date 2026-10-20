@@ -5,3 +5,9 @@
 
 /** The port `serve` binds and deep links point at when `config.toml` sets no `port`. */
 export const DEFAULT_PORT = 1859;
+
+/**
+ * The project data directory when neither `--data-dir` nor config.toml's `data_dir` gives one: relative, resolved
+ * against the working directory (hard contract 「产品与执行边界」 item 2).
+ */
+export const DEFAULT_DATA_DIR = "./literatures";

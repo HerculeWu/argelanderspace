@@ -39,7 +39,7 @@ import type { MailComposeServices } from "../src/mail-compose-routes.js";
 import { MailOutbox } from "../src/mail-outbox.js";
 import { disposeMailSendServices, MailSendService } from "../src/mail-send.js";
 import { ProviderSettings } from "../src/providers.js";
-import { makeDataDir, stubPipelines, stubSources } from "./helpers.js";
+import { isolatedGlobalDirs, makeDataDir, stubPipelines, stubSources } from "./helpers.js";
 
 const ACC = "acc-0123456789ab";
 const ME = "tester@fake.test";
@@ -650,6 +650,7 @@ test("server.close() disposes the default mail services first, synchronously, be
   const st = await registered.start(ACC, { sendId: uuid(), draft: draftBody() as never });
   const { createServer } = await import("../src/server.js");
   const server = createServer({
+    globalDirs: isolatedGlobalDirs(),
     dataDir: makeDataDir(),
     port: 0,
     heartbeatMs: 0,
@@ -827,6 +828,7 @@ test("createServer never sweeps a global cache by itself; the sweep runs only wh
   utimesSync(old, ancient, ancient);
   const { createServer } = await import("../src/server.js");
   const opts = {
+    globalDirs: isolatedGlobalDirs(),
     port: 0,
     heartbeatMs: 0,
     webDist: null,

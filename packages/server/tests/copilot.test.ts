@@ -26,7 +26,7 @@ import { CopilotHost } from "../src/copilot.js";
 import { JobRunner } from "../src/jobs.js";
 import { SERVER_LOG_EVENTS } from "../src/log.js";
 import { ProviderSettings } from "../src/providers.js";
-import { stubPipelines, stubSources } from "./helpers.js";
+import { isolatedGlobalDirs, stubPipelines, stubSources } from "./helpers.js";
 
 const failure = vi.hoisted(() => ({ target: "" }));
 vi.mock("node:fs", async (original) => {
@@ -549,6 +549,7 @@ test("real WS subscribes before snapshot, isolates chat events, and disconnect d
   const { createServer } = await import("../src/server.js");
   const { WebSocket } = await import("ws");
   const server = createServer({
+    globalDirs: isolatedGlobalDirs(),
     dataDir,
     port: 0,
     heartbeatMs: 0,

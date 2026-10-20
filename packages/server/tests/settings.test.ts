@@ -28,7 +28,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { WebSocket } from "ws";
 import { createServer, type RunningServer } from "../src/server.js";
 import { withAppearance } from "../src/settings.js";
-import { makeDataDir, makeWebDist, stubSources } from "./helpers.js";
+import { isolatedGlobalDirs, makeDataDir, makeWebDist, stubSources } from "./helpers.js";
 
 let srv: RunningServer | undefined;
 let port: number;
@@ -47,6 +47,7 @@ async function start(options: { web?: boolean } = {}): Promise<void> {
     );
   }
   srv = createServer({
+    globalDirs: isolatedGlobalDirs(),
     dataDir,
     port: 0,
     heartbeatMs: 0,

@@ -37,7 +37,6 @@ import {
   type AnnotationTarget,
   canonicalContainerText,
   canonicalSegmentsText,
-  DEFAULT_PORT,
   type DocIr,
   type IrBlock,
   type IrSection,
@@ -57,7 +56,7 @@ import {
   segmentsMarkdown,
   type Work,
 } from "@argelanderspace/core";
-import { type AppConfig, getConfig } from "@argelanderspace/infra";
+import { type AppConfig, getConfig, portOf } from "@argelanderspace/infra";
 import type { Command } from "commander";
 import { fail, resolveDataDir, withDataDir } from "./common.js";
 
@@ -67,7 +66,7 @@ import { fail, resolveDataDir, withDataDir } from "./common.js";
 
 /** Deep-link port: config `port` > `DEFAULT_PORT`. No environment variable takes part. */
 export function resolveLinkPort(config: AppConfig = getConfig()): number {
-  return config.port ?? DEFAULT_PORT;
+  return portOf(config);
 }
 
 /** `http://localhost:<port>/doc/<docId>[#<anchor>]` (decision 8). */

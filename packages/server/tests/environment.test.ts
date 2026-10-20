@@ -25,7 +25,7 @@ import {
 import { __setWriterSandboxForTests, type KeychainProbe } from "@argelanderspace/infra";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
 import { createServer, type RunningServer } from "../src/server.js";
-import { makeDataDir, stubSources } from "./helpers.js";
+import { isolatedGlobalDirs, makeDataDir, stubSources } from "./helpers.js";
 
 const ORIGINAL_PATH = process.env.PATH;
 let root: string;
@@ -60,6 +60,7 @@ function fillBin(except: string[] = []): void {
 
 async function start(extra: Partial<Parameters<typeof createServer>[0]> = {}): Promise<void> {
   srv = createServer({
+    globalDirs: isolatedGlobalDirs(),
     dataDir: (() => {
       const dir = makeDataDir();
       made.push(dirname(dir));

@@ -7,7 +7,7 @@
  * import it. A value is checked as the thing a TOML parser returned for the key.
  */
 
-import { DEFAULT_PORT } from "./config-defaults.js";
+import { DEFAULT_DATA_DIR, DEFAULT_PORT } from "./config-defaults.js";
 
 /** The groups of the settings page, in the order the page lists them. */
 export const SETTINGS_GROUPS = [
@@ -98,7 +98,7 @@ export const SETTINGS_SCHEMA = {
     table: null,
     name: "data_dir",
     type: { kind: "string", path: "relative" },
-    default: "./literatures",
+    default: DEFAULT_DATA_DIR,
     group: "project",
     ui: "edit",
     restart: true,

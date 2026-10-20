@@ -10,7 +10,7 @@ import { DEFAULT_PORT } from "@argelanderspace/contracts";
 import { afterEach, expect, test } from "vitest";
 import { WebSocket } from "ws";
 import { createServer, type RunningServer } from "../src/server.js";
-import { makeDataDir, stubSources } from "./helpers.js";
+import { isolatedGlobalDirs, makeDataDir, stubSources } from "./helpers.js";
 
 const running: RunningServer[] = [];
 const dataDirs: string[] = [];
@@ -24,6 +24,7 @@ async function start(port: number): Promise<number> {
   const dataDir = makeDataDir();
   dataDirs.push(dataDir);
   const srv = createServer({
+    globalDirs: isolatedGlobalDirs(),
     dataDir,
     port,
     heartbeatMs: 0,

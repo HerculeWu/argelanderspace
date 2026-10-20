@@ -117,6 +117,7 @@ beforeAll(async () => {
   const ads = createCredentialStore({ purpose: "ads", backend, dataDir: globalDir });
   expect((await ads.set(ADS_TOKEN_ID, MARK.token)).status).toBe("stored");
   srv = createServer({
+    globalDirs: { dataDir: globalDir, cacheDir: join(globalDir, "cache") },
     dataDir,
     port: 0,
     heartbeatMs: 0,

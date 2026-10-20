@@ -30,7 +30,7 @@ import {
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { ProviderSettings } from "../src/providers.js";
 import { createServer, type RunningServer } from "../src/server.js";
-import { makeDataDir, stubPipelines, stubSources } from "./helpers.js";
+import { isolatedGlobalDirs, makeDataDir, stubPipelines, stubSources } from "./helpers.js";
 
 const A = "doi:10.1/a";
 const C = "doi:10.1/c";
@@ -125,6 +125,7 @@ beforeEach(async () => {
     },
   });
   server = createServer({
+    globalDirs: isolatedGlobalDirs(),
     dataDir,
     port: 0,
     heartbeatMs: 0,

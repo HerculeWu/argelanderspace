@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { WebSocket } from "ws";
 import { statusDirFor } from "../src/deps.js";
 import { createServer, type RunningServer } from "../src/server.js";
-import { KNOWN_WORK_ID, makeDataDir, stubSources } from "./helpers.js";
+import { isolatedGlobalDirs, KNOWN_WORK_ID, makeDataDir, stubSources } from "./helpers.js";
 
 let srv: RunningServer;
 let port: number;
@@ -22,6 +22,7 @@ let dataDir: string;
 beforeEach(async () => {
   dataDir = makeDataDir();
   srv = createServer({
+    globalDirs: isolatedGlobalDirs(),
     dataDir,
     port: 0,
     heartbeatMs: 0,

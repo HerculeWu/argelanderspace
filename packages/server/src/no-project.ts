@@ -16,13 +16,7 @@ import {
   type SettingsValues,
   type StartupLocations,
 } from "@argelanderspace/contracts";
-import {
-  configFilePath,
-  type GlobalDirs,
-  pinGlobalDirs,
-  readConfigLeniently,
-  resolveGlobalDirsLeniently,
-} from "@argelanderspace/infra";
+import { type GlobalDirs, pinGlobalDirs } from "@argelanderspace/infra";
 import type { ServerType } from "@hono/node-server";
 import { serve } from "@hono/node-server";
 import type { Hono } from "hono";
@@ -43,7 +37,12 @@ export interface NoProjectServerOptions {
   webDist?: string | null;
   log?: ServerLog;
   configPath?: string;
-  globalDirs?: GlobalDirs;
+  /**
+   * The global data and cache directories for as long as this server runs (infra `pinGlobalDirs`), and the ones the
+   * settings show as running. Required: the start hands in the ones it resolved (`serveStart`); the server reads no
+   * config for them.
+   */
+  globalDirs: GlobalDirs;
   startup?: StartupLocations;
   settingsAtStart?: SettingsValues;
   heartbeatMs?: number;
@@ -86,9 +85,7 @@ export function createNoProjectServer(opts: NoProjectServerOptions): NoProjectSe
     path: opts.configPath,
     atStart: settingsAtStart,
     running: () => {
-      const dirs =
-        opts.globalDirs ??
-        resolveGlobalDirsLeniently(readConfigLeniently(opts.configPath ?? configFilePath())).dirs;
+      const dirs = opts.globalDirs;
       return {
         project_root: null,
         port: listeningPort(server) ?? null,
@@ -121,10 +118,7 @@ export function createNoProjectServer(opts: NoProjectServerOptions): NoProjectSe
     heartbeatMs: opts.heartbeatMs,
     snapshot: () => [],
   });
-  const releaseGlobalDirs = pinGlobalDirs(
-    opts.globalDirs ??
-      resolveGlobalDirsLeniently(readConfigLeniently(opts.configPath ?? configFilePath())).dirs
-  );
+  const releaseGlobalDirs = pinGlobalDirs(opts.globalDirs);
   const settingsWatcher = startSettingsWatcher({
     path: opts.configPath,
     intervalMs: opts.watchIntervalMs,

@@ -41,7 +41,7 @@ import { CopilotHost } from "../src/copilot.js";
 import { JobRunner } from "../src/jobs.js";
 import { AsyncLock } from "../src/lock.js";
 import { ProviderSettings } from "../src/providers.js";
-import { stubPipelines, stubSources } from "./helpers.js";
+import { isolatedGlobalDirs, stubPipelines, stubSources } from "./helpers.js";
 
 const failure = vi.hoisted(() => ({ target: "", once: false, after: -1 }));
 vi.mock("node:fs", async (original) => {
@@ -409,6 +409,7 @@ test("(c) two tabs on one conversation over a real WS: the same send from both i
   const { createServer } = await import("../src/server.js");
   const { WebSocket } = await import("ws");
   const server = createServer({
+    globalDirs: isolatedGlobalDirs(),
     dataDir,
     port: 0,
     heartbeatMs: 0,
@@ -842,6 +843,7 @@ test("(e) the real server is closed mid-run and started again on the same dataDi
   const { createServer } = await import("../src/server.js");
   const boot = async () => {
     const created = createServer({
+      globalDirs: isolatedGlobalDirs(),
       dataDir,
       port: 0,
       heartbeatMs: 0,

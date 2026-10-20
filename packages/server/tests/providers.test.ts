@@ -23,7 +23,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import { JobRunner } from "../src/jobs.js";
 import { ProviderSettings } from "../src/providers.js";
-import { stubPipelines, stubSources } from "./helpers.js";
+import { isolatedGlobalDirs, stubPipelines, stubSources } from "./helpers.js";
 
 let root: string;
 let settings: ProviderSettings;
@@ -385,6 +385,7 @@ test("client socket cancellation propagates through the real HTTP server to Pi p
   const { createServer } = await import("../src/server.js");
   settings = new ProviderSettings({ configDir: settings.configDir, testTimeoutMs: 5000 });
   const server = createServer({
+    globalDirs: isolatedGlobalDirs(),
     dataDir: join(root, "http-data"),
     port: 0,
     webDist: null,

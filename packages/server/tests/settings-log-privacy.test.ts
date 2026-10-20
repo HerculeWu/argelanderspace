@@ -18,7 +18,7 @@ import {
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { SERVER_LOG_EVENTS } from "../src/log.js";
 import { createServer, type RunningServer } from "../src/server.js";
-import { makeDataDir, stubSources } from "./helpers.js";
+import { isolatedGlobalDirs, makeDataDir, stubSources } from "./helpers.js";
 import { markersInText, ROOT } from "./log-markers.js";
 
 const MARK = {
@@ -55,6 +55,7 @@ beforeAll(async () => {
   );
   file = openLogFile({ dir: logDir, process: "serve" });
   srv = createServer({
+    globalDirs: isolatedGlobalDirs(),
     dataDir,
     port: 0,
     heartbeatMs: 0,

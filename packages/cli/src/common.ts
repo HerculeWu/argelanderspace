@@ -5,8 +5,7 @@
  * chain without an import cycle; `program.ts` re-exports `resolveDataDir`.
  */
 
-import { resolve } from "node:path";
-import { type AppConfig, getConfig } from "@argelanderspace/infra";
+import { type AppConfig, dataDirOf, getConfig } from "@argelanderspace/infra";
 import type { Command } from "commander";
 
 /**
@@ -17,7 +16,7 @@ export function resolveDataDir(
   opts: { dataDir?: string | undefined },
   config: AppConfig = getConfig()
 ): string {
-  return resolve(opts.dataDir ?? config.data_dir ?? "./literatures");
+  return dataDirOf(config, opts.dataDir);
 }
 
 /** Help text of every `--data-dir` option. */
