@@ -143,4 +143,57 @@ describe("useTextDocCreation", () => {
     expect(view.result.current.error).toBeNull();
     expect(onOpenDoc).not.toHaveBeenCalled();
   });
+
+  // Ticket 14: busy and error belong to the Work session they were set in; switching Work clears both.
+  it("switching Work while a create is in flight: the new Work is not busy and the late answer changes nothing", async () => {
+    const { view, onOpenDoc, create, answer, switchTo } = setup();
+    create();
+    expect(view.result.current.busy).toBe(true);
+    switchTo(B);
+    expect(view.result.current).toMatchObject({ busy: false, error: null });
+    await answer(OK);
+    expect(onOpenDoc).not.toHaveBeenCalled();
+    expect(view.result.current).toMatchObject({ busy: false, error: null });
+
+    create();
+    switchTo(A);
+    expect(view.result.current).toMatchObject({ busy: false, error: null });
+    await answer(fail(500, "late failure"));
+    expect(view.result.current).toMatchObject({ busy: false, error: null });
+    expect(onOpenDoc).not.toHaveBeenCalled();
+  });
+
+  // Ticket 14 fix round 1: the new Work can now create while the old Work's request is in flight; the old answer
+  // must not spend the new Work's attempt.
+  it.each([
+    ["201", OK],
+    ["409", fail(409, "gone")],
+  ])("a late %s for the old Work does not spend the new Work's attempt", async (_label, late) => {
+    const { view, create, switchTo } = setup();
+    create();
+    switchTo(B);
+    create();
+    const idB = h.calls[1]!.operationId;
+    await act(async () => {
+      h.calls[0]!.resolve(late);
+    });
+    await act(async () => {
+      h.calls[1]!.resolve(fail(0, "unreachable"));
+    });
+    expect(view.result.current).toMatchObject({ busy: false, error: "unreachable" });
+    create();
+    expect(h.calls[2]!.workId).toBe(B);
+    expect(h.calls[2]!.operationId).toBe(idB);
+  });
+
+  it("a failed create's error does not follow to another Work, nor come back with the Work's next session", async () => {
+    const { view, create, answer, switchTo } = setup();
+    create();
+    await answer(fail(500, "failed on A"));
+    expect(view.result.current).toMatchObject({ busy: false, error: "failed on A" });
+    switchTo(B);
+    expect(view.result.current).toMatchObject({ busy: false, error: null });
+    switchTo(A);
+    expect(view.result.current).toMatchObject({ busy: false, error: null });
+  });
 });
