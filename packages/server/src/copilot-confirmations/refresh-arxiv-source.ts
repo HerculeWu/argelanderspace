@@ -3,28 +3,11 @@ import { prepareArxivRefresh } from "../library-actions.js";
 import { type ConfirmationKind, detailOf } from "./kind.js";
 
 /** Replacing the text of an existing LaTeX Doc: the arXiv refresh, the Files tab dialog's annotation-risk step. */
-export function refreshArxivSourceKind(
-  workbench: Workbench | undefined
-): ConfirmationKind<"refresh_arxiv_source"> {
+export function refreshArxivSourceKind(workbench: Workbench | undefined) {
   return {
     action: "refresh_arxiv_source",
-    card: (id, runId, entry) => ({
-      id,
-      runId,
-      toolCallId: entry.toolCallId,
-      baseRev: entry.baseRev,
-      action: entry.action,
-      object: { kind: "doc", id: entry.docId, workId: entry.workId },
-      label: entry.label,
-      impact: entry.impact,
-      objectDigest: entry.objectDigest,
-    }),
-    requestedFields: (entry) => ({
-      action: entry.action,
-      workId: entry.workId,
-      docId: entry.docId,
-    }),
-    resolvedFields: (card) => ({
+    object: (entry) => ({ kind: "doc", id: entry.docId, workId: entry.workId }),
+    record: (card) => ({
       action: card.action,
       workId: card.object.workId,
       docId: card.object.id,
@@ -54,5 +37,5 @@ export function refreshArxivSourceKind(
     },
     revalidateOn: "doc",
     boundToNavView: false,
-  };
+  } satisfies ConfirmationKind<"refresh_arxiv_source", { workId: string; docId: string }>;
 }

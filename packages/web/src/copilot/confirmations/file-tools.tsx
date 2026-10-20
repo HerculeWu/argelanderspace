@@ -50,21 +50,18 @@ function FileBody({ card }: { card: EditCard | WriteCard }) {
 }
 
 export const runCommand: ConfirmationCardKind<CommandCard> = {
-  match: (card): card is CommandCard => card.action === "run_command",
   Body: CommandBody,
   confirmLabel: (t) => t("copilot.tools.allowOnce"),
   session: { label: (t) => t("copilot.tools.allowSessionCmd") },
   problemScope: "file",
 };
 export const editFile: ConfirmationCardKind<EditCard> = {
-  match: (card): card is EditCard => card.action === "edit_file",
   Body: FileBody,
   confirmLabel: (t) => t("copilot.tools.allowOnce"),
   session: { label: (t) => t("copilot.tools.allowSessionWrite") },
   problemScope: "file",
 };
 export const writeFile: ConfirmationCardKind<WriteCard> = {
-  match: (card): card is WriteCard => card.action === "write_file",
   Body: FileBody,
   confirmLabel: (t) => t("copilot.tools.allowOnce"),
   session: { label: (t) => t("copilot.tools.allowSessionWrite") },

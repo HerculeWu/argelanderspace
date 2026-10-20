@@ -86,6 +86,8 @@ import {
   type ConfirmationKind,
   type ConfirmationKinds,
   type ConfirmationTrigger,
+  confirmationCard,
+  confirmationRecord,
   createConfirmationKinds,
 } from "./copilot-confirmations/index.js";
 import {
@@ -1351,20 +1353,18 @@ export class CopilotHost {
       request: (entry) => {
         if (state.stopRequested || this.closed)
           return Promise.resolve({ outcome: "expired", reason: "stopped" } as const);
-        const id = randomUUID();
+        const kind = this.kindOf(entry.action);
+        // Made in memory only: the card is registered and shown after its record is saved.
+        const confirmation = confirmationCard(kind, randomUUID(), state.runId, entry);
         // Saved before the card exists: whatever the user sees can be explained by the record after a restart.
-        this.durableAppend(loaded, OPERATION_CONFIRMATION_TYPE, {
-          version: 1,
-          phase: "requested",
-          confirmationId: id,
-          runId: state.runId,
-          toolCallId: entry.toolCallId,
-          baseRev: entry.baseRev,
-          ...this.kindOf(entry.action).requestedFields(entry),
-        } satisfies OperationConfirmation);
+        this.durableAppend(
+          loaded,
+          OPERATION_CONFIRMATION_TYPE,
+          confirmationRecord(kind, confirmation, "requested")
+        );
         return new Promise<ConfirmationOutcome>((resolve) => {
-          this.confirmations.set(id, {
-            confirmation: this.kindOf(entry.action).card(id, state.runId, entry),
+          this.confirmations.set(confirmation.id, {
+            confirmation,
             loaded,
             state,
             resolve,
@@ -1422,16 +1422,11 @@ export class CopilotHost {
     outcome: "approved" | "declined" | "expired"
   ): void {
     const { confirmation } = pending;
-    this.durableAppend(pending.loaded, OPERATION_CONFIRMATION_TYPE, {
-      version: 1,
-      phase: "resolved",
-      confirmationId: confirmation.id,
-      runId: confirmation.runId,
-      toolCallId: confirmation.toolCallId,
-      baseRev: confirmation.baseRev,
-      outcome,
-      ...this.kindOf(confirmation.action).resolvedFields(confirmation),
-    } satisfies OperationConfirmation);
+    this.durableAppend(
+      pending.loaded,
+      OPERATION_CONFIRMATION_TYPE,
+      confirmationRecord(this.kindOf(confirmation.action), confirmation, "resolved", outcome)
+    );
   }
   private expireConfirmations(
     match: (pending: PendingConfirmation) => boolean,

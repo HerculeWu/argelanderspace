@@ -2,24 +2,11 @@ import type { Workbench } from "../copilot.js";
 import type { ConfirmationKind } from "./kind.js";
 
 /** Replacing the annotated reading text of a text Doc (ticket 29): the source panel's replacement dialog. */
-export function replaceTextReadingKind(
-  workbench: Workbench | undefined
-): ConfirmationKind<"replace_text_reading"> {
+export function replaceTextReadingKind(workbench: Workbench | undefined) {
   return {
     action: "replace_text_reading",
-    card: (id, runId, entry) => ({
-      id,
-      runId,
-      toolCallId: entry.toolCallId,
-      baseRev: entry.baseRev,
-      action: entry.action,
-      object: { kind: "doc", id: entry.docId },
-      label: entry.label,
-      impact: entry.impact,
-      objectDigest: entry.objectDigest,
-    }),
-    requestedFields: (entry) => ({ action: entry.action, docId: entry.docId }),
-    resolvedFields: (card) => ({ action: card.action, docId: card.object.id }),
+    object: (entry) => ({ kind: "doc", id: entry.docId }),
+    record: (card) => ({ action: card.action, docId: card.object.id }),
     askedLine: (entry) => `${entry.action} ${entry.docId}`,
     /**
      * `valid` (the Doc's source revision, annotated reading text, annotation count and revision and both content
@@ -47,5 +34,5 @@ export function replaceTextReadingKind(
     },
     revalidateOn: "doc",
     boundToNavView: false,
-  };
+  } satisfies ConfirmationKind<"replace_text_reading", { docId: string }>;
 }

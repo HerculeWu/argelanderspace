@@ -6,6 +6,7 @@ import {
   ArgumentPageSchema,
 } from "./argument-ops.js";
 import { type ContextCoverage, ContextCoverageSchema } from "./context-batch.js";
+import { ConfirmationBase } from "./copilot-confirmation-base.js";
 import {
   CopilotCommandConfirmationSchema,
   CopilotEditFileConfirmationSchema,
@@ -254,12 +255,6 @@ export interface CopilotConversationList {
   conversations: Conversation[];
   unreadable: { id: string; code: string }[];
 }
-const ConfirmationBase = {
-  id: CopilotIdSchema,
-  runId: CopilotIdSchema,
-  toolCallId: z.string().min(1),
-  baseRev: z.number().int().nonnegative(),
-};
 /**
  * A delete the model asked for and the user has not yet confirmed. Bound to this object and this
  * PlansFile.rev: any change to either makes it expire. The id is never shown to the model.
@@ -497,7 +492,8 @@ export type CopilotArgumentReplaceConfirmation = z.infer<
 export type CopilotMailSendConfirmation = z.infer<typeof CopilotMailSendConfirmationSchema>;
 export type CopilotMailDeleteConfirmation = z.infer<typeof CopilotMailDeleteConfirmationSchema>;
 export type CopilotMailMoveConfirmation = z.infer<typeof CopilotMailMoveConfirmationSchema>;
-export const CopilotConfirmationSchema = z.union([
+/** Every confirmation card; the one source of each kind's fields (the server's requests and records follow from it). */
+const CONFIRMATION_CARD_SCHEMAS = [
   CopilotMailSendConfirmationSchema,
   CopilotMailDeleteConfirmationSchema,
   CopilotMailMoveConfirmationSchema,
@@ -510,7 +506,8 @@ export const CopilotConfirmationSchema = z.union([
   CopilotCommandConfirmationSchema,
   CopilotEditFileConfirmationSchema,
   CopilotWriteFileConfirmationSchema,
-]);
+] as const;
+export const CopilotConfirmationSchema = z.union(CONFIRMATION_CARD_SCHEMAS);
 export type CopilotDocDeleteConfirmation = z.infer<typeof CopilotDocDeleteConfirmationSchema>;
 export type CopilotPlanConfirmation = z.infer<typeof CopilotPlanConfirmationSchema>;
 export type CopilotDocConfirmation = z.infer<typeof CopilotDocConfirmationSchema>;
@@ -521,18 +518,13 @@ export const CopilotConfirmationDecisionSchema = z
   .object({
     decision: z.enum(["approve", "decline"]),
     viewId: CopilotIdSchema,
-    action: z.enum([
-      "delete_plan",
-      "refresh_arxiv_source",
-      "delete_doc",
-      "delete_manuscript",
-      "replace_argument_graph",
-      "replace_text_reading",
-      "send_mail",
-      "delete_mail",
-      "move_mail",
-      ...FILE_TOOL_CONFIRMATION_ACTIONS,
-    ]),
+    /** Exactly the actions of the cards above. */
+    action: z.enum(
+      CONFIRMATION_CARD_SCHEMAS.map((card) => card.shape.action.value) as [
+        CopilotConfirmation["action"],
+        ...CopilotConfirmation["action"][],
+      ]
+    ),
     objectId: z.string().min(1),
     baseRev: z.number().int().nonnegative(),
     /**

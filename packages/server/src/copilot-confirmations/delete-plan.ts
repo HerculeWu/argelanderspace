@@ -3,23 +3,11 @@ import { describeDeleteTarget } from "../plans-actions.js";
 import { type ConfirmationKind, detailOf } from "./kind.js";
 
 /** A whole Plan's delete (ticket 11): bound to the plans file's rev and the plan's stored content. */
-export function deletePlanKind(workbench: Workbench | undefined): ConfirmationKind<"delete_plan"> {
+export function deletePlanKind(workbench: Workbench | undefined) {
   return {
     action: "delete_plan",
-    card: (id, runId, entry) => ({
-      id,
-      runId,
-      toolCallId: entry.toolCallId,
-      baseRev: entry.baseRev,
-      action: entry.action,
-      object: { kind: "plan", id: entry.planId, planId: entry.planId },
-      label: entry.label,
-      planName: entry.planName,
-      impact: entry.impact,
-      objectDigest: entry.objectDigest,
-    }),
-    requestedFields: (entry) => ({ action: entry.action, planId: entry.planId }),
-    resolvedFields: (card) => ({ action: card.action, planId: card.object.planId }),
+    object: (entry) => ({ kind: "plan", id: entry.planId, planId: entry.planId }),
+    record: (card) => ({ action: card.action, planId: card.object.planId }),
     askedLine: (entry) => `${entry.action} ${entry.planId}`,
     /** The plan's rev and content digest still match what the card showed (synchronous). */
     check: (card) => {
@@ -43,5 +31,5 @@ export function deletePlanKind(workbench: Workbench | undefined): ConfirmationKi
     },
     revalidateOn: "plans",
     boundToNavView: false,
-  };
+  } satisfies ConfirmationKind<"delete_plan", { planId: string }>;
 }

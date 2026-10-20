@@ -5,13 +5,11 @@
  * and it gives no way to approve: only the real user answers a card.
  */
 import { createHash } from "node:crypto";
-import type {
-  CopilotOperation,
-  DocReplaceImpact,
-  FileToolChange,
-  TextReplacementImpact,
-  WriterDeleteImpact,
-} from "@argelanderspace/contracts";
+import type { CopilotOperation } from "@argelanderspace/contracts";
+import type { ConfirmationRequest } from "./copilot-confirmations/index.js";
+
+/** What the confirmation card shows: derived from the contracts' card schema, one kind of request per action. */
+export type { ConfirmationRequest } from "./copilot-confirmations/index.js";
 
 /** What the host remembers about a business write so a repeat or a restart never guesses. */
 export type KnownOperation =
@@ -50,163 +48,6 @@ export type ConfirmationOutcome =
   | { outcome: "expired"; reason: "stale" | "stopped" | "restart" | "closed" }
   /** A system error at click time (data unreadable): not a change, and never reported as one. */
   | { outcome: "expired"; reason: "error"; detail: string };
-/** What the confirmation card shows: one of the nine kinds of request below, each with exactly what it binds. */
-export type ConfirmationRequest =
-  | {
-      toolCallId: string;
-      /** Mail ticket 09: sending a draft. The card shows this very snapshot and this very snapshot is sent. */
-      action: "send_mail";
-      accountId: string;
-      messageId: string;
-      account: { id: string; address: string; displayName: string };
-      kind: "new" | "reply" | "forward";
-      to: { name: string; address: string }[];
-      cc: { name: string; address: string }[];
-      bcc: { name: string; address: string }[];
-      subject: string;
-      text: string;
-      attachments: { filename: string; contentType: string; size: number }[];
-      inReplyTo: string | null;
-      baseRev: number;
-      objectDigest: string;
-    }
-  | {
-      toolCallId: string;
-      /** Mail ticket 09: moving a message to Trash (or deleting it for good from Trash). */
-      action: "delete_mail";
-      accountId: string;
-      account: { id: string; address: string; displayName: string };
-      message: {
-        folder: string;
-        uid: number;
-        uidValidity: number;
-        from: { name: string; address: string } | null;
-        subject: string;
-        date: string | null;
-      };
-      permanent: boolean;
-      baseRev: number;
-      objectDigest: string;
-    }
-  | {
-      toolCallId: string;
-      /** Mail ticket 09: moving a message to another folder. */
-      action: "move_mail";
-      accountId: string;
-      account: { id: string; address: string; displayName: string };
-      message: {
-        folder: string;
-        uid: number;
-        uidValidity: number;
-        from: { name: string; address: string } | null;
-        subject: string;
-        date: string | null;
-      };
-      destination: string;
-      baseRev: number;
-      objectDigest: string;
-    }
-  | {
-      toolCallId: string;
-      /** Replacing the annotated reading text of a text Doc (copilot ticket 29): the source panel's replacement dialog. */
-      action: "replace_text_reading";
-      docId: string;
-      label: string;
-      impact: TextReplacementImpact;
-      baseRev: number;
-      objectDigest: string;
-    }
-  | {
-      toolCallId: string;
-      /** Only a whole Plan waits for the user; a Task delete is immediate like on the Plan page. */
-      action: "delete_plan";
-      planId: string;
-      label: string;
-      planName: string;
-      impact: { tasks: number; openTasks: number };
-      baseRev: number;
-      /** Content digest of the target at request time; a change that leaves the rev alone still expires the card. */
-      objectDigest: string;
-    }
-  | {
-      toolCallId: string;
-      /**
-       * Replacing the text of an existing LaTeX Doc: the arXiv refresh. The Files tab dialog's annotation-risk step.
-       */
-      action: "refresh_arxiv_source";
-      workId: string;
-      docId: string;
-      label: string;
-      impact: DocReplaceImpact;
-      /** The annotations rev the count was read at (0 when it could not be read). */
-      baseRev: number;
-      objectDigest: string;
-    }
-  | {
-      toolCallId: string;
-      /** The Files tab's "delete document" dialog: the global physical delete of one Doc. */
-      action: "delete_doc";
-      docId: string;
-      format: "pdf" | "latex" | "text";
-      works: { id: string; title: string; main: boolean; remaining: number }[];
-      impact: DocReplaceImpact;
-      /** The annotations revision the count was read at (0 when it could not be read). */
-      baseRev: number;
-      objectDigest: string;
-    }
-  | {
-      toolCallId: string;
-      /** Argument graph ticket 09: replacing or clearing a graph that holds arguments (the page's Clear dialog, widened). */
-      action: "replace_argument_graph";
-      workId: string;
-      label: string;
-      mode: "replace" | "clear";
-      current: { arguments: number; edges: number };
-      next: { arguments: number; edges: number };
-      baseRev: number;
-      objectDigest: string;
-    }
-  | {
-      toolCallId: string;
-      /** Copilot ticket 57: one command of the shell tool, asked before it runs (permission "ask"). */
-      action: "run_command";
-      shell: "bash" | "powershell";
-      command: string;
-      cwd: string;
-      baseRev: number;
-    }
-  | {
-      toolCallId: string;
-      /** Copilot ticket 57: one edit of a file, shown as the diff it would make. */
-      action: "edit_file";
-      path: string;
-      /** The absolute path it really lands on, links and `..` resolved. */
-      resolved: string;
-      cwd: string;
-      change: FileToolChange;
-      baseRev: number;
-    }
-  | {
-      toolCallId: string;
-      /** Copilot ticket 57: creating or overwriting a file. */
-      action: "write_file";
-      path: string;
-      /** The absolute path it really lands on, links and `..` resolved. */
-      resolved: string;
-      cwd: string;
-      change: FileToolChange;
-      baseRev: number;
-    }
-  | {
-      toolCallId: string;
-      /** The Writer list's delete dialog: the physical delete of one manuscript folder. */
-      action: "delete_manuscript";
-      manuscriptId: string;
-      label: string;
-      impact: WriterDeleteImpact;
-      baseRev: number;
-      objectDigest: string;
-    };
 /**
  * The only way a delete can proceed. `request` makes the application show a card to the real user and
  * resolves with the user's decision. The tool never sees an id or a way to answer: it cannot approve.

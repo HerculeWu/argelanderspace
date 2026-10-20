@@ -15,7 +15,6 @@ function RefreshArxivSourceBody({ card }: { card: RefreshArxivSourceConfirmation
 }
 
 export const refreshArxivSource: ConfirmationCardKind<RefreshArxivSourceConfirmation> = {
-  match: (card): card is RefreshArxivSourceConfirmation => card.action === "refresh_arxiv_source",
   Body: RefreshArxivSourceBody,
   confirmLabel: (t) => t("library.detail.acquisition.confirmUpdate"),
   tone: "danger",

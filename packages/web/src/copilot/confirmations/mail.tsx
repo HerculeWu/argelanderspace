@@ -58,14 +58,12 @@ type DeleteMailConfirmation = Extract<CopilotConfirmation, { action: "delete_mai
 type MoveMailConfirmation = Extract<CopilotConfirmation, { action: "move_mail" }>;
 
 export const sendMail: ConfirmationCardKind<SendMailConfirmation> = {
-  match: (card): card is SendMailConfirmation => card.action === "send_mail",
   Body: MailCardBody,
   confirmLabel: mailConfirmLabel,
   problemScope: "mail",
 };
 
 export const deleteMail: ConfirmationCardKind<DeleteMailConfirmation> = {
-  match: (card): card is DeleteMailConfirmation => card.action === "delete_mail",
   Body: MailCardBody,
   confirmLabel: mailConfirmLabel,
   tone: "danger",
@@ -73,7 +71,6 @@ export const deleteMail: ConfirmationCardKind<DeleteMailConfirmation> = {
 };
 
 export const moveMail: ConfirmationCardKind<MoveMailConfirmation> = {
-  match: (card): card is MoveMailConfirmation => card.action === "move_mail",
   Body: MailCardBody,
   confirmLabel: mailConfirmLabel,
   problemScope: "mail",
