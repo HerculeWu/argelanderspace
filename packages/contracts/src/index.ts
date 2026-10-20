@@ -41,6 +41,7 @@ export * from "./providers.js";
 export * from "./reader-coherence.js";
 export * from "./reader-ops.js";
 export * from "./settings-api.js";
+export * from "./settings-change.js";
 export * from "./settings-schema.js";
 export * from "./tex-ir.js";
 export * from "./text-doc.js";

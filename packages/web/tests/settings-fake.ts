@@ -2,19 +2,26 @@
  * A stand-in for the server's settings endpoints in web tests: `GET /api/settings` and `PUT /api/settings/:key`
  * over an in-memory "file" (the keys it sets), answering with the shapes of contracts `settings-api.ts`. A test
  * routes its fetch stub through `handle` and looks at `file`, `puts` and what the page shows.
+ *
+ * A change is judged as the server judges it, by the same functions (contracts `settings-change.ts`): the same
+ * stages in the same order, the same status table, the same `restartPending`. What the server learns from the file
+ * — a refusal a test forces (`refuse`, `uneditable`), the file's `state` — is put in at the stage it belongs to.
  */
 import {
-  checkSettingValue,
   defaultSettings,
   isSettingKey,
+  judgeSettingChange,
   redactSettingsValues,
+  restartPendingKeys,
   SETTINGS_SCHEMA,
   type SettingChangeRefusal,
+  type SettingChangeStage,
   type SettingKey,
   type SettingsFileState,
   type SettingsProblem,
   type SettingsSnapshot,
   type SettingValue,
+  settingRefusalStage,
 } from "@argelanderspace/contracts";
 
 export interface FakeSettings {
@@ -23,7 +30,10 @@ export interface FakeSettings {
   problems: SettingsProblem[];
   uneditable: Partial<Record<SettingKey, SettingChangeRefusal>>;
   state: SettingsFileState;
-  /** Refuse the next changes of a key with this category (the file stays as it is). */
+  /**
+   * Refuse the next changes of a key with this category (the file stays as it is), at the first stage that gives it
+   * (contracts `settingRefusalStage`): a change refused earlier, as the server would, is refused for that reason.
+   */
   refuse: Partial<Record<SettingKey, SettingChangeRefusal>>;
   /** Where the "running process" keeps its data (fixed at its start; the file's state does not change it). */
   startup: SettingsSnapshot["startup"];
@@ -108,9 +118,7 @@ export function fakeSettings(file: Partial<Record<SettingKey, SettingValue>> = {
         legacy: fake.legacy,
         startup: fake.startup,
         running: fake.running,
-        restartPending: (Object.keys(SETTINGS_SCHEMA) as SettingKey[]).filter(
-          (key) => !readonly && SETTINGS_SCHEMA[key].restart && !(fake.running.from_flag as string[]).includes(key) && values[key] !== atStart[key]
-        ),
+        restartPending: restartPendingKeys(values, atStart, { readonly, fromFlag: fake.running.from_flag }),
       };
     },
     handle(input, init) {
@@ -125,28 +133,37 @@ export function fakeSettings(file: Partial<Record<SettingKey, SettingValue>> = {
       }
       if (!url.startsWith("/api/settings/") || method !== "PUT") return null;
       const key = decodeURIComponent(url.slice("/api/settings/".length));
-      const body = JSON.parse(String(init?.body)) as { set?: SettingValue; reset?: true };
+      let body: unknown;
+      try {
+        body = JSON.parse(String(init?.body));
+      } catch {
+        body = undefined; // not JSON: not a change (invalid_request)
+      }
       fake.puts.push({ key, body });
       if (fake.down) return Promise.reject(new TypeError("fetch failed"));
       const refuse = (reason: SettingChangeRefusal, status: number) =>
         new Promise<Response>((resolve) => setTimeout(() => resolve(json({ ok: false, reason }, status)), fake.refusalDelayMs));
-      if (!isSettingKey(key)) return refuse("unknown_key", 404);
-      if (SETTINGS_SCHEMA[key].ui !== "edit") return refuse("not_editable", 422);
-      const forced = fake.refuse[key] ?? fake.uneditable[key];
-      if (forced) return refuse(forced, 409);
-      if (fake.state === "unparseable") return refuse("unparseable", 409);
-      if (body.reset !== true && (body.set === undefined || checkSettingValue(key, body.set) !== null)) return refuse("invalid_value", 400);
+      // What the "file" says at the stages that need it: a forced refusal at its stage, then the file's state.
+      const given: Partial<Record<SettingChangeStage, SettingChangeRefusal>> = {};
+      const forced = isSettingKey(key) ? (fake.refuse[key] ?? fake.uneditable[key]) : undefined;
+      if (forced) given[settingRefusalStage(forced)] = forced;
+      if (fake.state === "unreadable") given.file ??= "unreadable";
+      if (fake.state === "unparseable") given.text ??= "unparseable";
+      const judged = judgeSettingChange({ key, body, given });
+      if (!judged.ok) return refuse(judged.reason, judged.status);
+      const change = judged.change;
+      const changedKey = judged.key;
       // The change reaches the "file" now, or after its delay.
       const write = (): Response => {
         let changed: boolean;
-        if (body.reset === true) {
-          changed = key in fake.file;
-          delete fake.file[key];
+        if ("reset" in change) {
+          changed = changedKey in fake.file;
+          delete fake.file[changedKey];
         } else {
-          changed = fake.file[key] !== body.set;
-          fake.file[key] = body.set as SettingValue;
+          changed = fake.file[changedKey] !== change.set;
+          fake.file[changedKey] = change.set;
         }
-        fake.problems = fake.problems.filter((problem) => problem.key !== key);
+        fake.problems = fake.problems.filter((problem) => problem.key !== changedKey);
         return json({ ok: true, changed, settings: fake.snapshot() });
       };
       const delay = fake.writeDelays.shift();

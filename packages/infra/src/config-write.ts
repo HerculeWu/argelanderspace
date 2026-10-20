@@ -36,15 +36,10 @@ import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import { access, chmod, lstat, mkdir, open, realpath, rename, rm, stat } from "node:fs/promises";
 import { dirname } from "node:path";
-import { isSettingKey } from "@argelanderspace/contracts";
+import { settingChangeKey, settingChangeOf } from "@argelanderspace/contracts";
 import lockfile from "proper-lockfile";
 import { configFilePath } from "./config.js";
-import {
-  type ConfigChange,
-  type ConfigEditRefusal,
-  editConfigText,
-  normalizeConfigChange,
-} from "./config-edit.js";
+import { type ConfigChange, type ConfigEditRefusal, editConfigText } from "./config-edit.js";
 
 /**
  * Why the file was not changed: one of the line editor's refusals, or
@@ -127,9 +122,11 @@ export async function writeSetting(
   options: SettingWriteOptions = {}
 ): Promise<SettingWriteResult> {
   try {
-    // Settled before anything is looked at or made on disk; the line editor would say the same.
-    if (!isSettingKey(key)) return { ok: false, reason: "unknown_key" };
-    const change = normalizeConfigChange(asked);
+    // Settled before anything is looked at or made on disk (contracts `settings-change.ts`, the key and the shape);
+    // the line editor would say the same.
+    const keyed = settingChangeKey(key, "any");
+    if (!keyed.ok) return { ok: false, reason: keyed.reason };
+    const change = settingChangeOf(asked);
     if (change === null) return { ok: false, reason: "invalid_value" };
 
     const path = options.path ?? configFilePath();

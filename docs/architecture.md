@@ -162,7 +162,7 @@ TexDocIr 直接落盘，含 source/meta 身份、references/bib/refsManifest/cit
 
 ### 设置接口、文件监视与界面偏好（desktop-app 票 10）
 
-实现在 server 的 `settings.ts`；应答的形状、拒绝类别表与 WebSocket 消息在 contracts 的 `settings-api.ts`。硬契约里对应的条文是 [contracts 的「设置与 config.toml」](contracts.md#设置与-configtoml2026-10-13-批准desktop-app-票-10-写入)。
+实现在 server 的 `settings.ts`；应答的形状、拒绝类别表与 WebSocket 消息在 contracts 的 `settings-api.ts`。修改的判定里不需要文件的部分在 contracts 的 `settings-change.ts`（架构深化票 05）：下表的状态码、各段的先后（键 → 请求 → 文件 → 值 → 文本 → 替换）、键 / 请求形状 / 值三段的判定与 `restartPending`；server 的路由、infra 的 `writeSetting` 与按行修改器、web 测试的设置替身在各自原来的位置调用它们，需要文件的几段仍由 infra 判定。硬契约里对应的条文是 [contracts 的「设置与 config.toml」](contracts.md#设置与-configtoml2026-10-13-批准desktop-app-票-10-写入)。
 
 **接口**（应答一律 `Cache-Control: no-store`）：
 

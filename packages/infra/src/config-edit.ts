@@ -48,11 +48,13 @@
 
 import { isDeepStrictEqual } from "node:util";
 import {
-  checkSettingValue,
   isSettingKey,
   type SettingKey,
   type SettingValue,
+  settingChangeKey,
+  settingChangeOf,
   settingDef,
+  settingValueRefusal,
 } from "@argelanderspace/contracts";
 import { parse as parseToml, TomlDate } from "smol-toml";
 import { CONFIG_FILE_BOM as BOM } from "./config.js";
@@ -133,22 +135,6 @@ interface Layout {
 class ScanError extends Error {}
 
 const BARE_KEY = /[A-Za-z0-9_-]/;
-
-/**
- * A change as the rest of this file uses it, or `null` when it is not one: exactly `{ set: scalar }` or exactly
- * `{ reset: true }`. Minus zero becomes zero (it is written `0` and reads back as zero).
- */
-export function normalizeConfigChange(change: unknown): ConfigChange | null {
-  if (typeof change !== "object" || change === null || Array.isArray(change)) return null;
-  const keys = Object.keys(change);
-  if (keys.length !== 1) return null;
-  const record = change as Record<string, unknown>;
-  if (keys[0] === "reset") return record.reset === true ? { reset: true } : null;
-  if (keys[0] !== "set") return null;
-  const value = record.set;
-  if (typeof value === "number") return { set: value === 0 ? 0 : value };
-  return typeof value === "string" || typeof value === "boolean" ? { set: value } : null;
-}
 
 /** The statements of `text` from `start` on. Throws ScanError on anything it does not recognise. */
 function scan(text: string, start: number): Layout {
@@ -398,12 +384,6 @@ function isPlainTable(value: unknown): value is Record<string, unknown> {
   );
 }
 
-/** No control character and no unpaired surrogate: what a basic string can hold on one line and UTF-8 can carry. */
-function representable(value: string): boolean {
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are exactly what is looked for
-  return !/[\u0000-\u001f\u007f]/.test(value) && !/\p{Cs}/u.test(value);
-}
-
 function literal(value: SettingValue): string {
   if (typeof value === "string") {
     return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
@@ -456,16 +436,14 @@ export function proposeConfigEdit(
 ): ConfigEditResult {
   const refuse = (reason: ConfigEditRefusal): ConfigEditResult => ({ ok: false, reason });
   const unchanged: ConfigEditResult = { ok: true, text, changed: false };
-  if (!isSettingKey(key)) return refuse("unknown_key");
-  const change = normalizeConfigChange(asked);
+  // The key, the shape of the change and the value: contracts `settings-change.ts`, in this order.
+  const keyed = settingChangeKey(key, "any");
+  if (!keyed.ok) return refuse(keyed.reason);
+  const change = settingChangeOf(asked);
   if (change === null) return refuse("invalid_value");
-  const { table, name } = settingDef(key);
-  if ("set" in change) {
-    if (checkSettingValue(key, change.set) !== null) return refuse("invalid_value");
-    if (typeof change.set === "string" && !representable(change.set)) {
-      return refuse("unrepresentable_value");
-    }
-  }
+  const { table, name } = settingDef(keyed.key);
+  const valueRefusal = settingValueRefusal(keyed.key, change);
+  if (valueRefusal !== null) return refuse(valueRefusal);
 
   const bodyStart = text.startsWith(BOM) ? 1 : 0;
   const doc = parseOrNull(text.slice(bodyStart));
@@ -615,7 +593,7 @@ export function checkConfigEdit(
   key: SettingKey,
   asked: ConfigChange
 ): boolean {
-  const change = normalizeConfigChange(asked);
+  const change = settingChangeOf(asked);
   if (change === null) return false;
   if (original.startsWith(BOM) !== candidate.startsWith(BOM)) return false;
   const body = (text: string): string => (text.startsWith(BOM) ? text.slice(1) : text);
@@ -656,7 +634,7 @@ export function editConfigText(
   change: ConfigChange,
   propose: typeof proposeConfigEdit = proposeConfigEdit
 ): ConfigEditResult {
-  if (isSettingKey(key) && normalizeConfigChange(change) === null)
+  if (isSettingKey(key) && settingChangeOf(change) === null)
     return { ok: false, reason: "invalid_value" };
   const proposed = propose(text, key, change);
   if (!proposed.ok || !proposed.changed) return proposed;
