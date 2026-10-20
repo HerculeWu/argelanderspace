@@ -13,8 +13,21 @@ export type PanePage = "plan" | "library" | "doc" | "write" | "mail" | "settings
 /** What a view action answers; the detail words are the contract's own. */
 export type ViewActionOutcome = Pick<CopilotViewActionResult, "ok" | "detail" | "http" | "folded">;
 export type PaneStatus = PageContext["status"];
+/**
+ * The page fields of a PageContext, in the order the Shell publishes them: the Plan page; the Library page, its
+ * exploration (Discovery) and its argument graph view (each replaces `library` while open); the Reader and the PDF
+ * Reader of the ACTIVE pane (the page the user is working in, and the one navigation acts on) and a text Doc's source;
+ * the Writer of the ACTIVE pane (the list or the open manuscript: saved content, and the draft apart from it); the Mail
+ * page of the ACTIVE pane (untrusted external data: the open message and the list headers).
+ */
+export const PAGE_FIELD_KEYS = ["plan", "library", "discovery", "argument", "reader", "pdf", "textSource", "writer", "mail"] as const satisfies readonly (keyof PageContext)[];
+type PageFieldKey = (typeof PAGE_FIELD_KEYS)[number];
 /** The page fields of a PageContext; an adapter fills only its own. */
-export type PageFields = Partial<Pick<PageContext, "plan" | "library" | "discovery" | "argument" | "reader" | "pdf" | "textSource" | "writer" | "mail">>;
+export type PageFields = Partial<Pick<PageContext, PageFieldKey>>;
+/** Every page field, in publishing order: what the page reported, else null. */
+export function pageFields(fields: PageFields): { [K in PageFieldKey]: NonNullable<PageContext[K]> | null } {
+  return Object.fromEntries(PAGE_FIELD_KEYS.map((key) => [key, fields[key] ?? null])) as { [K in PageFieldKey]: NonNullable<PageContext[K]> | null };
+}
 
 /**
  * any: with no pane of this page the active pane is switched to it (or `open` shows it);

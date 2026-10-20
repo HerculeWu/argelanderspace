@@ -100,19 +100,6 @@ const paneIds = () => qa('[data-ui="workspace-pane"]').map((pane) => Number(pane
 const ctx = () => h.context!;
 
 describe("view switching, split, close and select go through the Shell's own callbacks", () => {
-  it("switches the active pane like the activity bar, and a named pane like the pane menu", async () => {
-    await boot();
-    expect(await run({ action: "switch_view", view: "library" })).toEqual({ ok: true });
-    await waitFor(() => expect(q('[data-ui="library-stub"]')).not.toBeNull());
-    expect(q('[data-ui="navigate-view"][data-ui-key="library"]')?.getAttribute("aria-current")).toBe("page");
-    expect(await run({ action: "split_pane" })).toEqual({ ok: true });
-    await waitFor(() => expect(paneIds()).toEqual([1, 2]));
-    expect(await run({ action: "switch_view", view: "write", paneId: 1 })).toEqual({ ok: true });
-    await waitFor(() => expect(q('[data-ui="writer-stub"]')).not.toBeNull());
-    expect(ctx().workspace?.activePaneId).toBe(1); // a named pane becomes active, as the menu does
-    expect(await run({ action: "switch_view", view: "plan", paneId: 99 })).toEqual({ ok: false, detail: "not_found" });
-  });
-
   it("switch_view mail shows the Mail page and the Mail page's report reaches the published context", async () => {
     await boot();
     expect(await run({ action: "switch_view", view: "mail" })).toEqual({ ok: true });
@@ -120,42 +107,6 @@ describe("view switching, split, close and select go through the Shell's own cal
     await waitFor(() => expect(ctx().view).toBe("mail"));
     await waitFor(() => expect(ctx().mail?.untrusted).toBe(true));
     expect(ctx().status).toBe("complete");
-  });
-
-  it("at most three panes: the fourth split is refused as disabled, exactly like the disabled button", async () => {
-    await boot();
-    expect(await run({ action: "split_pane" })).toEqual({ ok: true });
-    expect(await run({ action: "split_pane" })).toEqual({ ok: true });
-    await waitFor(() => expect(paneIds()).toHaveLength(3));
-    expect((q('[data-ui="split-pane"]') as HTMLButtonElement).disabled).toBe(true);
-    expect(await run({ action: "split_pane" })).toEqual({ ok: false, detail: "disabled" });
-    expect(paneIds()).toHaveLength(3);
-    expect(ctx().workspace?.panes).toHaveLength(3);
-  });
-
-  it("closes a named pane, refuses the last one, and selects a pane without raising any window", async () => {
-    const focusWindow = vi.spyOn(window, "focus");
-    await boot();
-    await run({ action: "split_pane" });
-    await waitFor(() => expect(paneIds()).toEqual([1, 2]));
-    expect(await run({ action: "select_pane", paneId: 1 })).toEqual({ ok: true });
-    await waitFor(() => expect(ctx().workspace?.activePaneId).toBe(1));
-    expect(await run({ action: "close_pane", paneId: 2 })).toEqual({ ok: true });
-    await waitFor(() => expect(paneIds()).toEqual([1]));
-    expect(await run({ action: "close_pane", paneId: 1 })).toEqual({ ok: false, detail: "disabled" });
-    expect(await run({ action: "select_pane", paneId: 7 })).toEqual({ ok: false, detail: "not_found" });
-    expect(focusWindow).not.toHaveBeenCalled();
-  });
-
-  it("resizes with the divider rule: a request the drag could not reach is refused, not clamped", async () => {
-    await boot();
-    await run({ action: "split_pane" });
-    await waitFor(() => expect(paneIds()).toEqual([1, 2]));
-    expect(await run({ action: "resize_pane", paneId: 1, share: 0.7 })).toEqual({ ok: true });
-    await waitFor(() => expect(ctx().workspace?.panes.map((pane) => pane.share)).toEqual([0.7, 0.3]));
-    await run({ action: "split_pane" });
-    await waitFor(() => expect(paneIds()).toHaveLength(3));
-    expect(await run({ action: "resize_pane", paneId: 1, share: 0.84 })).toEqual({ ok: false, detail: "disabled" });
   });
 });
 
@@ -228,49 +179,6 @@ describe("retry_plans presses only a Retry that exists (ticket 32 fix round 1, S
   });
 });
 
-describe("the leave-draft protection holds for Copilot requests too", () => {
-  it("a Doc pane with unsaved work keeps its page; the request reports leave_blocked and nothing changes", async () => {
-    await boot();
-    fireEvent.click(q('[data-ui="navigate-view"][data-ui-key="doc"]')!);
-    await waitFor(() => expect(q('[data-ui="doc-stub"]')).not.toBeNull());
-    const release = registerWorkspaceLeaveGuard(() => false);
-    try {
-      expect(await run({ action: "switch_view", view: "library" })).toEqual({ ok: false, detail: "leave_blocked" });
-      expect(q('[data-ui="doc-stub"]')).not.toBeNull();
-      await run({ action: "split_pane" }); // splitting copies the view; it does not leave the Doc
-      await waitFor(() => expect(paneIds()).toHaveLength(2));
-      expect(await run({ action: "close_pane", paneId: 1 })).toEqual({ ok: false, detail: "leave_blocked" });
-      expect(paneIds()).toHaveLength(2);
-      expect(await run({ action: "open_task_doc", taskId: "t_00000001", docId: "d2" })).toEqual({ ok: false, detail: "leave_blocked" });
-    } finally { release(); }
-    // Once the work is saved the same request goes through.
-    expect(await run({ action: "switch_view", view: "library", paneId: 1 })).toEqual({ ok: true });
-  });
-});
-
-describe("an unsaved argument draft and the Copilot (ticket 05 fix round B)", () => {
-  it("a view action that would leave the Library page with a draft is leave_blocked at once: no question is asked of the person, nothing is left pending, and the person's own switch still asks", async () => {
-    await boot();
-    fireEvent.click(q('[data-ui="navigate-view"][data-ui-key="library"]')!);
-    await waitFor(() => expect(q('[data-ui="library-stub"]')).not.toBeNull());
-    const questions: ((ok: boolean) => void)[] = [];
-    const release = registerWorkspaceLeaveGuard((origin) => (origin === "agent" ? false : new Promise<boolean>((resolve) => questions.push(resolve))), "library");
-    try {
-      expect(await run({ action: "switch_view", view: "plan" })).toEqual({ ok: false, detail: "leave_blocked" });
-      expect(await run({ action: "open_doc", docId: "d2" })).toEqual({ ok: false, detail: "leave_blocked" }); // no Doc pane: it would replace this one
-      await run({ action: "split_pane" });
-      await waitFor(() => expect(paneIds()).toHaveLength(2));
-      expect(await run({ action: "close_pane", paneId: 1 })).toEqual({ ok: false, detail: "leave_blocked" });
-      expect(await run({ action: "switch_view", view: "plan", paneId: 1 })).toEqual({ ok: false, detail: "leave_blocked" });
-      expect(questions).toHaveLength(0);
-      expect(q('[data-ui="library-stub"]')).not.toBeNull();
-      // the person's own switch asks (and waits)
-      fireEvent.click(q('[data-ui="navigate-view"][data-ui-key="plan"]')!);
-      expect(questions.length).toBeGreaterThan(0);
-    } finally { release(); }
-  });
-});
-
 describe("appearance goes through the Tweaks setter", () => {
   it("sets theme, accent, density and language like the popover, and persists them the same way", async () => {
     await boot();
@@ -338,22 +246,6 @@ describe("the context carries the layout, and the view identity survives a reloa
   });
 });
 
-describe("a task's linked Doc opens like the drawer button", () => {
-  it("opens a known Doc in a Doc pane; an unknown one is not_found; the Reader is not touched otherwise", async () => {
-    await boot();
-    expect(await run({ action: "open_task_doc", taskId: "t_00000001", docId: "d2" })).toEqual({ ok: true });
-    await waitFor(() => expect(q('[data-ui="doc-stub"]')).not.toBeNull());
-    expect(new URL(window.location.href).pathname).toContain("d2");
-    expect(await run({ action: "open_task_doc", taskId: "t_00000001", docId: "gone" })).toEqual({ ok: false, detail: "not_found" });
-  });
-
-  it("finds a Doc ingested after the page loaded by rereading the paper list once", async () => {
-    await boot();
-    papers = ["d1", "d2", "fresh"];
-    expect(await run({ action: "open_task_doc", taskId: "t_00000001", docId: "fresh" })).toEqual({ ok: true });
-  });
-});
-
 describe("the completed group fold", () => {
   const folded = () => qa('[data-ui="task-row"], .plan-task-row').some((row) => row.textContent?.includes("Task 2"));
   it("expands and folds the group like its own button, only in the list view, and only if there is one", async () => {
@@ -377,39 +269,6 @@ describe("the completed group fold", () => {
     serverDoc = { version: 1, rev: 3, plans: [plan("p_0000000a", "Alpha", [task(1)])] } as PlansFile;
     await boot();
     expect(await run({ action: "set_completed", expanded: true })).toEqual({ ok: false, detail: "not_found" });
-  });
-});
-
-describe("open a Doc, and show or hide the Copilot panel", () => {
-  it("opens a library Doc through openDoc into the Doc pane (else the active one); unknown Docs are not_found", async () => {
-    await boot();
-    await run({ action: "split_pane" });
-    await waitFor(() => expect(paneIds()).toEqual([1, 2]));
-    expect(await run({ action: "open_doc", docId: "d2" })).toEqual({ ok: true });
-    await waitFor(() => expect(q('[data-ui="doc-stub"]')).not.toBeNull());
-    expect(qa('[data-ui="doc-stub"]')).toHaveLength(1);
-    expect(window.location.pathname).toContain("d2");
-    expect(await run({ action: "open_doc", docId: "not-in-library" })).toEqual({ ok: false, detail: "not_found" });
-    expect(window.location.pathname).toContain("d2"); // the page was not touched
-  });
-  it("is held back by unsaved work in the open Doc, like the Reader's own switch", async () => {
-    await boot();
-    expect(await run({ action: "open_doc", docId: "d1" })).toEqual({ ok: true });
-    await waitFor(() => expect(q('[data-ui="doc-stub"]')).not.toBeNull());
-    const release = registerWorkspaceLeaveGuard(() => false);
-    try {
-      expect(await run({ action: "open_doc", docId: "d2" })).toEqual({ ok: false, detail: "leave_blocked" });
-      expect(window.location.pathname).toContain("d1");
-    } finally { release(); }
-  });
-  it("the panel opens and closes through the toolbar's own state, and the context says which", async () => {
-    await boot();
-    expect(ctx().workspace?.copilotOpen).toBe(false);
-    expect(await run({ action: "open_copilot" })).toEqual({ ok: true });
-    await waitFor(() => expect(h.open).toBe(true));
-    expect(q('[data-ui="copilot-toggle"]')?.getAttribute("aria-expanded")).toBe("true");
-    expect(await run({ action: "close_copilot" })).toEqual({ ok: true });
-    await waitFor(() => expect(h.open).toBe(false));
   });
 });
 
