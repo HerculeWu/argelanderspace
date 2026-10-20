@@ -2,23 +2,11 @@ import type { Workbench } from "../copilot.js";
 import { type ConfirmationKind, detailOf } from "./kind.js";
 
 /** The Files tab's "delete document" dialog (ticket 16): the global physical delete of one Doc. */
-export function deleteDocKind(workbench: Workbench | undefined): ConfirmationKind<"delete_doc"> {
+export function deleteDocKind(workbench: Workbench | undefined) {
   return {
     action: "delete_doc",
-    card: (id, runId, entry) => ({
-      id,
-      runId,
-      toolCallId: entry.toolCallId,
-      baseRev: entry.baseRev,
-      action: entry.action,
-      object: { kind: "doc", id: entry.docId },
-      format: entry.format,
-      works: entry.works,
-      impact: entry.impact,
-      objectDigest: entry.objectDigest,
-    }),
-    requestedFields: (entry) => ({ action: entry.action, docId: entry.docId }),
-    resolvedFields: (card) => ({ action: card.action, docId: card.object.id }),
+    object: (entry) => ({ kind: "doc", id: entry.docId }),
+    record: (card) => ({ action: card.action, docId: card.object.id }),
     askedLine: (entry) => `${entry.action} ${entry.docId}`,
     /**
      * The card shows the Doc, every Work listing it, the annotation count and the content binding: all still the same.
@@ -43,5 +31,5 @@ export function deleteDocKind(workbench: Workbench | undefined): ConfirmationKin
     // A Doc delete can take the open Doc away from the bound view and the leave guard (unsaved drafts) is asked by the
     // clicking tab about ITS Doc (the rule of ticket 12).
     boundToNavView: true,
-  };
+  } satisfies ConfirmationKind<"delete_doc", { docId: string }>;
 }

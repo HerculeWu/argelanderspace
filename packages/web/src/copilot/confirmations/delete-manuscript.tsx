@@ -15,7 +15,6 @@ function DeleteManuscriptBody({ card }: { card: DeleteManuscriptConfirmation }) 
 }
 
 export const deleteManuscript: ConfirmationCardKind<DeleteManuscriptConfirmation> = {
-  match: (card): card is DeleteManuscriptConfirmation => card.action === "delete_manuscript",
   Body: DeleteManuscriptBody,
   confirmLabel: (t) => t("common.delete"),
   tone: "danger",

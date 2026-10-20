@@ -7,12 +7,10 @@ export type ConfirmationProblemScope = "plan" | "doc" | "deleteDoc" | "manuscrip
 
 /**
  * One kind of human confirmation card (ticket 36): what the card shows, its confirm label and tone, how a failed
- * decision is told, and the page's own guard before an approval. The shared card only looks the kind up, renders its
- * `Body`, and decides.
+ * decision is told, and the page's own guard before an approval. The shared card only looks the kind up by `action`,
+ * renders its `Body`, and decides.
  */
 export interface ConfirmationCardKind<C extends CopilotConfirmation = CopilotConfirmation> {
-  /** Discriminates by `action`. */
-  match(card: CopilotConfirmation): card is C;
   /** The card's facts, with their `data-ui`. */
   Body(props: { card: C }): JSX.Element;
   confirmLabel(t: TFunction, card: C): string;
@@ -26,6 +24,11 @@ export interface ConfirmationCardKind<C extends CopilotConfirmation = CopilotCon
   /** The page's guard before an approval; false keeps the card and sends nothing. */
   beforeApprove?(card: C, guards: ConfirmationGuards): boolean;
 }
+
+/** Every card kind, keyed by its action (the shape of the server's `ConfirmationKinds`): a missing action does not compile. */
+export type ConfirmationCardKinds = {
+  [A in CopilotConfirmation["action"]]: ConfirmationCardKind<Extract<CopilotConfirmation, { action: A }>>;
+};
 
 /** The workspace's guards a confirmation must pass before an approval takes something the user has open away. */
 export interface ConfirmationGuards {

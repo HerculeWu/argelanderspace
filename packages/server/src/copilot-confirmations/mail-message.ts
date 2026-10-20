@@ -1,24 +1,22 @@
-import type { CopilotConfirmation, OperationConfirmation } from "@argelanderspace/contracts";
-import type { ConfirmationRequest } from "../copilot-tool-kit.js";
-import type { ConfirmationCheck, ConfirmationKind } from "./kind.js";
+import type { OperationConfirmation } from "@argelanderspace/contracts";
+import type {
+  ConfirmationCard,
+  ConfirmationCheck,
+  ConfirmationKind,
+  ConfirmationRequestOf,
+} from "./kind.js";
 
 /** Moving a message to Trash, deleting it for good from Trash, or moving it to another folder (Mail ticket 09). */
 type MessageAction = "delete_mail" | "move_mail";
-type MessageRequest = Extract<ConfirmationRequest, { action: MessageAction }>;
-type MessageCard = Extract<CopilotConfirmation, { action: MessageAction }>;
+type Ids = { accountId: string };
 
-const object = (entry: MessageRequest) => ({
+/** The message's object: account, folder and uid in one id (`acc:INBOX:7`), as the click repeats it. */
+const object = (entry: ConfirmationRequestOf<MessageAction, Ids>) => ({
   kind: "mail_message" as const,
   id: `${entry.accountId}:${entry.message.folder}:${entry.message.uid}`,
   accountId: entry.accountId,
 });
-const requestedFields = <R extends MessageRequest>(entry: R) => ({
-  action: entry.action as R["action"],
-  accountId: entry.accountId,
-  folder: entry.message.folder,
-  uid: entry.message.uid,
-});
-const resolvedFields = <C extends MessageCard>(card: C) => ({
+const record = <C extends ConfirmationCard<MessageAction>>(card: C) => ({
   action: card.action as C["action"],
   accountId: card.object.accountId,
   folder: card.message.folder,
@@ -29,47 +27,23 @@ const askedLine = (entry: OperationConfirmation & { action: MessageAction }) =>
 // A delete or move names one message by uid and uidValidity; the server refuses a changed one when it runs.
 const check = (): Promise<ConfirmationCheck> => Promise.resolve("valid");
 
-export const deleteMailKind: ConfirmationKind<"delete_mail"> = {
+export const deleteMailKind = {
   action: "delete_mail",
-  card: (id, runId, entry) => ({
-    id,
-    runId,
-    toolCallId: entry.toolCallId,
-    baseRev: entry.baseRev,
-    action: entry.action,
-    object: object(entry),
-    account: entry.account,
-    message: entry.message,
-    permanent: entry.permanent,
-    objectDigest: entry.objectDigest,
-  }),
-  requestedFields,
-  resolvedFields,
+  object: (entry) => object(entry),
+  record,
   askedLine,
   check,
   // Mail cards are checked at the click (an IMAP read is not a background poll).
   revalidateOn: null,
   boundToNavView: false,
-};
+} satisfies ConfirmationKind<"delete_mail", Ids>;
 
-export const moveMailKind: ConfirmationKind<"move_mail"> = {
+export const moveMailKind = {
   action: "move_mail",
-  card: (id, runId, entry) => ({
-    id,
-    runId,
-    toolCallId: entry.toolCallId,
-    baseRev: entry.baseRev,
-    action: entry.action,
-    object: object(entry),
-    account: entry.account,
-    message: entry.message,
-    destination: entry.destination,
-    objectDigest: entry.objectDigest,
-  }),
-  requestedFields,
-  resolvedFields,
+  object: (entry) => object(entry),
+  record,
   askedLine,
   check,
   revalidateOn: null,
   boundToNavView: false,
-};
+} satisfies ConfirmationKind<"move_mail", Ids>;

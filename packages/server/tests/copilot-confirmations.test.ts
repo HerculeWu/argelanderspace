@@ -1,16 +1,28 @@
 /**
  * The confirmation kinds (copilot ticket 35) on their own seam: each kind's `check` answers valid, changed or an error
  * from a fake workbench, and the background trigger and bound-view rule of each kind are what the host had before.
+ * The card and the durable record are assembled once from the contracts' card schema and each kind's `object` and
+ * `record` (architecture-deepening ticket 07): `confirmationCard` and `confirmationRecord` are what the host calls, and
+ * their output is pinned to a golden captured from the code before that ticket (records byte for byte).
  * The business reads the checks call are replaced here; the host-level paths are covered by the copilot-* host tests.
  */
+import { readFileSync } from "node:fs";
+import {
+  CopilotConfirmationSchema,
+  type OperationConfirmation,
+  OperationConfirmationSchema,
+} from "@argelanderspace/contracts";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { Workbench } from "../src/copilot.js";
 import {
   type ConfirmationAction,
+  type ConfirmationKind,
   type ConfirmationKinds,
+  type ConfirmationRequest,
+  confirmationCard,
+  confirmationRecord,
   createConfirmationKinds,
 } from "../src/copilot-confirmations/index.js";
-import type { ConfirmationRequest } from "../src/copilot-tool-kit.js";
 
 const reads = vi.hoisted(() => ({
   describeDeleteTarget: vi.fn(),
@@ -197,11 +209,12 @@ const workbench = () =>
     mail: {},
     argument: {},
   }) as unknown as Workbench;
+const kindOf = (action: ConfirmationAction) => kinds[action] as ConfirmationKind;
+/** The card the host shows for one request (the host's own assembly). */
+const cardOf = <A extends ConfirmationAction>(action: A, id = "c1") =>
+  confirmationCard(kindOf(action), id, "r1", requests[action]);
 const checkOf = <A extends ConfirmationAction>(action: A) =>
-  (kinds[action] as ConfirmationKinds[ConfirmationAction]).check(
-    // biome-ignore lint/suspicious/noExplicitAny: one card per kind, built by the kind itself
-    (kinds[action].card as any)("c1", "r1", requests[action])
-  );
+  kindOf(action).check(cardOf(action) as never);
 
 beforeEach(() => {
   for (const read of Object.values(reads)) read.mockReset();
@@ -399,36 +412,31 @@ test("background trigger and bound-view rule per kind are what the host had", ()
 });
 
 test("records and resume lines keep their fields and wording", () => {
-  const card = kinds.delete_mail.card("c1", "r1", requests.delete_mail);
+  const card = cardOf("delete_mail");
   expect(card.object).toEqual({ kind: "mail_message", id: "acc:INBOX:7", accountId: "acc" });
-  expect(kinds.delete_mail.resolvedFields(card)).toEqual({
+  expect(confirmationRecord(kindOf("delete_mail"), card, "resolved", "approved")).toMatchObject({
     action: "delete_mail",
     accountId: "acc",
     folder: "INBOX",
     uid: 7,
   });
-  expect(kinds.move_mail.requestedFields(requests.move_mail)).toEqual({
+  expect(confirmationRecord(kindOf("move_mail"), cardOf("move_mail"), "requested")).toMatchObject({
     action: "move_mail",
     accountId: "acc",
     folder: "INBOX",
     uid: 7,
   });
-  const refresh = kinds.refresh_arxiv_source.card("c1", "r1", requests.refresh_arxiv_source);
-  expect(kinds.refresh_arxiv_source.resolvedFields(refresh)).toEqual({
-    action: "refresh_arxiv_source",
-    workId: "w_1",
-    docId: "d_1",
-  });
-  const replaced = kinds.replace_argument_graph.card("c1", "r1", requests.replace_argument_graph);
+  const refresh = cardOf("refresh_arxiv_source");
+  expect(
+    confirmationRecord(kindOf("refresh_arxiv_source"), refresh, "resolved", "declined")
+  ).toMatchObject({ action: "refresh_arxiv_source", workId: "w_1", docId: "d_1" });
+  const replaced = cardOf("replace_argument_graph");
   expect(replaced.object).toEqual({ kind: "work", id: "doi:10.1/x", workId: "doi:10.1/x" });
-  expect(kinds.replace_argument_graph.requestedFields(requests.replace_argument_graph)).toEqual({
-    action: "replace_argument_graph",
-    workId: "doi:10.1/x",
-  });
-  expect(kinds.replace_argument_graph.resolvedFields(replaced)).toEqual({
-    action: "replace_argument_graph",
-    workId: "doi:10.1/x",
-  });
+  for (const record of [
+    confirmationRecord(kindOf("replace_argument_graph"), replaced, "requested"),
+    confirmationRecord(kindOf("replace_argument_graph"), replaced, "resolved", "expired"),
+  ])
+    expect(record).toMatchObject({ action: "replace_argument_graph", workId: "doi:10.1/x" });
   const base = {
     version: 1,
     phase: "requested",
@@ -467,7 +475,7 @@ test("records and resume lines keep their fields and wording", () => {
 });
 
 test("file and command cards: nothing on disk to recheck, the record keeps no command and no path, and the allowance class is per kind", async () => {
-  const run = kinds.run_command.card("c1", "r1", requests.run_command);
+  const run = cardOf("run_command");
   expect(run).toMatchObject({
     action: "run_command",
     object: { kind: "command", id: "call" },
@@ -475,19 +483,138 @@ test("file and command cards: nothing on disk to recheck, the record keeps no co
     command: "ls -la",
     cwd: "~/project",
   });
-  expect(kinds.run_command.requestedFields(requests.run_command)).toEqual({
+  const own = (record: OperationConfirmation) => {
+    const { version, phase, confirmationId, runId, toolCallId, baseRev, outcome, ...rest } =
+      record as OperationConfirmation & { outcome?: string };
+    void [version, phase, confirmationId, runId, toolCallId, baseRev, outcome];
+    return rest;
+  };
+  expect(own(confirmationRecord(kindOf("run_command"), run, "requested"))).toEqual({
     action: "run_command",
   });
-  expect(kinds.run_command.resolvedFields(run)).toEqual({ action: "run_command" });
-  const edit = kinds.edit_file.card("c2", "r1", requests.edit_file);
-  expect(kinds.edit_file.requestedFields(requests.edit_file)).toEqual({ action: "edit_file" });
-  expect(JSON.stringify(kinds.edit_file.resolvedFields(edit))).not.toContain("notes");
-  expect(await kinds.run_command.check(run)).toBe("valid");
-  expect(await kinds.write_file.check(kinds.write_file.card("c3", "r1", requests.write_file))).toBe(
-    "valid"
+  expect(own(confirmationRecord(kindOf("run_command"), run, "resolved", "approved"))).toEqual({
+    action: "run_command",
+  });
+  const edit = cardOf("edit_file", "c2");
+  expect(own(confirmationRecord(kindOf("edit_file"), edit, "requested"))).toEqual({
+    action: "edit_file",
+  });
+  const resolvedEdit = JSON.stringify(
+    confirmationRecord(kindOf("edit_file"), edit, "resolved", "declined")
   );
+  expect(resolvedEdit).not.toContain("notes");
+  expect(JSON.stringify(confirmationRecord(kindOf("run_command"), run, "requested"))).not.toContain(
+    "ls -la"
+  );
+  expect(await kinds.run_command.check(run as never)).toBe("valid");
+  expect(await kinds.write_file.check(cardOf("write_file", "c3") as never)).toBe("valid");
   expect(kinds.run_command.remembers).toBe("command");
   expect(kinds.edit_file.remembers).toBe("write");
   expect(kinds.write_file.remembers).toBe("write");
   expect(kinds.delete_plan.remembers).toBeUndefined();
+});
+
+// ---- the shared assembly against the golden of the code before ticket 07 ----------------------------------------- //
+
+type Golden = {
+  confirmationId: string;
+  runId: string;
+  requests: Record<ConfirmationAction, ConfirmationRequest>;
+  cards: Record<ConfirmationAction, Record<string, unknown>>;
+  records: Record<
+    ConfirmationAction,
+    { requested: string; approved: string; declined: string; expired: string }
+  >;
+};
+const golden: Golden = JSON.parse(
+  readFileSync(new URL("./fixtures/confirmation-golden.json", import.meta.url), "utf8")
+);
+const schemaKeys = (action: string) => {
+  const schema = CopilotConfirmationSchema.options.find(
+    (card) => card.shape.action.value === action
+  );
+  return Object.keys(schema?.shape ?? {}).sort();
+};
+
+test("every card is the golden card by value, with exactly the keys of its card schema", () => {
+  expect(Object.keys(golden.requests).sort()).toEqual(Object.keys(kinds).sort());
+  for (const [action, request] of Object.entries(golden.requests) as [
+    ConfirmationAction,
+    ConfirmationRequest,
+  ][]) {
+    const card = confirmationCard(kindOf(action), golden.confirmationId, golden.runId, request);
+    expect(card, action).toEqual(golden.cards[action]);
+    expect(Object.keys(card).sort(), action).toEqual(schemaKeys(action));
+  }
+  // the object, value for value: the mail message's compound id and the tool call as a file or command id
+  expect(golden.cards.delete_mail.object).toEqual({
+    kind: "mail_message",
+    id: "acc:INBOX:7",
+    accountId: "acc",
+  });
+  expect(golden.cards.move_mail.object).toMatchObject({ id: "acc:INBOX:7" });
+  expect(golden.cards.run_command.object).toEqual({ kind: "command", id: "call_cmd" });
+  expect(golden.cards.edit_file.object).toEqual({ kind: "file", id: "call_edit" });
+  expect(golden.cards.write_file.object).toEqual({ kind: "file", id: "call_write" });
+});
+
+test("every requested and resolved record is byte for byte the golden record and parses as the record schema", () => {
+  for (const [action, request] of Object.entries(golden.requests) as [
+    ConfirmationAction,
+    ConfirmationRequest,
+  ][]) {
+    const kind = kindOf(action);
+    const card = confirmationCard(kind, golden.confirmationId, golden.runId, request);
+    const want = golden.records[action];
+    expect(JSON.stringify(confirmationRecord(kind, card, "requested")), action).toBe(
+      want.requested
+    );
+    for (const outcome of ["approved", "declined", "expired"] as const)
+      expect(JSON.stringify(confirmationRecord(kind, card, "resolved", outcome)), action).toBe(
+        want[outcome]
+      );
+    for (const line of Object.values(want)) {
+      const parsed = OperationConfirmationSchema.safeParse(JSON.parse(line));
+      expect(parsed.success, action).toBe(true);
+    }
+  }
+});
+
+test("records already on disk read back to the same resume lines (the golden corpus, one pair per action)", () => {
+  const lines = Object.fromEntries(
+    (Object.keys(golden.records) as ConfirmationAction[]).map((action) => {
+      const record = JSON.parse(golden.records[action].requested) as OperationConfirmation;
+      const resolved = JSON.parse(golden.records[action].declined) as OperationConfirmation;
+      // the line is told from the record alone: the requested and the resolved record say the same
+      expect(kindOf(action).askedLine(resolved as never)).toBe(
+        kindOf(action).askedLine(record as never)
+      );
+      return [action, kindOf(action).askedLine(record as never)];
+    })
+  );
+  expect(lines).toEqual({
+    send_mail: "send_mail acc <m@x>",
+    delete_mail: "delete_mail acc INBOX uid 7",
+    move_mail: "move_mail acc INBOX uid 7",
+    replace_text_reading: "replace_text_reading t_doc",
+    delete_plan: "delete_plan p_0000000a",
+    refresh_arxiv_source: "refresh_arxiv_source w_1 d_1",
+    delete_doc: "delete_doc d_1",
+    replace_argument_graph: "replace_argument_graph doi:10.1/x",
+    run_command: "run_command",
+    edit_file: "edit_file",
+    write_file: "write_file",
+    delete_manuscript: "delete_manuscript m_1",
+  });
+});
+
+test("a key the request carries beyond its card schema never reaches the card", () => {
+  const card = confirmationCard(kindOf("delete_doc"), golden.confirmationId, golden.runId, {
+    ...requests.delete_doc,
+    secret: "not for the page",
+  } as ConfirmationRequest);
+  expect(card).not.toHaveProperty("secret");
+  // the flat identifier is the object's, not a card field
+  expect(card).not.toHaveProperty("docId");
+  expect(card.object).toEqual({ kind: "doc", id: "d_1" });
 });

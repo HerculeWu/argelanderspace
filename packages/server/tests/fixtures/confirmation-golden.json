@@ -1,0 +1,571 @@
+{
+  "confirmationId": "11111111-1111-4111-8111-111111111111",
+  "runId": "22222222-2222-4222-8222-222222222222",
+  "requests": {
+    "send_mail": {
+      "toolCallId": "call_send",
+      "action": "send_mail",
+      "accountId": "acc",
+      "messageId": "<m@x>",
+      "account": {
+        "id": "acc",
+        "address": "me@example.org",
+        "displayName": "Me"
+      },
+      "to": [
+        {
+          "name": "",
+          "address": "you@example.org"
+        }
+      ],
+      "cc": [
+        {
+          "name": "C",
+          "address": "c@example.org"
+        }
+      ],
+      "bcc": [],
+      "subject": "Hi",
+      "text": "Body\nline 2",
+      "attachments": [
+        {
+          "filename": "a.pdf",
+          "contentType": "application/pdf",
+          "size": 12
+        }
+      ],
+      "inReplyTo": null,
+      "kind": "new",
+      "baseRev": 0,
+      "objectDigest": "draft-digest"
+    },
+    "delete_mail": {
+      "toolCallId": "call_del",
+      "action": "delete_mail",
+      "accountId": "acc",
+      "account": {
+        "id": "acc",
+        "address": "me@example.org",
+        "displayName": "Me"
+      },
+      "message": {
+        "folder": "INBOX",
+        "uid": 7,
+        "uidValidity": 1,
+        "from": {
+          "name": "You",
+          "address": "you@example.org"
+        },
+        "subject": "Hello",
+        "date": "2026-10-01T00:00:00.000Z"
+      },
+      "permanent": false,
+      "baseRev": 0,
+      "objectDigest": "msg-digest"
+    },
+    "move_mail": {
+      "toolCallId": "call_move",
+      "action": "move_mail",
+      "accountId": "acc",
+      "account": {
+        "id": "acc",
+        "address": "me@example.org",
+        "displayName": "Me"
+      },
+      "message": {
+        "folder": "INBOX",
+        "uid": 7,
+        "uidValidity": 1,
+        "from": {
+          "name": "You",
+          "address": "you@example.org"
+        },
+        "subject": "Hello",
+        "date": "2026-10-01T00:00:00.000Z"
+      },
+      "destination": "Archive",
+      "baseRev": 0,
+      "objectDigest": "msg-digest-2"
+    },
+    "replace_text_reading": {
+      "toolCallId": "call_text",
+      "action": "replace_text_reading",
+      "docId": "t_doc",
+      "label": "Notes",
+      "impact": {
+        "docId": "t_doc",
+        "sourceRev": 2,
+        "publishedSourceRev": 1,
+        "annotations": 3,
+        "annotationsRev": 4,
+        "oldFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "newFingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "baseRev": 4,
+      "objectDigest": "text-digest"
+    },
+    "delete_plan": {
+      "toolCallId": "call_plan",
+      "action": "delete_plan",
+      "planId": "p_0000000a",
+      "label": "Alpha",
+      "planName": "Alpha",
+      "impact": {
+        "tasks": 2,
+        "openTasks": 1
+      },
+      "baseRev": 7,
+      "objectDigest": "plan-digest"
+    },
+    "refresh_arxiv_source": {
+      "toolCallId": "call_refresh",
+      "action": "refresh_arxiv_source",
+      "workId": "w_1",
+      "docId": "d_1",
+      "label": "Work",
+      "impact": {
+        "annotations": "known",
+        "count": 2
+      },
+      "baseRev": 3,
+      "objectDigest": "refresh-digest"
+    },
+    "delete_doc": {
+      "toolCallId": "call_doc",
+      "action": "delete_doc",
+      "docId": "d_1",
+      "format": "latex",
+      "works": [
+        {
+          "id": "w_1",
+          "title": "Work",
+          "main": true,
+          "remaining": 0
+        }
+      ],
+      "impact": {
+        "annotations": "unknown"
+      },
+      "baseRev": 3,
+      "objectDigest": "doc-digest"
+    },
+    "replace_argument_graph": {
+      "toolCallId": "call_graph",
+      "action": "replace_argument_graph",
+      "workId": "doi:10.1/x",
+      "label": "A paper",
+      "mode": "replace",
+      "current": {
+        "arguments": 4,
+        "edges": 3
+      },
+      "next": {
+        "arguments": 6,
+        "edges": 7
+      },
+      "baseRev": 5,
+      "objectDigest": "graph-digest"
+    },
+    "run_command": {
+      "toolCallId": "call_cmd",
+      "action": "run_command",
+      "shell": "bash",
+      "command": "ls -la ~/secret",
+      "cwd": "~/project",
+      "baseRev": 0
+    },
+    "edit_file": {
+      "toolCallId": "call_edit",
+      "action": "edit_file",
+      "path": "notes/a.md",
+      "resolved": "~/project/notes/a.md",
+      "cwd": "~/project",
+      "change": {
+        "edits": 1,
+        "added": 1,
+        "removed": 1
+      },
+      "baseRev": 0
+    },
+    "write_file": {
+      "toolCallId": "call_write",
+      "action": "write_file",
+      "path": "notes/b.md",
+      "resolved": "~/project/notes/b.md",
+      "cwd": "~/project",
+      "change": {
+        "bytes": 3,
+        "lines": 1,
+        "overwrite": false
+      },
+      "baseRev": 0
+    },
+    "delete_manuscript": {
+      "toolCallId": "call_ms",
+      "action": "delete_manuscript",
+      "manuscriptId": "m_1",
+      "label": "Paper",
+      "impact": {
+        "cells": 3,
+        "comments": 0,
+        "assets": 1
+      },
+      "baseRev": 5,
+      "objectDigest": "ms-digest"
+    }
+  },
+  "cards": {
+    "send_mail": {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "runId": "22222222-2222-4222-8222-222222222222",
+      "toolCallId": "call_send",
+      "baseRev": 0,
+      "action": "send_mail",
+      "object": {
+        "kind": "mail_draft",
+        "id": "<m@x>",
+        "accountId": "acc"
+      },
+      "account": {
+        "id": "acc",
+        "address": "me@example.org",
+        "displayName": "Me"
+      },
+      "kind": "new",
+      "to": [
+        {
+          "name": "",
+          "address": "you@example.org"
+        }
+      ],
+      "cc": [
+        {
+          "name": "C",
+          "address": "c@example.org"
+        }
+      ],
+      "bcc": [],
+      "subject": "Hi",
+      "text": "Body\nline 2",
+      "attachments": [
+        {
+          "filename": "a.pdf",
+          "contentType": "application/pdf",
+          "size": 12
+        }
+      ],
+      "inReplyTo": null,
+      "objectDigest": "draft-digest"
+    },
+    "delete_mail": {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "runId": "22222222-2222-4222-8222-222222222222",
+      "toolCallId": "call_del",
+      "baseRev": 0,
+      "action": "delete_mail",
+      "object": {
+        "kind": "mail_message",
+        "id": "acc:INBOX:7",
+        "accountId": "acc"
+      },
+      "account": {
+        "id": "acc",
+        "address": "me@example.org",
+        "displayName": "Me"
+      },
+      "message": {
+        "folder": "INBOX",
+        "uid": 7,
+        "uidValidity": 1,
+        "from": {
+          "name": "You",
+          "address": "you@example.org"
+        },
+        "subject": "Hello",
+        "date": "2026-10-01T00:00:00.000Z"
+      },
+      "permanent": false,
+      "objectDigest": "msg-digest"
+    },
+    "move_mail": {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "runId": "22222222-2222-4222-8222-222222222222",
+      "toolCallId": "call_move",
+      "baseRev": 0,
+      "action": "move_mail",
+      "object": {
+        "kind": "mail_message",
+        "id": "acc:INBOX:7",
+        "accountId": "acc"
+      },
+      "account": {
+        "id": "acc",
+        "address": "me@example.org",
+        "displayName": "Me"
+      },
+      "message": {
+        "folder": "INBOX",
+        "uid": 7,
+        "uidValidity": 1,
+        "from": {
+          "name": "You",
+          "address": "you@example.org"
+        },
+        "subject": "Hello",
+        "date": "2026-10-01T00:00:00.000Z"
+      },
+      "destination": "Archive",
+      "objectDigest": "msg-digest-2"
+    },
+    "replace_text_reading": {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "runId": "22222222-2222-4222-8222-222222222222",
+      "toolCallId": "call_text",
+      "baseRev": 4,
+      "action": "replace_text_reading",
+      "object": {
+        "kind": "doc",
+        "id": "t_doc"
+      },
+      "label": "Notes",
+      "impact": {
+        "docId": "t_doc",
+        "sourceRev": 2,
+        "publishedSourceRev": 1,
+        "annotations": 3,
+        "annotationsRev": 4,
+        "oldFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "newFingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "objectDigest": "text-digest"
+    },
+    "delete_plan": {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "runId": "22222222-2222-4222-8222-222222222222",
+      "toolCallId": "call_plan",
+      "baseRev": 7,
+      "action": "delete_plan",
+      "object": {
+        "kind": "plan",
+        "id": "p_0000000a",
+        "planId": "p_0000000a"
+      },
+      "label": "Alpha",
+      "planName": "Alpha",
+      "impact": {
+        "tasks": 2,
+        "openTasks": 1
+      },
+      "objectDigest": "plan-digest"
+    },
+    "refresh_arxiv_source": {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "runId": "22222222-2222-4222-8222-222222222222",
+      "toolCallId": "call_refresh",
+      "baseRev": 3,
+      "action": "refresh_arxiv_source",
+      "object": {
+        "kind": "doc",
+        "id": "d_1",
+        "workId": "w_1"
+      },
+      "label": "Work",
+      "impact": {
+        "annotations": "known",
+        "count": 2
+      },
+      "objectDigest": "refresh-digest"
+    },
+    "delete_doc": {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "runId": "22222222-2222-4222-8222-222222222222",
+      "toolCallId": "call_doc",
+      "baseRev": 3,
+      "action": "delete_doc",
+      "object": {
+        "kind": "doc",
+        "id": "d_1"
+      },
+      "format": "latex",
+      "works": [
+        {
+          "id": "w_1",
+          "title": "Work",
+          "main": true,
+          "remaining": 0
+        }
+      ],
+      "impact": {
+        "annotations": "unknown"
+      },
+      "objectDigest": "doc-digest"
+    },
+    "replace_argument_graph": {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "runId": "22222222-2222-4222-8222-222222222222",
+      "toolCallId": "call_graph",
+      "baseRev": 5,
+      "action": "replace_argument_graph",
+      "object": {
+        "kind": "work",
+        "id": "doi:10.1/x",
+        "workId": "doi:10.1/x"
+      },
+      "label": "A paper",
+      "mode": "replace",
+      "current": {
+        "arguments": 4,
+        "edges": 3
+      },
+      "next": {
+        "arguments": 6,
+        "edges": 7
+      },
+      "objectDigest": "graph-digest"
+    },
+    "run_command": {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "runId": "22222222-2222-4222-8222-222222222222",
+      "toolCallId": "call_cmd",
+      "baseRev": 0,
+      "action": "run_command",
+      "object": {
+        "kind": "command",
+        "id": "call_cmd"
+      },
+      "shell": "bash",
+      "command": "ls -la ~/secret",
+      "cwd": "~/project"
+    },
+    "edit_file": {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "runId": "22222222-2222-4222-8222-222222222222",
+      "toolCallId": "call_edit",
+      "baseRev": 0,
+      "action": "edit_file",
+      "object": {
+        "kind": "file",
+        "id": "call_edit"
+      },
+      "cwd": "~/project",
+      "path": "notes/a.md",
+      "resolved": "~/project/notes/a.md",
+      "change": {
+        "edits": 1,
+        "added": 1,
+        "removed": 1
+      }
+    },
+    "write_file": {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "runId": "22222222-2222-4222-8222-222222222222",
+      "toolCallId": "call_write",
+      "baseRev": 0,
+      "action": "write_file",
+      "object": {
+        "kind": "file",
+        "id": "call_write"
+      },
+      "cwd": "~/project",
+      "path": "notes/b.md",
+      "resolved": "~/project/notes/b.md",
+      "change": {
+        "bytes": 3,
+        "lines": 1,
+        "overwrite": false
+      }
+    },
+    "delete_manuscript": {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "runId": "22222222-2222-4222-8222-222222222222",
+      "toolCallId": "call_ms",
+      "baseRev": 5,
+      "action": "delete_manuscript",
+      "object": {
+        "kind": "manuscript",
+        "id": "m_1"
+      },
+      "label": "Paper",
+      "impact": {
+        "cells": 3,
+        "comments": 0,
+        "assets": 1
+      },
+      "objectDigest": "ms-digest"
+    }
+  },
+  "records": {
+    "send_mail": {
+      "requested": "{\"version\":1,\"phase\":\"requested\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_send\",\"baseRev\":0,\"action\":\"send_mail\",\"accountId\":\"acc\",\"messageId\":\"<m@x>\"}",
+      "approved": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_send\",\"baseRev\":0,\"outcome\":\"approved\",\"action\":\"send_mail\",\"accountId\":\"acc\",\"messageId\":\"<m@x>\"}",
+      "declined": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_send\",\"baseRev\":0,\"outcome\":\"declined\",\"action\":\"send_mail\",\"accountId\":\"acc\",\"messageId\":\"<m@x>\"}",
+      "expired": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_send\",\"baseRev\":0,\"outcome\":\"expired\",\"action\":\"send_mail\",\"accountId\":\"acc\",\"messageId\":\"<m@x>\"}"
+    },
+    "delete_mail": {
+      "requested": "{\"version\":1,\"phase\":\"requested\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_del\",\"baseRev\":0,\"action\":\"delete_mail\",\"accountId\":\"acc\",\"folder\":\"INBOX\",\"uid\":7}",
+      "approved": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_del\",\"baseRev\":0,\"outcome\":\"approved\",\"action\":\"delete_mail\",\"accountId\":\"acc\",\"folder\":\"INBOX\",\"uid\":7}",
+      "declined": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_del\",\"baseRev\":0,\"outcome\":\"declined\",\"action\":\"delete_mail\",\"accountId\":\"acc\",\"folder\":\"INBOX\",\"uid\":7}",
+      "expired": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_del\",\"baseRev\":0,\"outcome\":\"expired\",\"action\":\"delete_mail\",\"accountId\":\"acc\",\"folder\":\"INBOX\",\"uid\":7}"
+    },
+    "move_mail": {
+      "requested": "{\"version\":1,\"phase\":\"requested\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_move\",\"baseRev\":0,\"action\":\"move_mail\",\"accountId\":\"acc\",\"folder\":\"INBOX\",\"uid\":7}",
+      "approved": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_move\",\"baseRev\":0,\"outcome\":\"approved\",\"action\":\"move_mail\",\"accountId\":\"acc\",\"folder\":\"INBOX\",\"uid\":7}",
+      "declined": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_move\",\"baseRev\":0,\"outcome\":\"declined\",\"action\":\"move_mail\",\"accountId\":\"acc\",\"folder\":\"INBOX\",\"uid\":7}",
+      "expired": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_move\",\"baseRev\":0,\"outcome\":\"expired\",\"action\":\"move_mail\",\"accountId\":\"acc\",\"folder\":\"INBOX\",\"uid\":7}"
+    },
+    "replace_text_reading": {
+      "requested": "{\"version\":1,\"phase\":\"requested\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_text\",\"baseRev\":4,\"action\":\"replace_text_reading\",\"docId\":\"t_doc\"}",
+      "approved": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_text\",\"baseRev\":4,\"outcome\":\"approved\",\"action\":\"replace_text_reading\",\"docId\":\"t_doc\"}",
+      "declined": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_text\",\"baseRev\":4,\"outcome\":\"declined\",\"action\":\"replace_text_reading\",\"docId\":\"t_doc\"}",
+      "expired": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_text\",\"baseRev\":4,\"outcome\":\"expired\",\"action\":\"replace_text_reading\",\"docId\":\"t_doc\"}"
+    },
+    "delete_plan": {
+      "requested": "{\"version\":1,\"phase\":\"requested\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_plan\",\"baseRev\":7,\"action\":\"delete_plan\",\"planId\":\"p_0000000a\"}",
+      "approved": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_plan\",\"baseRev\":7,\"outcome\":\"approved\",\"action\":\"delete_plan\",\"planId\":\"p_0000000a\"}",
+      "declined": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_plan\",\"baseRev\":7,\"outcome\":\"declined\",\"action\":\"delete_plan\",\"planId\":\"p_0000000a\"}",
+      "expired": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_plan\",\"baseRev\":7,\"outcome\":\"expired\",\"action\":\"delete_plan\",\"planId\":\"p_0000000a\"}"
+    },
+    "refresh_arxiv_source": {
+      "requested": "{\"version\":1,\"phase\":\"requested\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_refresh\",\"baseRev\":3,\"action\":\"refresh_arxiv_source\",\"workId\":\"w_1\",\"docId\":\"d_1\"}",
+      "approved": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_refresh\",\"baseRev\":3,\"outcome\":\"approved\",\"action\":\"refresh_arxiv_source\",\"workId\":\"w_1\",\"docId\":\"d_1\"}",
+      "declined": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_refresh\",\"baseRev\":3,\"outcome\":\"declined\",\"action\":\"refresh_arxiv_source\",\"workId\":\"w_1\",\"docId\":\"d_1\"}",
+      "expired": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_refresh\",\"baseRev\":3,\"outcome\":\"expired\",\"action\":\"refresh_arxiv_source\",\"workId\":\"w_1\",\"docId\":\"d_1\"}"
+    },
+    "delete_doc": {
+      "requested": "{\"version\":1,\"phase\":\"requested\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_doc\",\"baseRev\":3,\"action\":\"delete_doc\",\"docId\":\"d_1\"}",
+      "approved": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_doc\",\"baseRev\":3,\"outcome\":\"approved\",\"action\":\"delete_doc\",\"docId\":\"d_1\"}",
+      "declined": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_doc\",\"baseRev\":3,\"outcome\":\"declined\",\"action\":\"delete_doc\",\"docId\":\"d_1\"}",
+      "expired": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_doc\",\"baseRev\":3,\"outcome\":\"expired\",\"action\":\"delete_doc\",\"docId\":\"d_1\"}"
+    },
+    "replace_argument_graph": {
+      "requested": "{\"version\":1,\"phase\":\"requested\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_graph\",\"baseRev\":5,\"action\":\"replace_argument_graph\",\"workId\":\"doi:10.1/x\"}",
+      "approved": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_graph\",\"baseRev\":5,\"outcome\":\"approved\",\"action\":\"replace_argument_graph\",\"workId\":\"doi:10.1/x\"}",
+      "declined": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_graph\",\"baseRev\":5,\"outcome\":\"declined\",\"action\":\"replace_argument_graph\",\"workId\":\"doi:10.1/x\"}",
+      "expired": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_graph\",\"baseRev\":5,\"outcome\":\"expired\",\"action\":\"replace_argument_graph\",\"workId\":\"doi:10.1/x\"}"
+    },
+    "run_command": {
+      "requested": "{\"version\":1,\"phase\":\"requested\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_cmd\",\"baseRev\":0,\"action\":\"run_command\"}",
+      "approved": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_cmd\",\"baseRev\":0,\"outcome\":\"approved\",\"action\":\"run_command\"}",
+      "declined": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_cmd\",\"baseRev\":0,\"outcome\":\"declined\",\"action\":\"run_command\"}",
+      "expired": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_cmd\",\"baseRev\":0,\"outcome\":\"expired\",\"action\":\"run_command\"}"
+    },
+    "edit_file": {
+      "requested": "{\"version\":1,\"phase\":\"requested\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_edit\",\"baseRev\":0,\"action\":\"edit_file\"}",
+      "approved": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_edit\",\"baseRev\":0,\"outcome\":\"approved\",\"action\":\"edit_file\"}",
+      "declined": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_edit\",\"baseRev\":0,\"outcome\":\"declined\",\"action\":\"edit_file\"}",
+      "expired": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_edit\",\"baseRev\":0,\"outcome\":\"expired\",\"action\":\"edit_file\"}"
+    },
+    "write_file": {
+      "requested": "{\"version\":1,\"phase\":\"requested\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_write\",\"baseRev\":0,\"action\":\"write_file\"}",
+      "approved": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_write\",\"baseRev\":0,\"outcome\":\"approved\",\"action\":\"write_file\"}",
+      "declined": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_write\",\"baseRev\":0,\"outcome\":\"declined\",\"action\":\"write_file\"}",
+      "expired": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_write\",\"baseRev\":0,\"outcome\":\"expired\",\"action\":\"write_file\"}"
+    },
+    "delete_manuscript": {
+      "requested": "{\"version\":1,\"phase\":\"requested\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_ms\",\"baseRev\":5,\"action\":\"delete_manuscript\",\"manuscriptId\":\"m_1\"}",
+      "approved": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_ms\",\"baseRev\":5,\"outcome\":\"approved\",\"action\":\"delete_manuscript\",\"manuscriptId\":\"m_1\"}",
+      "declined": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_ms\",\"baseRev\":5,\"outcome\":\"declined\",\"action\":\"delete_manuscript\",\"manuscriptId\":\"m_1\"}",
+      "expired": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_ms\",\"baseRev\":5,\"outcome\":\"expired\",\"action\":\"delete_manuscript\",\"manuscriptId\":\"m_1\"}"
+    }
+  }
+}

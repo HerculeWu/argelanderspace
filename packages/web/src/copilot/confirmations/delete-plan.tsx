@@ -15,7 +15,6 @@ function DeletePlanBody({ card }: { card: DeletePlanConfirmation }) {
 }
 
 export const deletePlan: ConfirmationCardKind<DeletePlanConfirmation> = {
-  match: (card): card is DeletePlanConfirmation => card.action === "delete_plan",
   Body: DeletePlanBody,
   confirmLabel: (t) => t("plan.deletePlan.confirm"),
   tone: "danger",

@@ -5,6 +5,7 @@
  * so they live in the conversation record only and never in the user log.
  */
 import { z } from "zod";
+import { ConfirmationBase } from "./copilot-confirmation-base.js";
 
 /** The names the tools are registered under (`powershell` instead of `bash` on Windows). */
 export const FILE_TOOL_NAMES = [
@@ -77,13 +78,6 @@ export const FileToolChangeSchema = z
   })
   .strict();
 export type FileToolChange = z.infer<typeof FileToolChangeSchema>;
-
-const ConfirmationBase = {
-  id: z.string().uuid(),
-  runId: z.string().uuid(),
-  toolCallId: z.string().min(1),
-  baseRev: z.number().int().nonnegative(),
-};
 
 /** Running one command (bash, or powershell on Windows). */
 export const CopilotCommandConfirmationSchema = z

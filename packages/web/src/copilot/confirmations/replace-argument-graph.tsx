@@ -19,7 +19,6 @@ function ReplaceArgumentGraphBody({ card }: { card: ReplaceArgumentGraphConfirma
 }
 
 export const replaceArgumentGraph: ConfirmationCardKind<ReplaceArgumentGraphConfirmation> = {
-  match: (card): card is ReplaceArgumentGraphConfirmation => card.action === "replace_argument_graph",
   Body: ReplaceArgumentGraphBody,
   confirmLabel: (t, card) => t(card.mode === "clear" ? "argument.edit.clearConfirm" : "copilot.confirmation.replaceArgumentConfirm"),
   tone: "danger",

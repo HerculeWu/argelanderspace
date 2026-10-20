@@ -3,33 +3,11 @@ import { draftUnchanged } from "../mail-copilot.js";
 import type { ConfirmationKind } from "./kind.js";
 
 /** Sending a draft (Mail ticket 09): the card shows this very snapshot and this very snapshot is sent. */
-export function sendMailKind(workbench: Workbench | undefined): ConfirmationKind<"send_mail"> {
+export function sendMailKind(workbench: Workbench | undefined) {
   return {
     action: "send_mail",
-    card: (id, runId, entry) => ({
-      id,
-      runId,
-      toolCallId: entry.toolCallId,
-      baseRev: entry.baseRev,
-      action: entry.action,
-      object: { kind: "mail_draft", id: entry.messageId, accountId: entry.accountId },
-      account: entry.account,
-      kind: entry.kind,
-      to: entry.to,
-      cc: entry.cc,
-      bcc: entry.bcc,
-      subject: entry.subject,
-      text: entry.text,
-      attachments: entry.attachments,
-      inReplyTo: entry.inReplyTo,
-      objectDigest: entry.objectDigest,
-    }),
-    requestedFields: (entry) => ({
-      action: entry.action,
-      accountId: entry.accountId,
-      messageId: entry.messageId,
-    }),
-    resolvedFields: (card) => ({
+    object: (entry) => ({ kind: "mail_draft", id: entry.messageId, accountId: entry.accountId }),
+    record: (card) => ({
       action: card.action,
       accountId: card.object.accountId,
       messageId: card.object.id,
@@ -58,5 +36,5 @@ export function sendMailKind(workbench: Workbench | undefined): ConfirmationKind
     // Mail cards are checked at the click (an IMAP read is not a background poll).
     revalidateOn: null,
     boundToNavView: false,
-  };
+  } satisfies ConfirmationKind<"send_mail", { accountId: string; messageId: string }>;
 }

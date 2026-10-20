@@ -18,7 +18,6 @@ function DeleteDocBody({ card }: { card: DeleteDocConfirmation }) {
 }
 
 export const deleteDoc: ConfirmationCardKind<DeleteDocConfirmation> = {
-  match: (card): card is DeleteDocConfirmation => card.action === "delete_doc",
   Body: DeleteDocBody,
   confirmLabel: (t) => t("library.detail.deleteDoc.confirm"),
   tone: "danger",

@@ -3,24 +3,11 @@ import { describeManuscriptDelete } from "../writer-actions.js";
 import { type ConfirmationKind, detailOf } from "./kind.js";
 
 /** The Writer list's delete (ticket 22): bound to the manuscript's revision and its stored bytes. */
-export function deleteManuscriptKind(
-  workbench: Workbench | undefined
-): ConfirmationKind<"delete_manuscript"> {
+export function deleteManuscriptKind(workbench: Workbench | undefined) {
   return {
     action: "delete_manuscript",
-    card: (id, runId, entry) => ({
-      id,
-      runId,
-      toolCallId: entry.toolCallId,
-      baseRev: entry.baseRev,
-      action: entry.action,
-      object: { kind: "manuscript", id: entry.manuscriptId },
-      label: entry.label,
-      impact: entry.impact,
-      objectDigest: entry.objectDigest,
-    }),
-    requestedFields: (entry) => ({ action: entry.action, manuscriptId: entry.manuscriptId }),
-    resolvedFields: (card) => ({ action: card.action, manuscriptId: card.object.id }),
+    object: (entry) => ({ kind: "manuscript", id: entry.manuscriptId }),
+    record: (card) => ({ action: card.action, manuscriptId: card.object.id }),
     askedLine: (entry) => `${entry.action} ${entry.manuscriptId}`,
     /** The manuscript still has the revision and the stored bytes the card showed (synchronous). */
     check: (card) => {
@@ -41,5 +28,5 @@ export function deleteManuscriptKind(
     revalidateOn: "writer",
     // A delete can take the open manuscript away from the bound view (the rule of ticket 12).
     boundToNavView: true,
-  };
+  } satisfies ConfirmationKind<"delete_manuscript", { manuscriptId: string }>;
 }

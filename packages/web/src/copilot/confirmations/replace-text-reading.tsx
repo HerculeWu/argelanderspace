@@ -15,7 +15,6 @@ function ReplaceTextReadingBody({ card }: { card: ReplaceTextReadingConfirmation
 }
 
 export const replaceTextReading: ConfirmationCardKind<ReplaceTextReadingConfirmation> = {
-  match: (card): card is ReplaceTextReadingConfirmation => card.action === "replace_text_reading",
   Body: ReplaceTextReadingBody,
   confirmLabel: (t, card) => t("doc.text.replace.confirm", { count: card.impact.annotations }),
   tone: "danger",
