@@ -32,7 +32,6 @@ import {
   copilotContextObjects,
   DELIVERY_LEDGER_TYPE,
   DeliveryLedgerEntrySchema,
-  FILE_TOOL_NAMES,
   type FileToolAllowClass,
   IMAGE_BYTES_PER_TOKEN,
   imageTokens,
@@ -81,7 +80,6 @@ import {
   ARGUMENT_PROMPT,
   ARGUMENT_TOOL_NAME,
   type ArgumentOpDeps,
-  createArgumentTool,
 } from "./copilot-argument-tool.js";
 import { type FittedEnvelope, fitEnvelope, historyCost } from "./copilot-batching.js";
 import {
@@ -91,7 +89,6 @@ import {
   createConfirmationKinds,
 } from "./copilot-confirmations/index.js";
 import {
-  createFileTools,
   fileToolRowFor,
   isFileToolName,
   type ProtectedFolder,
@@ -111,35 +108,40 @@ import {
   recordsOf,
   shedCandidates,
 } from "./copilot-ledger.js";
-import { createLibraryTool, LIBRARY_TOOL_NAME } from "./copilot-library-tool.js";
-import { createMailTool, MAIL_PROMPT, MAIL_TOOL_NAME } from "./copilot-mail-tool.js";
+import { LIBRARY_TOOL_NAME } from "./copilot-library-tool.js";
+import { MAIL_PROMPT } from "./copilot-mail-tool.js";
 import { recordableObservation } from "./copilot-observation.js";
-import { createPlanTool, PLAN_TOOL_NAME } from "./copilot-plan-tool.js";
-import { createReaderTool, READER_TOOL_NAME, type ReaderOpDeps } from "./copilot-reader-tool.js";
+import { READER_TOOL_NAME, type ReaderOpDeps } from "./copilot-reader-tool.js";
 import {
   type ApplicationResourceLoader,
   createApplicationResourceLoader,
   loadBundledSkills,
 } from "./copilot-resources.js";
-import { createTextTool, TEXT_TOOL_NAME, type TextOpDeps } from "./copilot-text-tool.js";
+import { TEXT_TOOL_NAME, type TextOpDeps } from "./copilot-text-tool.js";
 import type {
   ConfirmationOutcome,
   ConfirmationPort,
   KnownOperation,
   OperationJournalPort,
+  ToolHostContext,
 } from "./copilot-tool-kit.js";
+import {
+  assembleRunTools,
+  COPILOT_TOOL_NAMES,
+  fileFootprintTools,
+  footprintTools,
+  promptSwitches,
+  type RunToolDeps,
+  type ToolGates,
+} from "./copilot-tool-registry.js";
 import {
   type SourceCoverage,
   type SourceCoverageUnavailable,
   sourceCoverage,
   transcriptionLoaded,
 } from "./copilot-transcription.js";
-import {
-  createWorkspaceTool,
-  type ViewActionOutcome,
-  WORKSPACE_TOOL_NAME,
-} from "./copilot-workspace-tool.js";
-import { createWriterTool, WRITER_PROMPT, WRITER_TOOL_NAME } from "./copilot-writer-tool.js";
+import type { ViewActionOutcome } from "./copilot-workspace-tool.js";
+import { WRITER_PROMPT } from "./copilot-writer-tool.js";
 import { jobView, type LibraryOpDeps } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
 import { allOf, type ServerLog, silentLog } from "./log.js";
@@ -279,14 +281,6 @@ function readingKeysOf(context: PageContext, coverage?: ContextCoverage): string
       : []),
   ];
 }
-const SLOW_VIEW_ACTIONS: ReadonlySet<string> = new Set([
-  "explore_work",
-  "explore_candidate",
-  "retry_exploration",
-]);
-const EXPLORE_REPORT_MS = 120_000;
-/** Reader navigation may first open a Doc, which has to load before the Reader can jump. */
-const READER_REPORT_MS = 30_000;
 const RESUMABLE = ["stopped", "failed", "interrupted"] as const;
 /** A run that is alive: working, or held at a human confirmation. Both accept steering and Stop. */
 const isLive = (status: string | undefined) =>
@@ -1658,6 +1652,25 @@ export class CopilotHost {
       .filter((entry) => entry.type === "custom" && entry.customType === OPERATION_JOURNAL_TYPE)
       .map((entry) => (entry as { data: OperationJournal }).data);
   }
+  /**
+   * The one host context of a run, shared by every tool (each gets the fields the registry's table gives it):
+   * `admitting` is asked at every call, never a snapshot; `track` is the only way work enters `state.inflight`, which
+   * the terminal state waits for; the journal and the confirmation port are made once for the run.
+   */
+  private runHost(loaded: Loaded, state: RunState): ToolHostContext {
+    return {
+      admitting: () => !this.closed && !state.stopRequested,
+      track: (work) => {
+        state.inflight.add(work);
+        const forget = () => state.inflight.delete(work);
+        work.then(forget, forget);
+        return work;
+      },
+      runId: state.runId,
+      journal: this.journalPort(loaded, state.runId),
+      confirm: this.confirmationPort(loaded, state),
+    };
+  }
   private journalPort(loaded: Loaded, runId: string): OperationJournalPort {
     return {
       lookup: (operationId): KnownOperation | null => {
@@ -2259,15 +2272,7 @@ export class CopilotHost {
     if (this.fileFootprint === undefined) {
       let bytes = 0;
       try {
-        const { tools } = createFileTools({
-          cwd: config.cwd,
-          permission: () => "ask",
-          protectedFolders: () => [],
-          allowed: () => false,
-          admitting: () => true,
-          ...(config.platform ? { platform: config.platform } : {}),
-        });
-        for (const { name, description, parameters } of tools)
+        for (const { name, description, parameters } of fileFootprintTools(config))
           bytes += Buffer.byteLength(JSON.stringify({ name, description, parameters }));
         // The closing paragraph of the instruction and the listing of the bundled skills that Pi adds to the prompt.
         const skills = loadBundledSkills(this.skillsDir).skills;
@@ -2290,41 +2295,24 @@ export class CopilotHost {
   private systemFootprint(mounted = this.mailMounted()): number {
     const known = this.footprints.get(mounted);
     if (known !== undefined) return known;
-    const writer = !!this.workbench?.writer;
+    // The same gates a run with this mail state has: the same paragraphs and the same tools (copilot-tool-registry).
+    const gates: ToolGates = { workbench: this.workbench, mailMount: mounted ? "on" : "off" };
+    const switches = promptSwitches(gates);
     // the base instruction exactly as a session's loader hands it over (one loader builds both)
     const loader = this.resources(
       { extensions: [], errors: [], runtime: {} as never },
-      writer,
-      !!this.workbench?.text,
-      mounted,
-      !!this.workbench?.argument
+      switches.writer,
+      switches.text,
+      switches.mail,
+      switches.argument
     );
     let bytes = Buffer.byteLength(loader.getSystemPrompt() ?? "");
     // The tool schemas are built the way a run builds them; the closures are never called.
-    const stub = {} as never;
-    const tools: unknown[] = [];
-    try {
-      if (this.workbench) {
-        tools.push(createPlanTool(stub), createWorkspaceTool(stub));
-        if (this.workbench.library) tools.push(createLibraryTool(stub));
-        if (this.workbench.reader) tools.push(createReaderTool(stub));
-        if (this.workbench.writer) tools.push(createWriterTool(stub));
-        if (this.workbench.text) tools.push(createTextTool(stub));
-        if (this.workbench.mail && mounted) tools.push(createMailTool(stub));
-        if (this.workbench.argument) tools.push(createArgumentTool(stub));
-      }
-    } catch {
-      // a factory that needs its dependencies at creation: fall back to a generous measure
-      bytes += 48 * 1024;
-    }
-    for (const tool of tools) {
-      const { name, description, parameters } = tool as {
-        name: string;
-        description: string;
-        parameters: unknown;
-      };
+    const { tools, threw } = footprintTools(gates);
+    // a factory that needs its dependencies at creation: fall back to a generous measure
+    if (threw) bytes += 48 * 1024;
+    for (const { name, description, parameters } of tools)
       bytes += Buffer.byteLength(JSON.stringify({ name, description, parameters }));
-    }
     this.footprints.set(mounted, bytes);
     return bytes;
   }
@@ -2542,261 +2530,64 @@ export class CopilotHost {
       mailMount,
       model: frozenModel,
     };
-    const planTool = workbench
-      ? createPlanTool({
-          plans: workbench.plans,
-          viewAction: (action) => this.dispatchViewAction(state.navViewId, action, runId),
-          admitting: () => !this.closed && !state.stopRequested,
-          journal: this.journalPort(loaded, runId),
-          confirm: this.confirmationPort(loaded, state),
-          taskUndo: this.taskUndo,
-          conversationId: loaded.record.id,
-          taskDeleted: ({ toolCallId, planId, removed }) =>
-            this.registerUndo(loaded.record.id, toolCallId, planId, removed),
-          runId,
-          track: (work) => {
-            state.inflight.add(work);
-            const forget = () => state.inflight.delete(work);
-            work.then(forget, forget);
-            return work;
-          },
-        })
-      : undefined;
-    const workspaceTool = workbench
-      ? createWorkspaceTool({
-          page: () => this.views.get(state.navViewId),
-          providerStatus: () => this.agentProviderStatus(loaded),
-          selectModel: (choice) => this.agentSelectModel(loaded, choice),
-          viewAction: (action) => this.dispatchViewAction(state.navViewId, action, runId),
-          admitting: () => !this.closed && !state.stopRequested,
-        })
-      : undefined;
-    const libraryTool =
-      workbench?.library && planTool
-        ? createLibraryTool({
-            library: workbench.library,
-            journal: this.journalPort(loaded, runId),
-            confirm: this.confirmationPort(loaded, state),
-            // An explore action waits for one ADS request (similar, then useful): far longer than a click.
-            viewAction: (action) =>
-              this.dispatchViewAction(
-                state.navViewId,
-                action,
-                runId,
-                SLOW_VIEW_ACTIONS.has(action.action) ? { reportMs: EXPLORE_REPORT_MS } : {}
-              ),
-            page: () => this.views.get(state.navViewId),
-            // State sync after a delete or a candidate save, not navigation: no runId, so a later Stop does not cancel it.
-            shellSync: (action) => {
-              void this.dispatchViewAction(state.navViewId, action).catch(() => {});
-            },
-            admitting: () => !this.closed && !state.stopRequested,
-            runId,
-            track: (work) => {
-              state.inflight.add(work);
-              const forget = () => state.inflight.delete(work);
-              work.then(forget, forget);
-              return work;
-            },
-          })
-        : undefined;
-    // The ONE application resource loader of this session: the base instruction and the instructions that are loaded on
-    // demand come from it and nowhere else (the same object builds the session and answers `load_instruction`).
-    const mailOn = mailMount === "on";
-    // The instruction the model gets is built from the tools this session really has (`fileTools`, built below, whose
-    // list is fixed from the permission as read then): worked out once, when the session first asks for it, and kept
-    // for the whole run. A setting changed later takes effect with the next run, as for the tools themselves; each call
-    // still reads the setting (copilot ticket 57).
-    let promptFiles: { value: FilePromptContext | undefined } | undefined;
-    const filePromptOf = (): FilePromptContext | undefined => {
-      if (promptFiles) return promptFiles.value;
-      let value: FilePromptContext | undefined;
-      if (workbench?.fileTools && fileTools) {
-        const permission = fileTools.names.length === 0 ? "off" : workbench.fileTools.permission();
-        value = {
-          permission: permission === "off" && fileTools.names.length > 0 ? "ask" : permission,
-          cwd: workbench.fileTools.cwd,
-          shell:
-            (workbench.fileTools.platform ?? process.platform) === "win32" ? "powershell" : "bash",
-          skills: fileTools.names.length > 0 && loadBundledSkills(this.skillsDir).skills.length > 0,
-        };
-      }
-      promptFiles = { value };
-      return value;
+    // What this run's tools are given: one shared host context (`runHost`) and the run's own dependencies; which
+    // tools exist, in which order, and what each one gets is the registry's table (copilot-tool-registry).
+    const deps: RunToolDeps = {
+      conversationId: loaded.record.id,
+      viewAction: (action, options = {}) =>
+        this.dispatchViewAction(state.navViewId, action, runId, options),
+      // State sync after a delete or a candidate save, not navigation: no runId, so a later Stop does not cancel it.
+      shellSync: (action) => {
+        void this.dispatchViewAction(state.navViewId, action).catch(() => {});
+      },
+      page: () => this.views.get(state.navViewId),
+      providerStatus: () => this.agentProviderStatus(loaded),
+      selectModel: (choice) => this.agentSelectModel(loaded, choice),
+      modelAcceptsImages: () => frozenModel.input.includes("image"),
+      budget: () => this.room(loaded, frozenModel),
+      reclaim: () => {
+        this.shedAll(loaded);
+        return this.room(loaded, frozenModel);
+      },
+      imageBytesUsed: () => this.historyStats(loaded).imageBytes,
+      taskUndo: this.taskUndo,
+      taskDeleted: ({ toolCallId, planId, removed }) =>
+        this.registerUndo(loaded.record.id, toolCallId, planId, removed),
+      // (only a run with a workbench builds the text tool)
+      sourceCoverage: (textDocId) =>
+        workbench ? this.sourceCoverageOf(loaded, workbench, textDocId) : Promise.resolve(null),
+      wrote: (workId, rev) => {
+        state.readings.add(argumentKey(workId, rev));
+      },
+      fileAllow: (kind) => loaded.fileAllow[kind],
+      fileLifecycle: {
+        started: (id, at) => this.fileToolStarts.set(`${loaded.record.id}:${id}`, at),
+        ended: (id) => this.fileToolStarts.delete(`${loaded.record.id}:${id}`),
+      },
     };
-    const resourceLoader = this.resources(
-      extensions,
-      !!(workbench?.writer && planTool),
-      !!(workbench?.text && planTool),
-      !!(mailOn && planTool),
-      !!(workbench?.argument && planTool),
-      filePromptOf
-    );
-    const readerTool =
-      workbench?.reader && planTool
-        ? createReaderTool({
-            reader: workbench.reader,
-            conversationId: loaded.record.id,
-            viewAction: (action) =>
-              this.dispatchViewAction(
-                state.navViewId,
-                action,
-                runId,
-                action.action === "navigate" ? { reportMs: READER_REPORT_MS } : {}
-              ),
-            admitting: () => !this.closed && !state.stopRequested,
-            modelAcceptsImages: () => frozenModel.input.includes("image"),
-            page: () => this.views.get(state.navViewId),
-            budget: () => this.room(loaded, frozenModel),
-            reclaim: () => {
-              this.shedAll(loaded);
-              return this.room(loaded, frozenModel);
-            },
-            imageBytesUsed: () => this.historyStats(loaded).imageBytes,
-          })
-        : undefined;
-    const writerTool =
-      workbench?.writer && planTool
-        ? createWriterTool({
-            writer: workbench.writer,
-            viewAction: (action) => this.dispatchViewAction(state.navViewId, action, runId),
-            admitting: () => !this.closed && !state.stopRequested,
-            budget: () => this.room(loaded, frozenModel),
-            journal: this.journalPort(loaded, runId),
-            confirm: this.confirmationPort(loaded, state),
-            runId,
-            track: (work) => {
-              state.inflight.add(work);
-              const forget = () => state.inflight.delete(work);
-              work.then(forget, forget);
-              return work;
-            },
-          })
-        : undefined;
-    const textTool =
-      workbench?.text && planTool
-        ? createTextTool({
-            text: workbench.text,
-            instruction: (name) => resourceLoader.getInstruction(name),
-            instructionNames: () => resourceLoader.instructionNames(),
-            sourceCoverage: (textDocId) => this.sourceCoverageOf(loaded, workbench, textDocId),
-            page: () => this.views.get(state.navViewId),
-            viewAction: (action) => this.dispatchViewAction(state.navViewId, action, runId),
-            confirm: this.confirmationPort(loaded, state),
-            journal: this.journalPort(loaded, runId),
-            admitting: () => !this.closed && !state.stopRequested,
-            budget: () => this.room(loaded, frozenModel),
-            reclaim: () => {
-              this.shedAll(loaded);
-              return this.room(loaded, frozenModel);
-            },
-            runId,
-            track: (work) => {
-              state.inflight.add(work);
-              const forget = () => state.inflight.delete(work);
-              work.then(forget, forget);
-              return work;
-            },
-          })
-        : undefined;
-    const mailTool =
-      mailOn && workbench?.mail && planTool
-        ? createMailTool({
-            mail: workbench.mail,
-            journal: this.journalPort(loaded, runId),
-            confirm: this.confirmationPort(loaded, state),
-            admitting: () => !this.closed && !state.stopRequested,
-            runId,
-            modelAcceptsImages: () => frozenModel.input.includes("image"),
-            budget: () => this.room(loaded, frozenModel),
-            imageBytesUsed: () => this.historyStats(loaded).imageBytes,
-            track: (work) => {
-              state.inflight.add(work);
-              const forget = () => state.inflight.delete(work);
-              work.then(forget, forget);
-              return work;
-            },
-          })
-        : undefined;
-    const argumentTool =
-      workbench?.argument && planTool
-        ? createArgumentTool({
-            argument: workbench.argument,
-            viewAction: (action) => this.dispatchViewAction(state.navViewId, action, runId),
-            admitting: () => !this.closed && !state.stopRequested,
-            budget: () => this.room(loaded, frozenModel),
-            // The model learns what it wrote from the tool result: the page showing that revision is an outline.
-            wrote: (workId, rev) => state.readings.add(argumentKey(workId, rev)),
-            journal: this.journalPort(loaded, runId),
-            confirm: this.confirmationPort(loaded, state),
-            runId,
-            track: (work) => {
-              state.inflight.add(work);
-              const forget = () => state.inflight.delete(work);
-              work.then(forget, forget);
-              return work;
-            },
-          })
-        : undefined;
-    const fileTools =
-      workbench?.fileTools && planTool && workspaceTool
-        ? createFileTools({
-            cwd: workbench.fileTools.cwd,
-            permission: workbench.fileTools.permission,
-            protectedFolders: workbench.fileTools.protectedFolders,
-            ...(workbench.fileTools.platform ? { platform: workbench.fileTools.platform } : {}),
-            // Read-only here: only a real view's click on a card sets the standing allowance (`decide`).
-            allowed: (kind) => loaded.fileAllow[kind],
-            confirm: this.confirmationPort(loaded, state),
-            admitting: () => !this.closed && !state.stopRequested,
-            track: (work) => {
-              state.inflight.add(work);
-              const forget = () => state.inflight.delete(work);
-              work.then(forget, forget);
-              return work;
-            },
-            lifecycle: {
-              started: (id, at) => this.fileToolStarts.set(`${loaded.record.id}:${id}`, at),
-              ended: (id) => this.fileToolStarts.delete(`${loaded.record.id}:${id}`),
-            },
-          })
-        : undefined;
-    const toolNames =
-      planTool && workspaceTool
-        ? [
-            PLAN_TOOL_NAME,
-            WORKSPACE_TOOL_NAME,
-            ...(libraryTool ? [LIBRARY_TOOL_NAME] : []),
-            ...(readerTool ? [READER_TOOL_NAME] : []),
-            ...(writerTool ? [WRITER_TOOL_NAME] : []),
-            ...(textTool ? [TEXT_TOOL_NAME] : []),
-            ...(mailTool ? [MAIL_TOOL_NAME] : []),
-            ...(argumentTool ? [ARGUMENT_TOOL_NAME] : []),
-            ...(fileTools?.names ?? []),
-          ]
-        : [];
+    const run = assembleRunTools({
+      gates: { workbench, mailMount },
+      host: this.runHost(loaded, state),
+      deps,
+      loader: (switches, files) =>
+        this.resources(
+          extensions,
+          switches.writer,
+          switches.text,
+          switches.mail,
+          switches.argument,
+          files
+        ),
+      hasSkills: () => loadBundledSkills(this.skillsDir).skills.length > 0,
+    });
+    const { resourceLoader, toolNames } = run;
     const { session } = await pi.createAgentSession({
       cwd: this.cwd,
       agentDir: join(this.root, "agent"),
       modelRuntime: selected.runtime,
       model: frozenModel,
       thinkingLevel: selected.thinking ?? "off",
-      ...(planTool && workspaceTool
-        ? {
-            tools: toolNames,
-            customTools: [
-              planTool,
-              workspaceTool,
-              ...(libraryTool ? [libraryTool] : []),
-              ...(readerTool ? [readerTool] : []),
-              ...(writerTool ? [writerTool] : []),
-              ...(textTool ? [textTool] : []),
-              ...(mailTool ? [mailTool] : []),
-              ...(argumentTool ? [argumentTool] : []),
-              ...(fileTools?.tools ?? []),
-            ],
-          }
-        : { tools: [], customTools: [], noTools: "all" as const }),
+      ...run.session,
       sessionManager: loaded.manager,
       settingsManager: pi.SettingsManager.inMemory({
         retry: { enabled: true, maxRetries: 1, baseDelayMs: 500 },
@@ -3329,18 +3120,6 @@ export class CopilotHost {
   }
 }
 
-/** The tools a run can be given (each tool's file names its own). */
-const COPILOT_TOOL_NAMES = [
-  ...FILE_TOOL_NAMES,
-  PLAN_TOOL_NAME,
-  WORKSPACE_TOOL_NAME,
-  LIBRARY_TOOL_NAME,
-  READER_TOOL_NAME,
-  WRITER_TOOL_NAME,
-  TEXT_TOOL_NAME,
-  MAIL_TOOL_NAME,
-  ARGUMENT_TOOL_NAME,
-] as const;
 /**
  * How a tool call ended: the status of its operation row (every status of the contract's `CopilotOperation` — one
  * added there and left out here is a type error), `thrown` when the tool threw, `other` for a status word that is

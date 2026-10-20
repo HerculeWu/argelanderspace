@@ -50,7 +50,7 @@ import {
   createWriteToolDefinition,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import type { ConfirmationPort } from "./copilot-tool-kit.js";
+import type { ConfirmationPort, ToolHostContext } from "./copilot-tool-kit.js";
 import { shownPath } from "./settings.js";
 
 /** The tool names a run is given for one permission setting and platform (`off`: none). */
@@ -81,8 +81,13 @@ export interface ProtectedFolder {
   folder: string;
 }
 
-/** What the host gives the tools. */
-export interface FileToolsContext {
+/**
+ * What the host gives the tools: of the run's shared host context only `admitting` (false once the host stopped
+ * admitting work: shutdown, Stop), `track` (counts the running command as in flight until it settles, so a terminal
+ * run state waits for it) and `confirm` (present in the real host: confirmations wait there for the user; without it
+ * an `ask` call is refused) — never a journal.
+ */
+export interface FileToolsContext extends Pick<ToolHostContext, "admitting" | "track" | "confirm"> {
   /** The Project folder: where commands run and relative paths start. */
   cwd: string;
   /** Read at every call. */
@@ -95,12 +100,6 @@ export interface FileToolsContext {
   protectedFolders: () => ProtectedFolder[];
   /** The standing "allow for this session" of this conversation: read-only here; only a real click sets it. */
   allowed: (kind: FileToolAllowClass) => boolean;
-  /** Present in the real host: confirmations wait here for the user. Without it an `ask` call is refused. */
-  confirm?: ConfirmationPort;
-  /** False once the host stopped admitting work (shutdown, Stop). */
-  admitting: () => boolean;
-  /** Counts the running command as in flight until it settles, so a terminal run state waits for it. */
-  track?: <T>(work: Promise<T>) => Promise<T>;
   /** A call began to run / ended: the host shows a running call with its start time. */
   lifecycle?: {
     started(toolCallId: string, startedAt: string): void;
