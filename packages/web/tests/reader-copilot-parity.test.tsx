@@ -6,7 +6,7 @@
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath, URL as NodeURL } from "node:url";
-import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import {
   buildReaderReading,
   type CopilotViewAction,
@@ -17,37 +17,29 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Shell } from "../src/argelander/Shell";
 import { registerWorkspaceLeaveGuard } from "../src/argelander/workspace";
-import i18n from "../src/i18n";
+import { installShellHarness } from "./shell-harness";
 
 vi.setConfig({ testTimeout: 30000 });
 const h = vi.hoisted(() => ({
   viewAction: null as null | ((action: unknown) => Promise<{ ok: boolean; detail?: string; folded?: string }>),
   context: null as null | PageContext,
-  contexts: [] as PageContext[],
+  seen: [] as PageContext[],
   library: new Set<() => void>(),
   annotation: new Set<(id: string) => void>(),
 }));
-vi.mock("../src/api/ws", () => ({
-  onPlanChanged: () => () => {},
-  onLibraryChanged: (cb: () => void) => {
-    h.library.add(cb);
-    return () => h.library.delete(cb);
-  },
-  onJobEvent: () => () => {},
-  onAnnotationChanged: (cb: (id: string) => void) => {
-    h.annotation.add(cb);
-    return () => h.annotation.delete(cb);
-  },
-  onWriterChanged: () => () => {},
-}));
-vi.mock("../src/copilot/Copilot", () => ({
-  Copilot: ({ onViewAction, context }: { onViewAction: typeof h.viewAction; context: PageContext }) => {
-    h.viewAction = onViewAction;
-    if (h.context !== context) h.contexts.push(context);
-    h.context = context;
-    return null;
-  },
-}));
+vi.mock("../src/api/ws", async () =>
+  (await import("./shell-stubs")).quietWs({
+    onLibraryChanged: (cb: () => void) => {
+      h.library.add(cb);
+      return () => h.library.delete(cb);
+    },
+    onAnnotationChanged: (cb: (id: string) => void) => {
+      h.annotation.add(cb);
+      return () => h.annotation.delete(cb);
+    },
+  })
+);
+vi.mock("../src/copilot/Copilot", async () => (await import("./shell-stubs")).copilotProbe(h));
 
 const golden = JSON.parse(
   readFileSync(fileURLToPath(new NodeURL("../../../tests/golden/tex/arxiv-2501.17225.json", import.meta.url)), "utf8")
@@ -101,10 +93,21 @@ class IOStub {
 const scrolled: Element[] = [];
 const realScrollIntoView = Element.prototype.scrollIntoView;
 
-beforeEach(async () => {
-  await i18n.changeLanguage("en");
-  window.sessionStorage.clear();
-  window.localStorage.clear();
+installShellHarness({
+  papers: () => [DOC, "other-doc"],
+  routes: async (url) => {
+    if (url === "/api/plans") return ok({ version: 1, rev: 1, plans: [] });
+    if (url === `/api/paper/${DOC}/description`)
+      return descriptionStatus === 200 ? ok({ doc_id: DOC, format: "latex" }) : ({ ok: false, status: descriptionStatus, json: async () => ({}) } as unknown as Response);
+    if (url === `/api/paper/${DOC}/annotations?coherent=1`) {
+      if (hold) await hold;
+      if (readStatus !== 200) return { ok: false, status: readStatus, json: async () => ({}) } as unknown as Response;
+      return ok({ version: 1, ir, file: { version: 1, rev, content_fingerprint: fingerprint, annotations }, assets: assetsOf(ir) });
+    }
+    return null;
+  },
+});
+beforeEach(() => {
   ir = longIr();
   annotations = [];
   fingerprint = FP;
@@ -114,7 +117,7 @@ beforeEach(async () => {
   descriptionStatus = 200;
   h.viewAction = null;
   h.context = null;
-  h.contexts = [];
+  h.seen = [];
   h.library.clear();
   h.annotation.clear();
   scrolled.length = 0;
@@ -122,28 +125,9 @@ beforeEach(async () => {
     scrolled.push(this);
   });
   vi.stubGlobal("IntersectionObserver", IOStub);
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url === "/api/plans") return ok({ version: 1, rev: 1, plans: [] });
-      if (url === "/api/papers") return ok({ papers: [DOC, "other-doc"] });
-      if (url === `/api/paper/${DOC}/description`)
-        return descriptionStatus === 200 ? ok({ doc_id: DOC, format: "latex" }) : ({ ok: false, status: descriptionStatus, json: async () => ({}) } as unknown as Response);
-      if (url === `/api/paper/${DOC}/annotations?coherent=1`) {
-        if (hold) await hold;
-        if (readStatus !== 200) return { ok: false, status: readStatus, json: async () => ({}) } as unknown as Response;
-        return ok({ version: 1, ir, file: { version: 1, rev, content_fingerprint: fingerprint, annotations }, assets: assetsOf(ir) });
-      }
-      return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
-    })
-  );
 });
 afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
   Element.prototype.scrollIntoView = realScrollIntoView;
-  window.history.replaceState(null, "", "/");
 });
 
 /** A settled selection, as the floating annotate bar sees it (selectionchange, then the settle delay). */
@@ -267,7 +251,7 @@ describe("the page the assistant receives", () => {
     act(() => { for (const cb of [...h.annotation]) cb(DOC); });
     await waitFor(() => expect(h.context?.reader?.reading?.epoch.fingerprint).toBe("fp-2"), { timeout: 5000 });
     await waitFor(() => expect(reader().selection).toBeNull());
-    for (const context of h.contexts) {
+    for (const context of h.seen) {
       expect(PageContextSchema.safeParse(context).success).toBe(true);
       if (context.reader?.selection) expect(context.reader.selection.fingerprint).toBe(context.reader.reading?.epoch.fingerprint);
     }

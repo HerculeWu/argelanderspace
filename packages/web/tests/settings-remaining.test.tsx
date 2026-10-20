@@ -4,55 +4,32 @@
  * the in-memory fake (`settings-fake.ts`); the real server and a real browser are covered elsewhere.
  */
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Shell } from "../src/argelander/Shell";
-import i18n from "../src/i18n";
 import { fakeBus } from "./fake-ws";
 import { type FakeSettings, fakeSettings } from "./settings-fake";
+import { installShellHarness } from "./shell-harness";
 
 vi.mock("../src/api/ws", async () => (await import("./fake-ws")).wsModule());
 // The Copilot panel as the Shell drives it: whether it is open, and how many times its provider dialog was asked for.
-vi.mock("../src/copilot/Copilot", () => ({
-  Copilot: ({ open, settingsAsked }: { open: boolean; settingsAsked?: number }) => (
+vi.mock("../src/copilot/Copilot", async () =>
+  (await import("./shell-stubs")).copilotStub(({ open, settingsAsked }) => (
     <div data-ui="stub-copilot" data-open={String(open)} data-settings-asked={String(settingsAsked ?? 0)} />
-  ),
-}));
-vi.mock("../src/plan/PlanView", () => ({ PlanView: () => <div data-ui="stub-plan" /> }));
-vi.mock("../src/writer/WriterView", () => ({ WriterView: () => <div data-ui="stub-write" /> }));
-vi.mock("../src/library/LibraryView", () => ({ LibraryView: () => <div data-ui="stub-library" /> }));
-vi.mock("../src/doc/DocPane", () => ({ DocPane: () => <div data-ui="stub-doc" /> }));
-vi.mock("../src/mail/MailView", () => ({ MailView: () => <div data-ui="stub-mail" /> }));
+  ))
+);
+vi.mock("../src/plan/PlanView", async () => (await import("./shell-stubs")).pageStub("plan"));
+vi.mock("../src/writer/WriterView", async () => (await import("./shell-stubs")).pageStub("write"));
+vi.mock("../src/library/LibraryView", async () => (await import("./shell-stubs")).pageStub("library"));
+vi.mock("../src/doc/DocPane", async () => (await import("./shell-stubs")).pageStub("doc"));
+vi.mock("../src/mail/MailView", async () => (await import("./shell-stubs")).pageStub("mail"));
 
 let settings: FakeSettings;
 const EN = { "ui.language": "en" } as const;
-const root = document.documentElement;
-const BOOT_ATTRIBUTES = ["data-theme", "data-density", "data-accent", "data-labels", "data-ui-from", "lang", "style"];
 
-beforeEach(async () => {
-  await i18n.changeLanguage("en");
-  window.localStorage.clear();
-  window.sessionStorage.clear();
-  for (const name of BOOT_ATTRIBUTES) root.removeAttribute(name);
+installShellHarness({ settings: () => settings });
+beforeEach(() => {
   // The tests read the page in English; a page takes its language from config.toml, so the file says so.
   settings = fakeSettings(EN);
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const answer = settings.handle(input, init);
-      if (answer) return answer;
-      if (String(input) === "/api/papers") return { ok: true, status: 200, json: async () => ({ papers: [] }) } as Response;
-      return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
-    })
-  );
-  window.history.replaceState(null, "", "/");
-});
-afterEach(async () => {
-  cleanup();
-  vi.useRealTimers();
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
-  for (const name of BOOT_ATTRIBUTES) root.removeAttribute(name);
-  await i18n.changeLanguage("zh-CN");
 });
 
 const q = (selector: string, within_: ParentNode = document) => within_.querySelector<HTMLElement>(selector);

@@ -7,16 +7,16 @@ import type { AdsCredentialStatus } from "@argelanderspace/contracts";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Shell } from "../src/argelander/Shell";
-import i18n from "../src/i18n";
 import { type FakeSettings, fakeSettings } from "./settings-fake";
+import { installShellHarness } from "./shell-harness";
 
 vi.mock("../src/api/ws", async () => (await import("./fake-ws")).wsModule());
-vi.mock("../src/copilot/Copilot", () => ({ Copilot: () => <div data-ui="stub-copilot" /> }));
-vi.mock("../src/plan/PlanView", () => ({ PlanView: () => <div data-ui="stub-plan" /> }));
-vi.mock("../src/writer/WriterView", () => ({ WriterView: () => <div data-ui="stub-write" /> }));
-vi.mock("../src/library/LibraryView", () => ({ LibraryView: () => <div data-ui="stub-library" /> }));
-vi.mock("../src/doc/DocPane", () => ({ DocPane: () => <div data-ui="stub-doc" /> }));
-vi.mock("../src/mail/MailView", () => ({ MailView: () => <div data-ui="stub-mail" /> }));
+vi.mock("../src/copilot/Copilot", async () => (await import("./shell-stubs")).copilotStub("stub-copilot"));
+vi.mock("../src/plan/PlanView", async () => (await import("./shell-stubs")).pageStub("plan"));
+vi.mock("../src/writer/WriterView", async () => (await import("./shell-stubs")).pageStub("write"));
+vi.mock("../src/library/LibraryView", async () => (await import("./shell-stubs")).pageStub("library"));
+vi.mock("../src/doc/DocPane", async () => (await import("./shell-stubs")).pageStub("doc"));
+vi.mock("../src/mail/MailView", async () => (await import("./shell-stubs")).pageStub("mail"));
 
 const TOKEN = "zqxWebTokenMARK0123456789";
 
@@ -63,29 +63,15 @@ function handleAds(url: string, init?: RequestInit): Response | null {
   return json({}, 404);
 }
 
-beforeEach(async () => {
-  await i18n.changeLanguage("en");
-  window.localStorage.clear();
+installShellHarness({ settings: () => settings, routes: (url, init) => handleAds(url, init) });
+beforeEach(() => {
   settings = fakeSettings({ "ui.language": "en" });
   ads = { saved: "none", keychain: true, devKey: false, testResult: "valid" };
   calls = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const answer = settings.handle(input, init) ?? handleAds(String(input), init);
-      if (answer) return answer;
-      if (String(input) === "/api/papers") return json({ papers: [] });
-      return json({}, 404);
-    })
-  );
 });
-afterEach(async () => {
+afterEach(() => {
   // Nothing the page shows holds the token, whatever happened.
   expect(document.body.innerHTML).not.toContain(TOKEN);
-  cleanup();
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
-  await i18n.changeLanguage("zh-CN");
 });
 
 const q = (selector: string) => document.querySelector<HTMLElement>(selector);

@@ -3,22 +3,16 @@
  * A render that throws is never committed, so its effects do not run — the real Shell under the real boundary, with
  * a page that throws the first time it renders.
  */
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Shell } from "../src/argelander/Shell";
-import i18n from "../src/i18n";
 import { PageErrorBoundary } from "../src/PageErrorBoundary";
 import { resetPageErrorReportingForTests } from "../src/page-errors";
+import { installShellHarness } from "./shell-harness";
 
 const h = vi.hoisted(() => ({ crash: null as string | null }));
-vi.mock("../src/api/ws", () => ({
-  onPlanChanged: () => () => {},
-  onLibraryChanged: () => () => {},
-  onJobEvent: () => () => {},
-  onAnnotationChanged: () => () => {},
-  onWriterChanged: () => () => {},
-}));
-vi.mock("../src/copilot/Copilot", () => ({ Copilot: () => null }));
+vi.mock("../src/api/ws", async () => (await import("./shell-stubs")).quietWs());
+vi.mock("../src/copilot/Copilot", async () => (await import("./shell-stubs")).copilotStub());
 vi.mock("../src/plan/PlanView", () => ({
   PlanView: () => {
     if (h.crash === "plan") throw new TypeError("the plan page failed");
@@ -33,31 +27,20 @@ vi.mock("../src/writer/WriterView", () => ({
 }));
 
 let reports: Record<string, unknown>[];
-beforeEach(async () => {
-  await i18n.changeLanguage("en");
+installShellHarness({
+  routes: (url, init) => {
+    if (url === "/api/page-errors") {
+      reports.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return Response.json({ recorded: true });
+    }
+    return null;
+  },
+});
+beforeEach(() => {
   resetPageErrorReportingForTests();
   reports = [];
   h.crash = null;
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/page-errors") {
-        reports.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
-        return Response.json({ recorded: true });
-      }
-      return String(input) === "/api/papers"
-        ? ({ ok: true, status: 200, json: async () => ({ papers: [] }) } as Response)
-        : ({ ok: false, status: 404, json: async () => ({}) } as unknown as Response);
-    })
-  );
   vi.spyOn(console, "error").mockImplementation(() => {});
-  window.history.replaceState(null, "", "/");
-});
-afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
-  void i18n.changeLanguage("zh-CN");
 });
 
 const mount = () =>

@@ -5,15 +5,15 @@
  * pages' content), the bound-view actions reaching the PDF Reader's own controls with zero-based pages, and the
  * LaTeX-only controls being refused while a PDF is shown. The real engine and layout are checked in a real browser.
  */
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { render, waitFor } from "@testing-library/react";
 import { PdfActionType, PdfZoomMode, type PdfLinkTarget } from "@embedpdf/models";
 import { type CopilotViewAction, type PageContext, PageContextSchema, type PdfPage } from "@argelanderspace/contracts";
 import { useEffect } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Shell } from "../src/argelander/Shell";
 import { pdfTargetPageIndex } from "../src/doc/pdf-navigation";
 import { usePdfBridge } from "../src/doc/reader-bridge";
-import i18n from "../src/i18n";
+import { installShellHarness } from "./shell-harness";
 
 vi.setConfig({ testTimeout: 30000 });
 const SHA = "c".repeat(64);
@@ -25,20 +25,8 @@ const h = vi.hoisted(() => ({
   phase: "ready" as "ready" | "loading",
   answers: {} as Record<string, { ok: boolean; detail?: "disabled" | "unavailable" | "not_found" }>,
 }));
-vi.mock("../src/api/ws", () => ({
-  onPlanChanged: () => () => {},
-  onLibraryChanged: () => () => {},
-  onJobEvent: () => () => {},
-  onAnnotationChanged: () => () => {},
-  onWriterChanged: () => () => {},
-}));
-vi.mock("../src/copilot/Copilot", () => ({
-  Copilot: ({ onViewAction, context }: { onViewAction: typeof h.viewAction; context: PageContext }) => {
-    h.viewAction = onViewAction;
-    h.context = context;
-    return null;
-  },
-}));
+vi.mock("../src/api/ws", async () => (await import("./shell-stubs")).quietWs());
+vi.mock("../src/copilot/Copilot", async () => (await import("./shell-stubs")).copilotProbe(h));
 // The stub Reader: the page and the handle go through the real bridge exactly as PdfReader's do.
 vi.mock("../src/doc/PdfReader", () => ({
   PdfReader: ({ docId }: { docId: string }) => {
@@ -57,25 +45,22 @@ vi.mock("../src/doc/PdfReader", () => ({
 }));
 
 const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as Response;
-beforeEach(async () => {
-  await i18n.changeLanguage("en");
-  window.sessionStorage.clear();
-  window.localStorage.clear();
+installShellHarness({
+  papers: () => [DOC],
+  routes: (url) => {
+    if (url === "/api/plans") return ok({ version: 1, rev: 1, plans: [] });
+    if (url === `/api/paper/${DOC}/description`)
+      return ok({ doc_id: DOC, format: "pdf", acquired_via: "user_pdf_upload", acquired_at: "2026-10-01T00:00:00.000Z", owner_work_id: "w1", work_title: "A Work", display_name: "a.pdf", byte_length: 100, sha256: SHA, page_count: 12, pages: [] });
+    return null;
+  },
+});
+beforeEach(() => {
   h.viewAction = null;
   h.context = null;
   h.received = [];
   h.phase = "ready";
   h.answers = {};
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url === "/api/plans") return ok({ version: 1, rev: 1, plans: [] });
-    if (url === "/api/papers") return ok({ papers: [DOC] });
-    if (url === `/api/paper/${DOC}/description`)
-      return ok({ doc_id: DOC, format: "pdf", acquired_via: "user_pdf_upload", acquired_at: "2026-10-01T00:00:00.000Z", owner_work_id: "w1", work_title: "A Work", display_name: "a.pdf", byte_length: 100, sha256: SHA, page_count: 12, pages: [] });
-    return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
-  }));
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.history.replaceState(null, "", "/"); });
 const run = (action: CopilotViewAction) => h.viewAction!(action);
 async function boot() {
   render(<Shell />);

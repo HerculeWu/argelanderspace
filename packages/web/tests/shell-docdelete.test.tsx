@@ -8,57 +8,28 @@
  * so no other pane's data loads).
  */
 
-import { cleanup, render, waitFor, act, fireEvent } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Shell } from "../src/argelander/Shell";
+import { waitFor, act, fireEvent } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Workspace } from "../src/argelander/workspace";
 import i18n from "../src/i18n";
+import { installShellHarness, renderShell, stubShellFetch } from "./shell-harness";
 
 const h = vi.hoisted(() => ({ ws: null as Workspace | null }));
 
-vi.mock("../src/doc/DocPane", async () => {
-  const { useWorkspace } = await import("../src/argelander/workspace");
-  return {
-    DocPane: () => {
-      h.ws = useWorkspace();
-      return null;
-    },
-  };
-});
-
-function installFetch(papers: string[]) {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url === "/api/papers") {
-        return { ok: true, status: 200, json: async () => ({ papers }) } as Response;
-      }
-      return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
-    })
-  );
-}
+vi.mock("../src/doc/DocPane", async () => (await import("./shell-stubs")).workspaceProbe(h));
 
 async function boot(papers: string[], route: string) {
-  installFetch(papers);
-  window.history.replaceState(null, "", route);
-  render(<Shell />);
+  stubShellFetch({ papers: () => papers });
+  renderShell(route);
   // the doc pane (mock) mounts once /api/papers resolves and the route opens
   await waitFor(() => expect(h.ws).toBeTruthy());
   await waitFor(() => expect(h.ws!.papers).toEqual(papers));
   expect(h.ws!.currentDoc).toBe("d1");
 }
 
+installShellHarness({ language: null });
 beforeEach(() => {
   h.ws = null;
-});
-
-afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
-  window.history.replaceState(null, "", "/");
-  localStorage.removeItem("argelander.tweaks");
-  void i18n.changeLanguage("zh-CN");
 });
 
 describe("Shell docDeleted wiring (Stage 8 §8)", () => {

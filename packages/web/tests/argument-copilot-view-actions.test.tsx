@@ -5,12 +5,12 @@
  * draft is the user's: the actions never ask about it and never discard it, they answer `leave_blocked`.
  */
 import type { ArgumentGraph, PageContext } from "@argelanderspace/contracts";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Shell } from "../src/argelander/Shell";
-import i18n from "../src/i18n";
 import type { LibraryData, LibraryRef } from "../src/library/types";
 import { ARGUMENT_FIXTURES } from "./fixtures/argument-graphs";
+import { installShellHarness } from "./shell-harness";
 
 const h = vi.hoisted(() => ({
   viewAction: null as null | ((action: unknown) => Promise<{ ok: boolean; detail?: string }>),
@@ -18,14 +18,7 @@ const h = vi.hoisted(() => ({
   seen: [] as PageContext[],
 }));
 vi.mock("../src/api/ws", async () => (await import("./fake-ws")).wsModule());
-vi.mock("../src/copilot/Copilot", () => ({
-  Copilot: ({ onViewAction, context }: { onViewAction: typeof h.viewAction; context: PageContext }) => {
-    h.viewAction = onViewAction;
-    h.context = context;
-    if (h.seen[h.seen.length - 1] !== context) h.seen.push(context);
-    return null;
-  },
-}));
+vi.mock("../src/copilot/Copilot", async () => (await import("./shell-stubs")).copilotProbe(h));
 vi.mock("../src/argument/ArgumentGraphCanvas", () => ({ ArgumentGraphCanvas: () => <div data-ui="canvas-stub" /> }));
 vi.mock("../src/graph/GraphCanvas", () => ({ GraphCanvas: () => <div data-ui="graph-stub" /> }));
 
@@ -33,38 +26,28 @@ const WORK = "doi:10.1000/p1";
 const ref = (n: number): LibraryRef => ({ id: `doi:10.1000/p${n}`, title: `Paper ${n}`, authors: `Author${n}, Co`, year: 2001, venue: "MNRAS", type: "article", cite: `author${n}`, tags: [], pdf: false, read: false, star: false });
 let graph: () => ArgumentGraph;
 let answer: () => { status: number; body: unknown } | Promise<{ status: number; body: unknown }>;
+let data: LibraryData;
 const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as Response;
 
-beforeEach(async () => {
-  await i18n.changeLanguage("en");
-  window.sessionStorage.clear();
-  window.localStorage.clear();
+installShellHarness({
+  routes: async (url) => {
+    if (url === "/api/plans") return ok({ version: 1, rev: 1, plans: [] });
+    if (url === "/api/library") return ok(data);
+    if (url === `/api/works/${encodeURIComponent(WORK)}/argument-graph`) {
+      const { status, body } = await answer();
+      return new Response(JSON.stringify(body), { status });
+    }
+    return null;
+  },
+});
+beforeEach(() => {
   const refs = [ref(1), ref(2)];
-  const data: LibraryData = { project: { name: "P" }, refs, tags: [], graph: { version: 2, nodes: refs.map((r) => ({ id: r.id, ref: r.id, y: 2001, c: 1, a: r.authors, v: "MNRAS", t: r.title })), links: [] } };
+  data = { project: { name: "P" }, refs, tags: [], graph: { version: 2, nodes: refs.map((r) => ({ id: r.id, ref: r.id, y: 2001, c: 1, a: r.authors, v: "MNRAS", t: r.title })), links: [] } };
   graph = () => ({ ...ARGUMENT_FIXTURES.clean(), work_id: WORK, rev: 4 });
   answer = () => ({ status: 200, body: graph() });
   h.viewAction = null;
   h.context = null;
   h.seen = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url === "/api/plans") return ok({ version: 1, rev: 1, plans: [] });
-      if (url === "/api/library") return ok(data);
-      if (url === "/api/papers") return ok({ papers: [] });
-      if (url === `/api/works/${encodeURIComponent(WORK)}/argument-graph`) {
-        const { status, body } = await answer();
-        return new Response(JSON.stringify(body), { status });
-      }
-      return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
-    })
-  );
-});
-afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
-  window.history.replaceState(null, "", "/");
 });
 
 const q = (selector: string) => document.querySelector<HTMLElement>(selector);

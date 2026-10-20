@@ -4,19 +4,20 @@
  * risk sentence always there, a warning on "automatic", and the usual source badge and restore for a value that came
  * from the file.
  */
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Shell } from "../src/argelander/Shell";
 import i18n from "../src/i18n";
 import { type FakeSettings, fakeSettings } from "./settings-fake";
+import { installShellHarness } from "./shell-harness";
 
 vi.mock("../src/api/ws", async () => (await import("./fake-ws")).wsModule());
-vi.mock("../src/copilot/Copilot", () => ({ Copilot: () => null }));
-vi.mock("../src/plan/PlanView", () => ({ PlanView: () => <div data-ui="stub-plan" /> }));
-vi.mock("../src/writer/WriterView", () => ({ WriterView: () => <div data-ui="stub-write" /> }));
-vi.mock("../src/library/LibraryView", () => ({ LibraryView: () => <div data-ui="stub-library" /> }));
-vi.mock("../src/doc/DocPane", () => ({ DocPane: () => <div data-ui="stub-doc" /> }));
-vi.mock("../src/mail/MailView", () => ({ MailView: () => <div data-ui="stub-mail" /> }));
+vi.mock("../src/copilot/Copilot", async () => (await import("./shell-stubs")).copilotStub());
+vi.mock("../src/plan/PlanView", async () => (await import("./shell-stubs")).pageStub("plan"));
+vi.mock("../src/writer/WriterView", async () => (await import("./shell-stubs")).pageStub("write"));
+vi.mock("../src/library/LibraryView", async () => (await import("./shell-stubs")).pageStub("library"));
+vi.mock("../src/doc/DocPane", async () => (await import("./shell-stubs")).pageStub("doc"));
+vi.mock("../src/mail/MailView", async () => (await import("./shell-stubs")).pageStub("mail"));
 
 let settings: FakeSettings;
 const q = (selector: string) => document.querySelector<HTMLElement>(selector);
@@ -24,19 +25,10 @@ const qa = (selector: string) => [...document.querySelectorAll<HTMLElement>(sele
 const row = () => q('[data-ui="setting-row"][data-ui-key="copilot_file_tools"]');
 const pressed = () => qa('[data-ui="copilot-permission-option"][aria-pressed="true"]').map((el) => el.getAttribute("data-ui-key"));
 
-beforeEach(async () => {
-  await i18n.changeLanguage("en");
-  window.localStorage.clear();
+installShellHarness({ settings: () => settings });
+beforeEach(() => {
   settings = fakeSettings({ "ui.language": "en" });
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const answer = settings.handle(input, init);
-    if (answer) return answer;
-    if (String(input) === "/api/papers") return { ok: true, status: 200, json: async () => ({ papers: [] }) } as Response;
-    return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
-  }));
-  window.history.replaceState(null, "", "/");
 });
-afterEach(async () => { cleanup(); vi.unstubAllGlobals(); await i18n.changeLanguage("zh-CN"); });
 
 async function openCopilotGroup() {
   render(<Shell />);

@@ -3,28 +3,23 @@
  * guarantee that a background edit does not navigate or overwrite a draft, the shared reorder rules,
  * and the inert display of agent-writable notes. Real PlanView/Shell over a stubbed fetch "server".
  */
-import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import type { PlansFile } from "@argelanderspace/contracts";
 import * as contracts from "@argelanderspace/contracts";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Shell } from "../src/argelander/Shell";
 import { registerWorkspaceLeaveGuard, WorkspaceProvider, type Workspace } from "../src/argelander/workspace";
 import * as model from "../src/plan/model";
 import { PLAN_ICONS } from "../src/plan/modals";
 import { PlanView, type PlanViewController } from "../src/plan/PlanView";
+import { installShellHarness } from "./shell-harness";
 
 const h = vi.hoisted(() => ({ planChanged: [] as (() => void)[], viewAction: null as null | ((action: unknown) => Promise<{ ok: boolean; detail?: string }>) }));
-vi.mock("../src/api/ws", () => ({
-  onPlanChanged: (cb: () => void) => { h.planChanged.push(cb); return () => {}; },
-  onLibraryChanged: () => () => {},
-  onJobEvent: () => () => {},
-  onAnnotationChanged: () => () => {},
-  onWriterChanged: () => () => {},
-}));
-vi.mock("../src/copilot/Copilot", () => ({
-  Copilot: ({ onViewAction }: { onViewAction: typeof h.viewAction }) => { h.viewAction = onViewAction; return null; },
-}));
-vi.mock("../src/doc/DocPane", () => ({ DocPane: () => <div data-ui="doc-stub" /> }));
+vi.mock("../src/api/ws", async () =>
+  (await import("./shell-stubs")).quietWs({ onPlanChanged: (cb: () => void) => { h.planChanged.push(cb); return () => {}; } })
+);
+vi.mock("../src/copilot/Copilot", async () => (await import("./shell-stubs")).copilotProbe(h));
+vi.mock("../src/doc/DocPane", async () => (await import("./shell-stubs")).pageStub("doc", "doc-stub"));
 
 const WORKSPACE: Workspace = { papers: [], currentDoc: null, setCurrentDoc: () => {}, openDoc: vi.fn(), pendingAnchor: null, clearPendingAnchor: () => {}, docDeleted: () => {}, tweaks: { theme: "dark", accent: "azure", density: "regular", labels: true } };
 const task = (n: number, over: object = {}) => ({ id: `t_${String(n).padStart(8, "0")}`, title: `Task ${n}`, status: "todo", due: "2026-12-31", links: [], focused: false, created_at: "2026-09-01T08:00:00.000Z", ...over });
@@ -36,9 +31,11 @@ let puts: PlansFile[];
 let gets: number;
 let papers: string[] = [];
 const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as Response;
-function installFetch() {
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input), method = init?.method ?? "GET";
+installShellHarness({
+  language: null,
+  papers: () => papers,
+  routes: (url, init) => {
+    const method = init?.method ?? "GET";
     if (url === "/api/plans" && method === "GET") { gets++; return ok(serverDoc); }
     if (url === "/api/plans" && method === "PUT") {
       const body = JSON.parse(String(init?.body)) as PlansFile;
@@ -46,12 +43,10 @@ function installFetch() {
       puts.push(body); serverDoc = { ...body, rev: body.rev + 1 }; return ok(serverDoc);
     }
     if (url === "/api/library") return ok({ project: { name: "P" }, refs: [], tags: [], graph: { nodes: [], links: [] } });
-    if (url === "/api/papers") return ok({ papers });
-    return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
-  }));
-}
-beforeEach(() => { papers = []; serverDoc = makeDoc(); puts = []; gets = 0; h.planChanged.length = 0; h.viewAction = null; installFetch(); });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.history.replaceState(null, "", "/"); });
+    return null;
+  },
+});
+beforeEach(() => { papers = []; serverDoc = makeDoc(); puts = []; gets = 0; h.planChanged.length = 0; h.viewAction = null; });
 
 function mountPlan() {
   let controller: PlanViewController | null = null;

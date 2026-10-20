@@ -3,7 +3,7 @@
  * state, and every bound-view action drives the same state and requests the controls do. The real Shell, LibraryView
  * and ExploreMode are rendered; only the Copilot panel, the WebSocket and the canvas drawing are replaced.
  */
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { fireEvent, render, waitFor } from "@testing-library/react";
 import {
   type CopilotViewAction,
   type DiscoveryGraph,
@@ -11,32 +11,18 @@ import {
   type PageContext,
   PageContextSchema,
 } from "@argelanderspace/contracts";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Shell } from "../src/argelander/Shell";
-import i18n from "../src/i18n";
 import type { LibraryData, LibraryRef } from "../src/library/types";
+import { installShellHarness } from "./shell-harness";
 
 const h = vi.hoisted(() => ({
   viewAction: null as null | ((action: unknown) => Promise<{ ok: boolean; detail?: string; http?: number }>),
   context: null as null | PageContext,
   seen: [] as PageContext[],
 }));
-vi.mock("../src/api/ws", () => ({
-  onArgumentGraphChanged: () => () => {},
-  onPlanChanged: () => () => {},
-  onLibraryChanged: () => () => {},
-  onJobEvent: () => () => {},
-  onAnnotationChanged: () => () => {},
-  onWriterChanged: () => () => {},
-}));
-vi.mock("../src/copilot/Copilot", () => ({
-  Copilot: ({ onViewAction, context }: { onViewAction: typeof h.viewAction; context: PageContext }) => {
-    h.viewAction = onViewAction;
-    h.context = context;
-    if (h.seen[h.seen.length - 1] !== context) h.seen.push(context);
-    return null;
-  },
-}));
+vi.mock("../src/api/ws", async () => (await import("./shell-stubs")).quietWs({ onArgumentGraphChanged: () => () => {} }));
+vi.mock("../src/copilot/Copilot", async () => (await import("./shell-stubs")).copilotProbe(h));
 const g = vi.hoisted(() => ({ calls: [] as string[], labelsOn: [] as boolean[] }));
 vi.mock("../src/graph/GraphCanvas", async () => {
   const { useEffect } = await import("react");
@@ -113,10 +99,28 @@ let libraryLive: boolean;
 const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as Response;
 const failing = (status: number) => ({ ok: false, status, json: async () => ({ detail: "x" }) }) as unknown as Response;
 
-beforeEach(async () => {
-  await i18n.changeLanguage("en");
-  window.sessionStorage.clear();
-  window.localStorage.clear();
+installShellHarness({
+  routes: (url, init) => {
+    const method = init?.method ?? "GET";
+    if (method !== "GET") writes.push({ url, method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    if (url === "/api/plans") return ok({ version: 1, rev: 1, plans: [] });
+    if (url === "/api/library") {
+      if (!libraryLive) throw new TypeError("network down");
+      return ok(data);
+    }
+    if (url.startsWith("/api/library/discovery?bibcode=")) {
+      const seed = decodeURIComponent(url.split("=")[1]!);
+      discoveryGets.push(seed);
+      return answer(seed, init?.signal);
+    }
+    if (url === "/api/library/works" && method === "POST") {
+      const body = JSON.parse(String(init?.body)) as { bibcode: string };
+      return ok({ results: [{ status: "created", ref: ref(9, { id: `bibcode:${body.bibcode}`, bibcode: body.bibcode }) }] });
+    }
+    return null;
+  },
+});
+beforeEach(() => {
   const refs = [ref(1, { bibcode: "SEED1" }), ref(2), ref(3, { bibcode: "SEED3" })];
   data = {
     project: { name: "P" },
@@ -133,36 +137,6 @@ beforeEach(async () => {
   h.viewAction = null;
   h.context = null;
   h.seen = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      const method = init?.method ?? "GET";
-      if (method !== "GET") writes.push({ url, method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
-      if (url === "/api/plans") return ok({ version: 1, rev: 1, plans: [] });
-      if (url === "/api/library") {
-        if (!libraryLive) throw new TypeError("network down");
-        return ok(data);
-      }
-      if (url === "/api/papers") return ok({ papers: [] });
-      if (url.startsWith("/api/library/discovery?bibcode=")) {
-        const seed = decodeURIComponent(url.split("=")[1]!);
-        discoveryGets.push(seed);
-        return answer(seed, init?.signal);
-      }
-      if (url === "/api/library/works" && method === "POST") {
-        const body = JSON.parse(String(init?.body)) as { bibcode: string };
-        return ok({ results: [{ status: "created", ref: ref(9, { id: `bibcode:${body.bibcode}`, bibcode: body.bibcode }) }] });
-      }
-      return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
-    })
-  );
-});
-afterEach(() => {
-  vi.restoreAllMocks();
-  cleanup();
-  vi.unstubAllGlobals();
-  window.history.replaceState(null, "", "/");
 });
 
 const q = (selector: string) => document.querySelector<HTMLElement>(selector);

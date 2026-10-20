@@ -4,23 +4,23 @@
  * are fakes here. The real server, the real bundle and a real browser are covered elsewhere.
  */
 import { type DiagnosticsInfo, HOST_REQUEST_KINDS, type HostInfo } from "@argelanderspace/contracts";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Shell } from "../src/argelander/Shell";
 import { resetHostInfoForTests } from "../src/host";
-import i18n from "../src/i18n";
 import { PageErrorBoundary } from "../src/PageErrorBoundary";
 import { resetPageErrorReportingForTests } from "../src/page-errors";
 import { type FakeSettings, fakeSettings } from "./settings-fake";
+import { installShellHarness } from "./shell-harness";
 import { chooseOption, selectOptionValues, selectShown } from "./select-helpers";
 
 vi.mock("../src/api/ws", async () => (await import("./fake-ws")).wsModule());
-vi.mock("../src/copilot/Copilot", () => ({ Copilot: () => <div data-ui="stub-copilot" /> }));
-vi.mock("../src/plan/PlanView", () => ({ PlanView: () => <div data-ui="stub-plan" /> }));
-vi.mock("../src/writer/WriterView", () => ({ WriterView: () => <div data-ui="stub-write" /> }));
-vi.mock("../src/library/LibraryView", () => ({ LibraryView: () => <div data-ui="stub-library" /> }));
-vi.mock("../src/doc/DocPane", () => ({ DocPane: () => <div data-ui="stub-doc" /> }));
-vi.mock("../src/mail/MailView", () => ({ MailView: () => <div data-ui="stub-mail" /> }));
+vi.mock("../src/copilot/Copilot", async () => (await import("./shell-stubs")).copilotStub("stub-copilot"));
+vi.mock("../src/plan/PlanView", async () => (await import("./shell-stubs")).pageStub("plan"));
+vi.mock("../src/writer/WriterView", async () => (await import("./shell-stubs")).pageStub("write"));
+vi.mock("../src/library/LibraryView", async () => (await import("./shell-stubs")).pageStub("library"));
+vi.mock("../src/doc/DocPane", async () => (await import("./shell-stubs")).pageStub("doc"));
+vi.mock("../src/mail/MailView", async () => (await import("./shell-stubs")).pageStub("mail"));
 
 const EN = { "ui.language": "en" } as const;
 let settings: FakeSettings;
@@ -47,9 +47,31 @@ function info(compileLogs: DiagnosticsInfo["compileLogs"] = []): DiagnosticsInfo
   };
 }
 
-beforeEach(async () => {
-  await i18n.changeLanguage("en");
-  window.localStorage.clear();
+installShellHarness({
+  settings: () => settings,
+  routes: async (url, init) => {
+    if (url === "/api/host" && hostInfo !== null) {
+      const body = structuredClone(hostInfo);
+      return { ok: true, status: 200, json: async () => body } as Response;
+    }
+    if (url === "/api/diagnostics") {
+      if (diagnostics === null) throw new TypeError("Failed to fetch");
+      const body = structuredClone(diagnostics);
+      return { ok: true, status: 200, json: async () => body } as Response;
+    }
+    if (url === "/api/diagnostics/export") {
+      exports.push(JSON.parse(String(init?.body)));
+      if (exportHold) await exportHold;
+      if (exportFails) return new Response(JSON.stringify({ detail: "x" }), { status: 500, headers: { "Content-Type": "application/json" } });
+      return new Response(new Uint8Array([0x50, 0x4b, 5, 6]), {
+        status: 200,
+        headers: { "Content-Type": "application/zip", "Content-Disposition": 'attachment; filename="argelanderspace-diagnostics-20261014-101112.zip"' },
+      });
+    }
+    return null;
+  },
+});
+beforeEach(() => {
   settings = fakeSettings(EN);
   diagnostics = info();
   exports = [];
@@ -58,43 +80,9 @@ beforeEach(async () => {
   hostInfo = null;
   resetHostInfoForTests();
   Reflect.deleteProperty(window, "showSaveFilePicker");
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const answer = settings.handle(input, init);
-      if (answer) return answer;
-      const url = String(input);
-      if (url === "/api/host" && hostInfo !== null) {
-        const body = structuredClone(hostInfo);
-        return { ok: true, status: 200, json: async () => body } as Response;
-      }
-      if (url === "/api/diagnostics") {
-        if (diagnostics === null) throw new TypeError("Failed to fetch");
-        const body = structuredClone(diagnostics);
-        return { ok: true, status: 200, json: async () => body } as Response;
-      }
-      if (url === "/api/diagnostics/export") {
-        exports.push(JSON.parse(String(init?.body)));
-        if (exportHold) await exportHold;
-        if (exportFails) return new Response(JSON.stringify({ detail: "x" }), { status: 500, headers: { "Content-Type": "application/json" } });
-        return new Response(new Uint8Array([0x50, 0x4b, 5, 6]), {
-          status: 200,
-          headers: { "Content-Type": "application/zip", "Content-Disposition": 'attachment; filename="argelanderspace-diagnostics-20261014-101112.zip"' },
-        });
-      }
-      if (url === "/api/papers") return { ok: true, status: 200, json: async () => ({ papers: [] }) } as Response;
-      return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
-    })
-  );
   // jsdom has no object URLs.
   URL.createObjectURL = vi.fn(() => "blob:diagnostics");
   URL.revokeObjectURL = vi.fn();
-});
-afterEach(async () => {
-  cleanup();
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
-  await i18n.changeLanguage("zh-CN");
 });
 
 const q = (selector: string) => document.querySelector<HTMLElement>(selector);
