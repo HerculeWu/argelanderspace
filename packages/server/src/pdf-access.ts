@@ -8,23 +8,34 @@
  * acquisition's arXiv description all go through ONE instance of this module, made by `createApp` with the app's one
  * annotationLock (the same lock the LaTeX annotations access, the text Doc publication, the PDF annotations PUT, the
  * annotation risk read and the Doc delete description take) and its DocMutationRegistry. `onChanged` is the app's
- * `annotation.changed` notification. The HTTP wrapping of each route stays in the app.
+ * `annotation.changed` notification. The reading position is independently versioned user data: its save takes the
+ * app's own readingPositionLock (never the annotationLock) and announces `pdf-reading-position.changed` through
+ * `onReadingPositionChanged`. The HTTP wrapping of each route stays in the app.
  *
  * Every access verifies on its own: `source` checks, in this order, the id, content-busy, a unique owner, the
  * metadata, then reads the original once and verifies it against its immutable byte length and SHA-256 (core's
  * `readVerifiedPdf`) and against the hash the caller expects. A known failure is answered, never repaired: nothing
  * is reset, migrated, archived, rebound or written.
  */
-import { DOCUMENT_BUSY, type PdfAnnotationOperation } from "@argelanderspace/contracts";
+import {
+  DOCUMENT_BUSY,
+  type PdfAnnotationOperation,
+  type PdfAnnotationsFile,
+  type PdfReadingPosition,
+} from "@argelanderspace/contracts";
 import {
   commitPdfAnnotationChange,
   type LibraryPaths,
   LibraryStore,
+  PdfAnnotationConflictError,
   PdfAnnotationValidationError,
   PdfContentChangedError,
+  PdfReadingPositionConflictError,
   readPdfAnnotationsFile,
   readPdfMetadataIfPresent,
   readVerifiedPdf,
+  savePdfAnnotationsFile,
+  savePdfReadingPosition,
   type Work,
 } from "@argelanderspace/core";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
@@ -69,12 +80,38 @@ export type PdfSource =
     }
   | { kind: "bad_id" | "busy" | "not_found" | "changed" | "inconsistent" | "error" };
 
+/**
+ * What the page's whole-file save of the workbench annotations came to. `saved` wrote the next rev and notified once;
+ * `unchanged` (the submission merges to what is stored) wrote nothing, kept the rev and did not notify. `invalid`
+ * carries the refusal's own words; `error` is every other failure (the stored bytes are left as they are).
+ */
+export type PdfAnnotationsSave =
+  | { kind: "saved" | "unchanged"; file: PdfAnnotationsFile }
+  | { kind: "rev_mismatch"; rev: number }
+  | { kind: "busy" | "changed" | "error" }
+  | { kind: "invalid"; detail: string };
+
+/**
+ * What the page's reading-position save came to. `saved` wrote the next rev and notified with it; `rev_mismatch`
+ * carries the current rev; `invalid` carries the refusal's own words; `error` is every other failure (the stored
+ * bytes are left as they are).
+ */
+export type PdfReadingPositionSave =
+  | { kind: "saved"; file: PdfReadingPosition }
+  | { kind: "rev_mismatch"; rev: number }
+  | { kind: "busy" | "changed" | "error" }
+  | { kind: "invalid"; detail: string };
+
 export interface PdfAccessDeps {
   paths: LibraryPaths;
   docMutations: Pick<DocMutationRegistry, "isDocumentContentBusy">;
   /** The app's one annotationLock (received, never made here). */
   lock: AsyncLock;
   onChanged: (docId: string, kind: "put" | "invalidate") => void;
+  /** The app's one readingPositionLock (received, never made here; never the annotationLock). */
+  readingPositionLock: AsyncLock;
+  /** The app's `pdf-reading-position.changed` notification, with the saved rev. */
+  onReadingPositionChanged: (docId: string, rev: number) => void;
 }
 
 export interface PdfAccess {
@@ -87,6 +124,21 @@ export interface PdfAccess {
     op: PdfAnnotationOperation,
     scope: { conversationId: string }
   ): Promise<PdfWriteOutcome>;
+  /**
+   * The page's whole-file save of the workbench annotations (`PUT /pdf/annotations`, after the route has checked the
+   * id, the owner and the file's shape): on the annotationLock, busy, the original verified, SHA-256 and rev checked,
+   * merged keeping every key the page did not send, replaced atomically; notified only when the rev moved.
+   */
+  saveAnnotations(docId: string, candidate: PdfAnnotationsFile): Promise<PdfAnnotationsSave>;
+  /**
+   * The page's reading-position save (`PUT /pdf/reading-position`, after the route has checked the id, the body and
+   * the owner): on the readingPositionLock, busy decided inside it, core's save (original, SHA-256, rev and page
+   * checks, atomic replace); notified only when the rev moved.
+   */
+  saveReadingPosition(
+    docId: string,
+    candidate: PdfReadingPosition
+  ): Promise<PdfReadingPositionSave>;
   /** What a failed PDF material request is, as the routes answer it. */
   materialFailure(error: unknown): { status: 400 | 409 | 500 | 503; detail: string };
   /** The status a failed `source` answers on the PDF material routes. */
@@ -97,7 +149,14 @@ export interface PdfAccess {
 }
 
 export function createPdfAccess(deps: PdfAccessDeps): PdfAccess {
-  const { paths, docMutations, lock: annotationLock, onChanged: annotationChanged } = deps;
+  const {
+    paths,
+    docMutations,
+    lock: annotationLock,
+    onChanged: annotationChanged,
+    readingPositionLock,
+    onReadingPositionChanged,
+  } = deps;
   const pdfOwners = (docId: string) =>
     LibraryStore.load(paths).works.filter((work) => work.doc_ids.includes(docId));
   /**
@@ -327,6 +386,61 @@ export function createPdfAccess(deps: PdfAccessDeps): PdfAccess {
       };
     }
   };
+  const saveAnnotations = async (
+    docId: string,
+    candidate: PdfAnnotationsFile
+  ): Promise<PdfAnnotationsSave> => {
+    let file: PdfAnnotationsFile;
+    try {
+      file = await annotationLock.run(() =>
+        savePdfAnnotationsFile(
+          paths,
+          docId,
+          candidate.content_sha256,
+          candidate.rev,
+          candidate,
+          (id) => docMutations.isDocumentContentBusy(id)
+        )
+      );
+    } catch (error) {
+      if (error instanceof PdfAnnotationValidationError)
+        return { kind: "invalid", detail: error.message };
+      if (error instanceof PdfAnnotationConflictError) {
+        if (error.conflict === "busy") return { kind: "busy" };
+        if (error.conflict === "content") return { kind: "changed" };
+        // The rev the conflict answers is read again here, outside the lock; a failure of that read is not
+        // answered as a refusal (it propagates, as it always has).
+        return { kind: "rev_mismatch", rev: readPdfAnnotationsFile(paths, docId).rev };
+      }
+      return { kind: "error" };
+    }
+    if (file.rev === candidate.rev) return { kind: "unchanged", file };
+    annotationChanged(docId, "put");
+    return { kind: "saved", file };
+  };
+  const saveReadingPosition = async (
+    docId: string,
+    candidate: PdfReadingPosition
+  ): Promise<PdfReadingPositionSave> => {
+    let file: PdfReadingPosition;
+    try {
+      file = await readingPositionLock.run(() => {
+        if (docMutations.isDocumentContentBusy(docId)) throw new PdfAnnotationConflictError("busy");
+        return savePdfReadingPosition(paths, docId, candidate, candidate.rev);
+      });
+    } catch (error) {
+      if (error instanceof PdfReadingPositionConflictError)
+        return { kind: "rev_mismatch", rev: error.currentRev };
+      if (error instanceof PdfAnnotationConflictError)
+        return { kind: error.conflict === "busy" ? "busy" : "changed" };
+      if (error instanceof PdfAnnotationValidationError)
+        return { kind: "invalid", detail: error.message };
+      if (error instanceof PdfContentChangedError) return { kind: "changed" };
+      return { kind: "error" };
+    }
+    if (file.rev !== candidate.rev) onReadingPositionChanged(docId, file.rev);
+    return { kind: "saved", file };
+  };
   /** The status a failed `pdfSource` answers on the PDF material routes. */
   const pdfSourceFailure = (docId: string, kind: Exclude<PdfSource["kind"], "ok">) => {
     switch (kind) {
@@ -348,6 +462,8 @@ export function createPdfAccess(deps: PdfAccessDeps): PdfAccess {
     owners: pdfOwners,
     source: pdfSource,
     writeAnnotation: writePdfAnnotation,
+    saveAnnotations,
+    saveReadingPosition,
     materialFailure: pdfMaterialFailure,
     sourceFailure: pdfSourceFailure,
   };

@@ -703,31 +703,104 @@ describe("local PDF upload lifecycle", () => {
     expect(readFileSync(join(dir, "reading-position.json"))).toEqual(committedPosition);
   });
 
-  test("serializes concurrent reading-position writes so one expected revision commits", async () => {
-    const { app, runner, dataDir, workId, messages } = appForNewWork();
+  test("maps each outcome of the two PDF saves to its status and exact body", async () => {
+    // The lock, busy, rev and notification rules of both saves are pdf-access's (tests/pdf-access.test.ts); what the
+    // routes still own is this mapping (architecture-deepening ticket 11).
+    const { app, runner, workId, docMutations, messages } = appForNewWork();
     const job = await awaitJob(runner, await upload(app, workId, onePagePdf()));
     const doc = (job.result as { doc: { doc_id: string; sha256: string } }).doc;
-    const path = `/api/paper/${doc.doc_id}/pdf/reading-position`;
-    const base = { version: 1, doc_id: doc.doc_id, content_sha256: doc.sha256, rev: 0 };
-    const submit = (position: { page_index: number; x: number; y: number }) =>
-      app.request(path, {
+    const put = (name: string, body: unknown) =>
+      app.request(`/api/paper/${doc.doc_id}/pdf/${name}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...base, position }),
+        body: JSON.stringify(body),
       });
-    const responses = await Promise.all([
-      submit({ page_index: 0, x: 0.2, y: 0.3 }),
-      submit({ page_index: 0, x: 0.8, y: 0.9 }),
+    const answer = async (response: Response) => [
+      response.status,
+      response.headers.get("cache-control"),
+      await response.json(),
+    ];
+    const position = {
+      version: 1,
+      doc_id: doc.doc_id,
+      content_sha256: doc.sha256,
+      rev: 0,
+      position: { page_index: 0, x: 0.5, y: 0.5 },
+    };
+    expect(await answer(await put("reading-position", position))).toEqual([
+      200,
+      "no-store",
+      { ...position, rev: 1 },
     ]);
-    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
-    const stored = JSON.parse(
-      readFileSync(join(dataDir, "output", doc.doc_id, "reading-position.json"), "utf8")
-    );
-    expect(stored.rev).toBe(1);
-    expect([0.3, 0.9]).toContain(stored.position.y);
+    expect(await answer(await put("reading-position", position))).toEqual([
+      409,
+      "no-store",
+      { detail: "reading position rev mismatch", rev: 1 },
+    ]);
     expect(
-      messages.filter((message) => message.type === "pdf-reading-position.changed")
-    ).toHaveLength(1);
+      await answer(
+        await put("reading-position", {
+          ...position,
+          rev: 1,
+          position: { page_index: 1, x: 0.5, y: 0.5 },
+        })
+      )
+    ).toEqual([400, "no-store", { detail: "PDF reading-position page is outside the document" }]);
+    expect(
+      await answer(
+        await put("reading-position", { ...position, rev: 1, content_sha256: "0".repeat(64) })
+      )
+    ).toEqual([409, "no-store", { detail: "document changed" }]);
+    docMutations.pinWriter(doc.doc_id);
+    expect(await answer(await put("reading-position", { ...position, rev: 1 }))).toEqual([
+      409,
+      "no-store",
+      { detail: "document busy" },
+    ]);
+    docMutations.unpinWriter(doc.doc_id);
+
+    const snapshot = (await (
+      await app.request(`/api/paper/${doc.doc_id}/pdf/snapshot`)
+    ).json()) as { annotations: Record<string, unknown> };
+    const at = "2026-10-20T12:00:00.000Z";
+    const note = {
+      id: "c1",
+      kind: "document_comment",
+      body: "note",
+      created_at: at,
+      updated_at: at,
+    };
+    const file = { ...snapshot.annotations, annotations: [note] };
+    const [savedStatus, savedCache, saved] = await answer(await put("annotations", file));
+    expect([savedStatus, savedCache, (saved as { rev: number }).rev]).toEqual([200, "no-store", 1]);
+    expect(await answer(await put("annotations", saved))).toEqual([200, "no-store", saved]);
+    expect(await answer(await put("annotations", file))).toEqual([
+      409,
+      "no-store",
+      { detail: "rev mismatch", rev: 1 },
+    ]);
+    expect(
+      await answer(
+        await put("annotations", { ...(saved as object), content_sha256: "0".repeat(64) })
+      )
+    ).toEqual([409, "no-store", { detail: "document changed" }]);
+    expect(
+      await answer(
+        await put("annotations", {
+          ...(saved as object),
+          annotations: [{ ...note, id: "p1", kind: "page_comment", page_index: 1 }],
+        })
+      )
+    ).toEqual([400, "no-store", { detail: "PDF annotation page is outside the document" }]);
+    docMutations.pinWriter(doc.doc_id);
+    expect(await answer(await put("annotations", saved))).toEqual([
+      409,
+      "no-store",
+      { detail: "document busy" },
+    ]);
+    docMutations.unpinWriter(doc.doc_id);
+    expect(messages.filter((m) => m.type === "pdf-reading-position.changed")).toHaveLength(1);
+    expect(messages.filter((m) => m.type === "annotation.changed")).toHaveLength(1);
   });
 
   test("refuses an unknown Doc and refuses position writes after immutable PDF bytes change", async () => {
