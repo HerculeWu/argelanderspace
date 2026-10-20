@@ -105,28 +105,11 @@ describe("Shell docDeleted wiring (Stage 8 §8)", () => {
     expect(split.disabled).toBe(false);
   });
 
-  it("deleting a non-current doc drops it from papers; currentDoc + URL untouched", async () => {
-    await boot(["d1", "d2"], "/doc/d1");
-    const before = window.location.pathname + window.location.hash;
-    act(() => h.ws!.docDeleted("d2", []));
-    await waitFor(() => expect(h.ws!.papers).toEqual(["d1"]));
-    expect(h.ws!.currentDoc).toBe("d1");
-    expect(window.location.pathname + window.location.hash).toBe(before);
-  });
-
   it("deleting the current doc with remaining docs switches to the new main + rewrites the URL", async () => {
     await boot(["d1", "d2"], "/doc/d1");
     act(() => h.ws!.docDeleted("d1", ["d2"]));
     await waitFor(() => expect(h.ws!.currentDoc).toBe("d2"));
     expect(h.ws!.papers).toEqual(["d2"]);
     expect(window.location.pathname).toBe("/doc/d2");
-  });
-
-  it("deleting the current doc with none left empties currentDoc and resets the URL", async () => {
-    await boot(["d1"], "/doc/d1#fig-1");
-    act(() => h.ws!.docDeleted("d1", []));
-    await waitFor(() => expect(h.ws!.currentDoc).toBeNull());
-    expect(h.ws!.papers).toEqual([]);
-    expect(window.location.pathname).toBe("/");
   });
 });

@@ -7,6 +7,12 @@
  * protection are the UI's own. Nothing here takes a path, a URL, a selector or a credential.
  */
 import { z } from "zod";
+import {
+  SETTINGS_UI_ACCENTS,
+  SETTINGS_UI_DENSITIES,
+  SETTINGS_UI_LANGUAGES,
+  SETTINGS_UI_THEMES,
+} from "./settings-schema.js";
 
 /** The Shell never shows more than this many panes. */
 export const MAX_PANES = 3;
@@ -22,10 +28,11 @@ export const WORKSPACE_VIEWS = ["plan", "library", "doc", "write", "mail"] as co
 export const SETTINGS_VIEW = "settings";
 /** Everything a pane can show: the workbench views and the settings page. */
 export const PANE_VIEWS = [...WORKSPACE_VIEWS, SETTINGS_VIEW] as const;
-export const APPEARANCE_THEMES = ["dark", "light"] as const;
-export const APPEARANCE_ACCENTS = ["azure", "teal", "violet", "amber", "neutral"] as const;
-export const APPEARANCE_DENSITIES = ["compact", "regular", "comfy"] as const;
-export const APPEARANCE_LANGUAGES = ["zh-CN", "en"] as const;
+/** The appearance values the Copilot may set: the settings' own (`ui.*` in settings-schema.ts), one table. */
+export const APPEARANCE_THEMES = SETTINGS_UI_THEMES;
+export const APPEARANCE_ACCENTS = SETTINGS_UI_ACCENTS;
+export const APPEARANCE_DENSITIES = SETTINGS_UI_DENSITIES;
+export const APPEARANCE_LANGUAGES = SETTINGS_UI_LANGUAGES;
 
 const PaneId = z.number().int().positive();
 

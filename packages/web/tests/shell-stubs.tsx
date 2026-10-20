@@ -13,6 +13,7 @@ import type { PageContext } from "@argelanderspace/contracts";
 import type { ReactNode } from "react";
 import { useWorkspace, type Workspace } from "../src/argelander/workspace";
 import type { Copilot } from "../src/copilot/Copilot";
+import type { CopilotSubscription } from "../src/api/ws-bus";
 
 /** The five workspace pages (the settings page is never replaced). */
 export type WorkspacePage = "plan" | "write" | "library" | "doc" | "mail";
@@ -87,5 +88,30 @@ export function quietWs(over: Record<string, (...args: never[]) => () => void> =
     onAnnotationChanged: unsubscribed,
     onWriterChanged: unsubscribed,
     ...over,
+  };
+}
+
+/** Where `copilotWs` keeps the Copilot panel's subscription: a test file's `vi.hoisted` object. */
+export interface CopilotChannel {
+  subscription: CopilotSubscription | null;
+  /** Called with each new subscription (a test's own resolver). */
+  subscribed?: (subscription: CopilotSubscription) => void;
+}
+
+/**
+ * `quietWs` with the real Copilot panel's own subscription: `subscribeCopilot` keeps it in `channel` (ready at once), so
+ * a test delivers a view action the way the server's message would (`channel.subscription.viewAction(...)`).
+ */
+export function copilotWs(channel: CopilotChannel, over: Record<string, (...args: never[]) => () => void> = {}) {
+  return {
+    ...quietWs(over),
+    subscribeCopilot: (subscription: CopilotSubscription) => {
+      channel.subscription = subscription;
+      queueMicrotask(subscription.ready);
+      channel.subscribed?.(subscription);
+      return () => {
+        if (channel.subscription === subscription) channel.subscription = null;
+      };
+    },
   };
 }
