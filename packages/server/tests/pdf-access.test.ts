@@ -1,12 +1,18 @@
 /**
  * The PDF access path as its own module (ticket 39): owners, the verified source, the Copilot's workbench annotation
- * writes and the two failure maps, tested without the app (docs/contracts.md "本地 PDF Doc"). A real AsyncLock, a
- * real DocMutationRegistry, a recording `onChanged`, synthetic data under a temp dir.
+ * writes, the page's whole-file annotations save and reading-position save (architecture-deepening ticket 11) and the
+ * two failure maps, tested without the app (docs/contracts.md "本地 PDF Doc"). Real AsyncLocks (the annotations lock
+ * and the separate reading-position lock), a real DocMutationRegistry, recording notifications, synthetic data under
+ * a temp dir.
  */
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { PdfAnnotationOperation } from "@argelanderspace/contracts";
+import type {
+  PdfAnnotationOperation,
+  PdfAnnotationsFile,
+  PdfReadingPosition,
+} from "@argelanderspace/contracts";
 import { type LibraryPaths, libraryPaths, publishPdfDoc } from "@argelanderspace/core";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { DocMutationRegistry } from "../src/doc-mutations.js";
@@ -50,6 +56,8 @@ let paths: LibraryPaths;
 let lock: WatchedLock;
 let registry: DocMutationRegistry;
 let changes: { docId: string; kind: "put" | "invalidate"; inLock: boolean; rev: number }[];
+let positionLock: WatchedLock;
+let positionChanges: { docId: string; rev: number; inLock: boolean; stored: number }[];
 let access: ReturnType<typeof createPdfAccess>;
 let doc: string;
 let sha: string;
@@ -77,6 +85,7 @@ function own(workId: string, docId: string) {
 }
 const docPath = (docId: string, name: string) => join(paths.outputDir, docId, name);
 const sidecar = () => JSON.parse(readFileSync(docPath(doc, "annotations.json"), "utf8"));
+const positionFile = () => JSON.parse(readFileSync(docPath(doc, "reading-position.json"), "utf8"));
 const createOp = (over: Partial<PdfAnnotationOperation> = {}): PdfAnnotationOperation =>
   ({
     action: "create_pdf_annotation",
@@ -110,12 +119,22 @@ beforeEach(() => {
   lock = new WatchedLock();
   registry = new DocMutationRegistry();
   changes = [];
+  positionLock = new WatchedLock();
+  positionChanges = [];
   access = createPdfAccess({
     paths,
     docMutations: registry,
     lock,
     onChanged: (docId, kind) =>
       changes.push({ docId, kind, inLock: lock.held, rev: sidecar().rev as number }),
+    readingPositionLock: positionLock,
+    onReadingPositionChanged: (docId, rev) =>
+      positionChanges.push({
+        docId,
+        rev,
+        inLock: positionLock.held,
+        stored: positionFile().rev as number,
+      }),
   });
 });
 
@@ -318,6 +337,258 @@ test("writeAnnotation: the two catch texts — a change that breaks the contract
   });
   expect(readFileSync(docPath(doc, "annotations.json"), "utf8")).toBe("{broken");
   expect(changes).toEqual([]);
+});
+
+// ---- saveAnnotations (the page's whole-file PUT) -------------------------------------------------------------- //
+
+const NOW = "2026-10-20T12:00:00.000Z";
+const comment = (id: string, body: string) => ({
+  id,
+  kind: "document_comment" as const,
+  body,
+  created_at: NOW,
+  updated_at: NOW,
+});
+/** The whole file the page sends: the stored one with some fields replaced. */
+const submitted = (over: Partial<PdfAnnotationsFile> = {}): PdfAnnotationsFile =>
+  ({ ...sidecar(), ...over }) as PdfAnnotationsFile;
+const annotationBytes = () => readFileSync(docPath(doc, "annotations.json"));
+/** Hold `on` until the returned release is called. */
+function hold(on: AsyncLock) {
+  let release!: () => void;
+  const holding = on.run(() => new Promise<void>((resolve) => (release = resolve)));
+  return {
+    release: async () => {
+      release();
+      await holding;
+    },
+  };
+}
+const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+test("saveAnnotations: a change is saved at the next rev and notified once, after the lock", async () => {
+  const outcome = await access.saveAnnotations(
+    doc,
+    submitted({ annotations: [comment("a1", "first")] })
+  );
+  if (outcome.kind !== "saved") throw new Error(outcome.kind);
+  expect(outcome.file.rev).toBe(1);
+  expect(outcome.file.annotations.map((a) => a.body)).toEqual(["first"]);
+  expect(outcome.file).toEqual(sidecar());
+  expect(changes).toEqual([{ docId: doc, kind: "put", inLock: false, rev: 1 }]);
+  expect(positionChanges).toEqual([]);
+});
+
+test("saveAnnotations: a submission equal to what is stored is unchanged — no write, no rev, no notification", async () => {
+  await access.saveAnnotations(doc, submitted({ annotations: [comment("a1", "first")] }));
+  const before = annotationBytes();
+  const same = await access.saveAnnotations(doc, submitted());
+  expect(same).toEqual({ kind: "unchanged", file: sidecar() });
+  expect(sidecar().rev).toBe(1);
+  expect(annotationBytes()).toEqual(before);
+  expect(changes).toHaveLength(1);
+});
+
+test("saveAnnotations: a stale rev is rev_mismatch carrying the stored rev; nothing is written", async () => {
+  await access.saveAnnotations(doc, submitted({ annotations: [comment("a1", "first")] }));
+  const before = annotationBytes();
+  expect(
+    await access.saveAnnotations(doc, submitted({ rev: 0, annotations: [comment("a2", "two")] }))
+  ).toEqual({ kind: "rev_mismatch", rev: 1 });
+  expect(annotationBytes()).toEqual(before);
+  expect(changes).toHaveLength(1);
+});
+
+test("saveAnnotations: busy, decided inside the annotations lock; nothing is written", async () => {
+  const before = annotationBytes();
+  const page = submitted({ annotations: [comment("a1", "first")] });
+  registry.pinWriter(doc);
+  expect(await access.saveAnnotations(doc, page)).toEqual({ kind: "busy" });
+  registry.unpinWriter(doc);
+  // A mutation that begins while the save waits for the lock is seen by the save.
+  const held = hold(lock);
+  const pending = access.saveAnnotations(doc, page);
+  await tick();
+  expect(sidecar().rev).toBe(0);
+  registry.pinWriter(doc);
+  await held.release();
+  expect(await pending).toEqual({ kind: "busy" });
+  registry.unpinWriter(doc);
+  expect(annotationBytes()).toEqual(before);
+  expect(changes).toEqual([]);
+});
+
+test("saveAnnotations: a hash that is not the Doc's, or an original that no longer matches, is changed", async () => {
+  const before = annotationBytes();
+  expect(
+    await access.saveAnnotations(
+      doc,
+      submitted({ content_sha256: OTHER_SHA, annotations: [comment("a1", "first")] })
+    )
+  ).toEqual({ kind: "changed" });
+  const page = submitted({ annotations: [comment("a1", "first")] });
+  const tampered = Buffer.from(bytes);
+  tampered.writeUInt8(tampered.readUInt8(tampered.length - 2) ^ 1, tampered.length - 2);
+  writeFileSync(docPath(doc, "original.pdf"), tampered);
+  expect(await access.saveAnnotations(doc, page)).toEqual({ kind: "changed" });
+  expect(readFileSync(docPath(doc, "original.pdf")).equals(tampered)).toBe(true);
+  expect(annotationBytes()).toEqual(before);
+  expect(changes).toEqual([]);
+});
+
+test("saveAnnotations: an annotation outside the document is invalid with the refusal's words; a damaged sidecar is error", async () => {
+  const before = annotationBytes();
+  const offPage = {
+    ...comment("p1", "page note"),
+    kind: "page_comment" as const,
+    page_index: PAGES.length,
+  };
+  expect(
+    await access.saveAnnotations(
+      doc,
+      submitted({ annotations: [offPage] as PdfAnnotationsFile["annotations"] })
+    )
+  ).toEqual({ kind: "invalid", detail: "PDF annotation page is outside the document" });
+  expect(annotationBytes()).toEqual(before);
+  const page = submitted({ annotations: [comment("a1", "first")] });
+  writeFileSync(docPath(doc, "annotations.json"), "{broken");
+  expect(await access.saveAnnotations(doc, page)).toEqual({ kind: "error" });
+  expect(readFileSync(docPath(doc, "annotations.json"), "utf8")).toBe("{broken");
+  expect(changes).toEqual([]);
+});
+
+test("saveAnnotations: keys the page does not send stay as stored, on the file and on each annotation", async () => {
+  writeFileSync(
+    docPath(doc, "annotations.json"),
+    `${JSON.stringify(
+      {
+        ...sidecar(),
+        x_future: { kept: true },
+        annotations: [{ ...comment("a1", "first"), x_note: "kept" }],
+      },
+      null,
+      2
+    )}\n`
+  );
+  const page = {
+    version: 1,
+    doc_id: doc,
+    content_sha256: sha,
+    rev: 0,
+    annotations: [comment("a1", "edited")],
+  } as PdfAnnotationsFile;
+  const outcome = await access.saveAnnotations(doc, page);
+  expect(outcome.kind).toBe("saved");
+  const stored = sidecar();
+  expect(stored.rev).toBe(1);
+  expect(stored.x_future).toEqual({ kept: true });
+  expect(stored.annotations).toHaveLength(1);
+  expect(stored.annotations[0].body).toBe("edited");
+  expect(stored.annotations[0].x_note).toBe("kept");
+});
+
+// ---- saveReadingPosition (the page's reading-position PUT) ---------------------------------------------------- //
+
+const positionBody = (over: Partial<PdfReadingPosition> = {}): PdfReadingPosition => ({
+  version: 1,
+  doc_id: doc,
+  content_sha256: sha,
+  rev: 0,
+  position: { page_index: 1, x: 0.25, y: 0.6 },
+  ...over,
+});
+const positionBytes = () => readFileSync(docPath(doc, "reading-position.json"));
+
+test("saveReadingPosition: saved at the next rev and notified once with it, after the lock; annotations untouched", async () => {
+  const annotationsBefore = annotationBytes();
+  const saved = await access.saveReadingPosition(doc, positionBody());
+  expect(saved).toEqual({ kind: "saved", file: { ...positionBody(), rev: 1 } });
+  expect(positionFile()).toEqual({ ...positionBody(), rev: 1 });
+  expect(positionChanges).toEqual([{ docId: doc, rev: 1, inLock: false, stored: 1 }]);
+  expect(annotationBytes()).toEqual(annotationsBefore);
+  expect(changes).toEqual([]);
+});
+
+test("saveReadingPosition: a stale rev is rev_mismatch carrying the current rev; nothing is written", async () => {
+  await access.saveReadingPosition(doc, positionBody());
+  const before = positionBytes();
+  expect(
+    await access.saveReadingPosition(doc, positionBody({ position: { page_index: 0, x: 0, y: 0 } }))
+  ).toEqual({ kind: "rev_mismatch", rev: 1 });
+  expect(positionBytes()).toEqual(before);
+  expect(positionChanges).toHaveLength(1);
+});
+
+test("saveReadingPosition: busy, decided inside the reading-position lock; nothing is written", async () => {
+  const before = positionBytes();
+  registry.pinWriter(doc);
+  expect(await access.saveReadingPosition(doc, positionBody())).toEqual({ kind: "busy" });
+  registry.unpinWriter(doc);
+  const held = hold(positionLock);
+  const pending = access.saveReadingPosition(doc, positionBody());
+  await tick();
+  expect(positionFile().rev).toBe(0);
+  expect(registry.tryBeginDelete(doc)).toBe(true);
+  await held.release();
+  expect(await pending).toEqual({ kind: "busy" });
+  registry.endDelete(doc);
+  expect(positionBytes()).toEqual(before);
+  expect(positionChanges).toEqual([]);
+});
+
+test("saveReadingPosition: a hash that is not the Doc's, or an original that no longer matches, is changed", async () => {
+  const before = positionBytes();
+  expect(
+    await access.saveReadingPosition(doc, positionBody({ content_sha256: OTHER_SHA }))
+  ).toEqual({ kind: "changed" });
+  const tampered = Buffer.from(bytes);
+  tampered.writeUInt8(tampered.readUInt8(tampered.length - 2) ^ 1, tampered.length - 2);
+  writeFileSync(docPath(doc, "original.pdf"), tampered);
+  expect(await access.saveReadingPosition(doc, positionBody())).toEqual({ kind: "changed" });
+  expect(positionBytes()).toEqual(before);
+  expect(positionChanges).toEqual([]);
+});
+
+test("saveReadingPosition: a page outside the document is invalid with the refusal's words; a damaged sidecar is error", async () => {
+  const before = positionBytes();
+  expect(
+    await access.saveReadingPosition(
+      doc,
+      positionBody({ position: { page_index: PAGES.length, x: 0.5, y: 0.5 } })
+    )
+  ).toEqual({ kind: "invalid", detail: "PDF reading-position page is outside the document" });
+  expect(positionBytes()).toEqual(before);
+  writeFileSync(docPath(doc, "reading-position.json"), "{broken");
+  expect(await access.saveReadingPosition(doc, positionBody())).toEqual({ kind: "error" });
+  expect(readFileSync(docPath(doc, "reading-position.json"), "utf8")).toBe("{broken");
+  expect(positionChanges).toEqual([]);
+});
+
+test("the two saves take their own locks: each waits for its own, neither for the other's", async () => {
+  const annotations = hold(lock);
+  expect((await access.saveReadingPosition(doc, positionBody())).kind).toBe("saved");
+  let annotationSettled = false;
+  const pendingAnnotations = access
+    .saveAnnotations(doc, submitted({ annotations: [comment("a1", "first")] }))
+    .then((outcome) => {
+      annotationSettled = true;
+      return outcome;
+    });
+  const positions = hold(positionLock);
+  let positionSettled = false;
+  const pendingPosition = access
+    .saveReadingPosition(doc, positionBody({ rev: 1 }))
+    .then((outcome) => {
+      positionSettled = true;
+      return outcome;
+    });
+  await tick();
+  expect([annotationSettled, positionSettled]).toEqual([false, false]);
+  await annotations.release();
+  expect((await pendingAnnotations).kind).toBe("saved");
+  expect(positionSettled).toBe(false);
+  await positions.release();
+  expect((await pendingPosition).kind).toBe("saved");
 });
 
 // ---- failure maps --------------------------------------------------------------------------------------------- //

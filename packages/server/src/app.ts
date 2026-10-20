@@ -84,18 +84,13 @@ import {
   type MetadataSources,
   manuscriptDir,
   normArxiv,
-  PdfAnnotationConflictError,
-  PdfAnnotationValidationError,
   PdfContentChangedError,
-  PdfReadingPositionConflictError,
   readDocumentAsset,
   readManuscriptAsset,
   readPdfAnnotationsFile,
   readPdfMetadataIfPresent,
   readPdfReadingPosition,
   readVerifiedPdf,
-  savePdfAnnotationsFile,
-  savePdfReadingPosition,
   type WriterExportBundle,
   WriterExportError,
   workToRef,
@@ -570,6 +565,14 @@ export function createApp(deps: AppDeps): Hono {
     docMutations,
     lock: annotationLock,
     onChanged: annotationChanged,
+    readingPositionLock,
+    onReadingPositionChanged: (docId, rev) =>
+      broadcast({
+        type: "pdf-reading-position.changed",
+        doc_id: docId,
+        rev,
+        at: new Date().toISOString(),
+      }),
   });
   // The protected base (protected-app.ts): the record of requests, cors, and the cross-site guard of every write
   // registered through `app` — from the Vite dev server or the page this server itself serves only.
@@ -1261,29 +1264,20 @@ export function createApp(deps: AppDeps): Hono {
     if (owners.length === 0) return c.json({ detail: `paper ${pyRepr(docId)} not found` }, 404);
     if (owners.length !== 1)
       return c.json({ detail: "PDF document has inconsistent Work ownership" }, 500);
-    try {
-      const saved = await readingPositionLock.run(() => {
-        if (docMutations.isDocumentContentBusy(docId)) throw new PdfAnnotationConflictError("busy");
-        return savePdfReadingPosition(paths, docId, parsed.data, parsed.data.rev);
-      });
-      if (saved.rev !== parsed.data.rev)
-        broadcast({
-          type: "pdf-reading-position.changed",
-          doc_id: docId,
-          rev: saved.rev,
-          at: new Date().toISOString(),
-        });
-      return c.json(saved, 200, { "Cache-Control": "no-store" });
-    } catch (error) {
-      if (error instanceof PdfReadingPositionConflictError)
-        return c.json({ detail: "reading position rev mismatch", rev: error.currentRev }, 409);
-      if (error instanceof PdfAnnotationConflictError)
-        return c.json({ detail: error.message }, 409);
-      if (error instanceof PdfAnnotationValidationError)
-        return c.json({ detail: error.message }, 400);
-      if (error instanceof PdfContentChangedError)
+    const saved = await pdfAccess.saveReadingPosition(docId, parsed.data);
+    switch (saved.kind) {
+      case "saved":
+        return c.json(saved.file, 200, { "Cache-Control": "no-store" });
+      case "rev_mismatch":
+        return c.json({ detail: "reading position rev mismatch", rev: saved.rev }, 409);
+      case "busy":
+        return c.json({ detail: DOCUMENT_BUSY }, 409);
+      case "changed":
         return c.json({ detail: "document changed" }, 409);
-      return c.json({ detail: "reading position could not be saved" }, 500);
+      case "invalid":
+        return c.json({ detail: saved.detail }, 400);
+      default:
+        return c.json({ detail: "reading position could not be saved" }, 500);
     }
   });
 
@@ -1349,34 +1343,25 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("invalid PDF annotation data", 400);
       return c.json(e.body, e.status);
     }
-    try {
-      const saved = await annotationLock.run(() =>
-        savePdfAnnotationsFile(
-          paths,
-          docId,
-          candidate.data.content_sha256,
-          candidate.data.rev,
-          candidate.data,
-          (id) => docMutations.isDocumentContentBusy(id)
-        )
-      );
-      if (saved.rev !== candidate.data.rev) annotationChanged(docId, "put");
-      return c.json(saved);
-    } catch (error) {
-      if (error instanceof PdfAnnotationValidationError) {
-        const e = detail(error.message, 400);
+    const saved = await pdfAccess.saveAnnotations(docId, candidate.data);
+    switch (saved.kind) {
+      case "saved":
+      case "unchanged":
+        return c.json(saved.file);
+      case "invalid": {
+        const e = detail(saved.detail, 400);
         return c.json(e.body, e.status);
       }
-      if (error instanceof PdfAnnotationConflictError) {
-        const status = error.conflict === "busy" ? 409 : 409;
-        const payload =
-          error.conflict === "rev"
-            ? { detail: error.message, rev: readPdfAnnotationsFile(paths, docId).rev }
-            : { detail: error.message };
-        return c.json(payload, status);
+      case "busy":
+        return c.json({ detail: DOCUMENT_BUSY }, 409);
+      case "changed":
+        return c.json({ detail: "document changed" }, 409);
+      case "rev_mismatch":
+        return c.json({ detail: "rev mismatch", rev: saved.rev }, 409);
+      default: {
+        const e = detail("PDF annotations could not be saved", 500);
+        return c.json(e.body, e.status);
       }
-      const e = detail("PDF annotations could not be saved", 500);
-      return c.json(e.body, e.status);
     }
   });
 
