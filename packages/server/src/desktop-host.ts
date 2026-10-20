@@ -110,7 +110,7 @@ import type {
   SwitchConfirmation,
   SwitchConfirmOutcome,
 } from "./host-routes.js";
-import type { ServerLog } from "./log.js";
+import type { ServerLog, ServerLogFields } from "./log.js";
 import type { NoProjectServer } from "./no-project.js";
 import {
   type RunningServer,
@@ -120,6 +120,7 @@ import {
   startServer,
 } from "./server.js";
 import { shownPath, startSettingsWatcher } from "./settings.js";
+import { SHELL_EVENTS, type ShellEvent, type ShellEventSpec } from "./shell-events.js";
 
 /** A line longer than this (bytes, without its newline) is dropped whole. */
 export const HOST_LINE_MAX_BYTES = 64 * 1024;
@@ -183,88 +184,6 @@ export const REJECT_REASONS = [
   "unknown_event",
 ] as const;
 type RejectReason = (typeof REJECT_REASONS)[number];
-
-const YES_NO = ["yes", "no"] as const;
-const SIGNALS = [
-  "SIGTERM",
-  "SIGKILL",
-  "SIGINT",
-  "SIGHUP",
-  "SIGQUIT",
-  "SIGABRT",
-  "SIGSEGV",
-  "SIGBUS",
-  "SIGILL",
-  "SIGFPE",
-  "SIGPIPE",
-  "other",
-] as const;
-
-/** How one field of a shell event is written: by one of the log's field constructors. */
-type ShellFieldKind = "id" | "num" | "ms" | readonly string[];
-interface ShellEventSpec {
-  /** The level; `warn` instead when the field `warnWhen` names has its value (`shell.host_exited` not expected). */
-  level: "info" | "warn";
-  fields: Readonly<Record<string, ShellFieldKind>>;
-  warnWhen?: { field: string; value: string };
-}
-
-/**
- * The shell's events (spec 「日志」: its start, the host's starts and exits with their exit codes, the answers to its
- * native dialogs) and how each field is written. A field of another name, or of the wrong type, is not written.
- */
-export const SHELL_EVENTS = {
-  "shell.started": { level: "info", fields: { version: "id", webview: "id" } },
-  "shell.host_started": { level: "info", fields: { pid: "num", attempt: "num" } },
-  "shell.host_exited": {
-    level: "info",
-    fields: { exit_code: "num", signal: SIGNALS, expected: YES_NO, duration_ms: "ms" },
-    warnWhen: { field: "expected", value: "no" },
-  },
-  // Closing the crash dialog without a button is a quit (user ruling 3, desktop-app ticket 20): no answer of its own.
-  "shell.dialog_answered": {
-    level: "info",
-    fields: { dialog: ["host_crashed"], choice: ["restart", "show_log_folder", "quit"] },
-  },
-  "shell.request_failed": { level: "warn", fields: { request: HOST_REQUEST_KINDS, code: "id" } },
-  // The window could not be made (`create`) or Tauri's entry points could not be taken out of it (`guard`): the shell
-  // does not load the page and ends as after a crash.
-  "shell.window_failed": { level: "warn", fields: { stage: ["create", "guard"] } },
-  // The page tried to go to an address other than the local page's origin: stopped (desktop-app ticket 21 hands such
-  // addresses to the system browser).
-  // Desktop-app ticket 21: an http(s) address goes to the system browser instead (`shell.link_opened`); what is stopped
-  // is any other scheme, from a navigation of the window or a request for a new one (`source`).
-  "shell.navigation_blocked": {
-    level: "warn",
-    fields: { scheme: ["http", "https", "other"], source: ["navigation", "new_window"] },
-  },
-  // Desktop-app ticket 21: a link of the page handed to the system browser (never its address).
-  "shell.link_opened": {
-    level: "info",
-    fields: { source: ["navigation", "new_window"], outcome: ["opened", "open_failed"] },
-  },
-  // Desktop-app ticket 21: a download of the page, through the shell's save dialog (never the file's name or folder).
-  "shell.download": {
-    level: "info",
-    fields: { outcome: ["saved", "cancelled", "failed"] },
-    warnWhen: { field: "outcome", value: "failed" },
-  },
-  // Desktop-app ticket 21: an item of the shell's menu was chosen.
-  "shell.menu_chosen": {
-    level: "info",
-    fields: {
-      item: ["open_folder", "open_recent", "quit", "open_in_browser", "open_devtools", "about"],
-    },
-  },
-  // A line from the host the shell could not read: longer than the limit, or not UTF-8. Dropped; reading goes on.
-  "shell.line_rejected": { level: "warn", fields: { reason: ["too_long", "not_utf8"] } },
-  // The shell runs without the single-instance guard: no socket to be had, or the socket's owner is another user.
-  "shell.instance_unguarded": {
-    level: "warn",
-    fields: { reason: ["unavailable", "foreign_owner"] },
-  },
-} as const satisfies Record<string, ShellEventSpec>;
-type ShellEvent = keyof typeof SHELL_EVENTS;
 
 export type HostOutLine =
   | {
@@ -1024,15 +943,17 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
           return;
         }
         const spec: ShellEventSpec = SHELL_EVENTS[event as ShellEvent];
-        const fields = shellFields(spec, m.fields) as Record<string, LogField>;
+        // Checked one by one at run time (`shellFields`); to the types, the fields of whichever shell event this is.
+        const fields = shellFields(spec, m.fields) as ServerLogFields<ShellEvent>;
         const warnWhen = spec.warnWhen;
         const warns =
           warnWhen !== undefined &&
           typeof m.fields === "object" &&
           m.fields !== null &&
           (m.fields as Record<string, unknown>)[warnWhen.field] === warnWhen.value;
-        if (spec.level === "warn" || warns) log.warn(event as ShellEvent, fields);
-        else log.info(event as ShellEvent, fields);
+        if (spec.level === "warn" || warns)
+          log.warn<ShellEvent, typeof fields>(event as ShellEvent, fields);
+        else log.info<ShellEvent, typeof fields>(event as ShellEvent, fields);
         return;
       }
       default:

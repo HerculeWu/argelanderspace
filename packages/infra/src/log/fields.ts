@@ -32,6 +32,25 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const MADE_HERE = Symbol("log field");
+/** Only in the types: which constructor of `f` made a field. */
+declare const FIELD_KIND: unique symbol;
+
+/**
+ * The constructors of `f`, by name. A `LogField<K>` was made by the constructor `K`, which only the types know (the
+ * field's kind for an event's field table, logger.ts): `LogField<"path">` by `f.path`, a plain `LogField` by any.
+ */
+export type LogFieldKind =
+  | "id"
+  | "workId"
+  | "docId"
+  | "ids"
+  | "oneOf"
+  | "someOf"
+  | "num"
+  | "ms"
+  | "path"
+  | "url"
+  | "error";
 
 type FieldSpec =
   | { kind: "id"; value: unknown }
@@ -47,7 +66,8 @@ type FieldSpec =
   | { kind: "error"; value: unknown; omitSystemPath: boolean };
 
 /** An opaque field value. Only the constructors in `f` make one; a logger ignores anything else. */
-export class LogField {
+export class LogField<K extends LogFieldKind = LogFieldKind> {
+  declare readonly [FIELD_KIND]?: K;
   // A private member makes the type nominal: an object literal of the same shape is not a LogField.
   readonly #spec: FieldSpec;
   constructor(token: typeof MADE_HERE, spec: FieldSpec) {
@@ -138,8 +158,8 @@ export interface LogErrorOptions {
   omitSystemPath?: boolean;
 }
 
-function field(spec: FieldSpec): LogField {
-  return new LogField(MADE_HERE, spec);
+function field<K extends LogFieldKind>(spec: FieldSpec): LogField<K> {
+  return new LogField<K>(MADE_HERE, spec);
 }
 
 export const f = {
@@ -147,35 +167,37 @@ export const f = {
    * A stable identifier: a job id, an account id, an error code, a version. Not a title, a name or an address —
    * and for a Work id or a Doc id use `workId` / `docId`, which know which of them are made from a title.
    */
-  id: (value: string): LogField => field({ kind: "id", value }),
+  id: (value: string): LogField<"id"> => field({ kind: "id", value }),
   /** A Work id. One made from the Work's title is written as a hash, the same hash every time. */
-  workId: (value: string): LogField => field({ kind: "work", value }),
+  workId: (value: string): LogField<"workId"> => field({ kind: "work", value }),
   /** A Doc id. One made from a title or from the name of a local folder is written as a hash. */
-  docId: (value: string): LogField => field({ kind: "doc", value }),
+  docId: (value: string): LogField<"docId"> => field({ kind: "doc", value }),
   /** Several identifiers (at most `LOG_LIST_MAX` are written). */
-  ids: (values: readonly string[]): LogField => field({ kind: "ids", value: values }),
+  ids: (values: readonly string[]): LogField<"ids"> => field({ kind: "ids", value: values }),
   /** One of the values listed in code. `allowed` is a list written in the source, never built from runtime data. */
   oneOf: <const A extends readonly string[]>(
     allowed: A,
     value: A[number] | (string & {})
-  ): LogField => field({ kind: "enum", allowed, value }),
+  ): LogField<"oneOf"> => field({ kind: "enum", allowed, value }),
   /** Several of the values listed in code. */
-  someOf: <const A extends readonly string[]>(allowed: A, values: readonly string[]): LogField =>
-    field({ kind: "enums", allowed, value: values }),
-  num: (value: number): LogField => field({ kind: "num", value }),
+  someOf: <const A extends readonly string[]>(
+    allowed: A,
+    values: readonly string[]
+  ): LogField<"someOf"> => field({ kind: "enums", allowed, value: values }),
+  num: (value: number): LogField<"num"> => field({ kind: "num", value }),
   /** A duration in milliseconds. */
-  ms: (value: number): LogField => field({ kind: "ms", value }),
+  ms: (value: number): LogField<"ms"> => field({ kind: "ms", value }),
   /** An absolute path. A folder or file name in it that is a title-made Work / Doc id is written as its hash. */
-  path: (value: string): LogField => field({ kind: "path", value }),
+  path: (value: string): LogField<"path"> => field({ kind: "path", value }),
   /** Only the scheme, the host and the port are written. */
-  url: (value: string | URL): LogField => field({ kind: "url", value }),
+  url: (value: string | URL): LogField<"url"> => field({ kind: "url", value }),
   /**
    * Whatever was thrown. `omitSystemPath` writes less, never more: the path a system error names (the file it
    * could not open) is left out, here and in every cause — for an error raised while working on the user's own
    * files, whose folder may be named after a paper. The frames of the stack are still written: they are the
    * locations of code.
    */
-  error: (value: unknown, options?: LogErrorOptions): LogField =>
+  error: (value: unknown, options?: LogErrorOptions): LogField<"error"> =>
     field({ kind: "error", value, omitSystemPath: options?.omitSystemPath === true }),
 } as const;
 

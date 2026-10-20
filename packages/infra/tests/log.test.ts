@@ -24,10 +24,13 @@ import {
   createLogger,
   discardSink,
   f,
+  installProcessLogging,
   LOG_KEEP_FILES,
   LOG_MAX_TOTAL_BYTES,
   LOG_SAFE_MESSAGE,
+  type LogField,
   type LogFields,
+  type LogFieldTable,
   openLogFile,
   pruneLogDir,
   resolveLogDir,
@@ -35,7 +38,12 @@ import {
 import { createMemorySink } from "./log-memory-sink.js";
 
 const HOME = "/home/ann";
-const EVENTS = ["test.happened", "test.other"] as const;
+/**
+ * Most tests here name their fields freely, so their events take a field table that does not list its names (any name,
+ * any kind). The checks on listed names and kinds are in "what the types refuse", on a table that lists them.
+ */
+const ANY_FIELDS: LogFieldTable = {};
+const EVENTS = { "test.happened": ANY_FIELDS, "test.other": ANY_FIELDS } as const;
 
 function setup(level?: "debug" | "info" | "warn" | "error") {
   const sink = createMemorySink();
@@ -103,7 +111,7 @@ describe("a record", () => {
   test("an event name outside the catalog is not written as given", () => {
     const { sink, log } = setup();
     const title = "A Study of Something Private";
-    log.info(`paper ${title} failed` as never, { doc: f.id("x") });
+    log.info(`paper ${title} failed` as never, { doc: f.id("x") } as never);
     expect(sink.lines).toHaveLength(1);
     expect(sink.lines[0]).not.toContain("Private");
     expect(sink.records()[0]).toEqual({
@@ -115,7 +123,7 @@ describe("a record", () => {
 
   test("a catalog entry that is not a dotted lower-case name is refused when the logger is made", () => {
     expect(() =>
-      createLogger({ events: ["Paper failed: title"] as const, sink: createMemorySink() })
+      createLogger({ events: { "Paper failed: title": {} }, sink: createMemorySink() })
     ).toThrow(TypeError);
   });
 
@@ -168,9 +176,80 @@ describe("what the types refuse", () => {
     // @ts-expect-error an event name cannot be a runtime string
     log.info(runtimeText);
     // @ts-expect-error a catalog of plain strings is not a catalog
-    expect(() => createLogger({ events: [runtimeText], sink })).toThrow(TypeError);
+    expect(() => createLogger({ events: { [runtimeText]: {} }, sink })).toThrow(TypeError);
     // And what got past the types at run time said nothing.
     expect(sink.lines.join("")).not.toContain("something the user wrote");
+  });
+
+  // An event's fields are the names its table lists, each made by the constructor listed for it. A name outside the
+  // table is refused wherever it comes from: written in the call, in an object built beforehand, spread in from one,
+  // or in one branch of a conditional spread; and so is a field of another kind.
+  const TYPED = {
+    "test.typed": { path: f.path, code: f.id, duration_ms: f.ms, log_file: [f.id, f.oneOf] },
+    "test.failed": { error: f.error },
+  } as const;
+
+  test("a field name the event's table does not list, or a field of another kind", () => {
+    const sink = createMemorySink();
+    const log = createLogger({ events: TYPED, sink, home: HOME });
+    const flag = sink.lines.length === 0;
+    // What the table lists, however it is put together, is accepted.
+    log.info("test.typed", { path: f.path("/srv/a"), code: f.id("c1") });
+    const built = { path: f.path("/srv/b"), ...(flag ? { code: f.id("c2") } : {}) };
+    log.info("test.typed", built);
+    log.info("test.typed", { ...built, duration_ms: f.ms(1) });
+    const elapsed: LogField<"ms"> | undefined = flag ? f.ms(2) : undefined;
+    log.info("test.typed", { duration_ms: elapsed });
+    log.info("test.typed", { log_file: flag ? f.id("jobs/x") : f.oneOf(["fixed"], "fixed") });
+    log.error("test.failed", { error: f.error(new Error("x")) });
+    log.info("test.failed");
+
+    // @ts-expect-error a misspelt name, written in the call
+    log.info("test.typed", { pth: f.path("/srv/c") });
+    const misspelt = { path: f.path("/srv/d"), pth: f.path("/srv/d") };
+    // @ts-expect-error a misspelt name, in an object built beforehand
+    log.info("test.typed", misspelt);
+    const base = { path: f.path("/srv/e"), cdoe: f.id("c3") };
+    // @ts-expect-error a misspelt name, spread in from an object built beforehand
+    log.info("test.typed", { ...base, duration_ms: f.ms(3) });
+    // @ts-expect-error a misspelt name in one branch of a conditional spread
+    log.info("test.typed", { path: f.path("/srv/f"), ...(flag ? { cdoe: f.id("c4") } : {}) });
+    // @ts-expect-error a misspelt name in one branch, a listed one in the other
+    log.info("test.typed", {
+      path: f.path("/srv/f"),
+      ...(flag ? { cdoe: f.id("c5") } : { code: f.id("c5") }),
+    });
+    // @ts-expect-error a name of another event of the same logger
+    log.info("test.typed", { error: f.error(new Error("y")) });
+    // @ts-expect-error not an event of this logger
+    log.info("test.untyped", { path: f.path("/srv/g") });
+    // @ts-expect-error a path field made by another constructor
+    log.info("test.typed", { path: f.id("/srv/h") });
+    // @ts-expect-error a duration made as a plain number
+    log.info("test.typed", { duration_ms: f.num(4) });
+    // @ts-expect-error a field of a kind neither of its constructors makes
+    log.info("test.typed", { log_file: f.path("/srv/i") });
+    const unlisted: Record<string, LogField> = { path: f.path("/srv/j") };
+    // @ts-expect-error fields whose names are not known
+    log.info("test.typed", unlisted);
+
+    // The types add to the run-time checks; they replace none: a name the table does not list is still written when
+    // its value is a field, and a value that is not a field is still dropped and counted.
+    expect(sink.records().at(-11)).toMatchObject({ event: "test.typed", pth: "/srv/c" });
+    expect(sink.records().at(-1)).toMatchObject({ event: "test.typed", path: "/srv/j" });
+  });
+
+  test("the process watch takes only events whose table has an error field", () => {
+    const log = createLogger({ events: TYPED, sink: discardSink });
+    installProcessLogging(log, {
+      uncaughtException: "test.failed",
+      unhandledRejection: "test.failed",
+    })();
+    installProcessLogging(log, {
+      // @ts-expect-error `test.typed` has no `error` field
+      uncaughtException: "test.typed",
+      unhandledRejection: "test.failed",
+    })();
   });
 });
 

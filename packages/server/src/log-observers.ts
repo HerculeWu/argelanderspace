@@ -51,7 +51,7 @@ import {
   ZipError,
 } from "@argelanderspace/infra";
 import { JOB_ERROR_CODES, type JobTransition } from "./jobs.js";
-import { allOf, type ServerLog, silentLog } from "./log.js";
+import { allOf, type ServerLog, type ServerLogFields, silentLog } from "./log.js";
 import { MAIL_FAILURES } from "./mail-failures.js";
 
 // --------------------------------------------------------------------------- //
@@ -72,7 +72,7 @@ export const JOB_ID_UNRECOGNIZED = "job-unrecognized";
  * (`recover`), so a file that was edited by hand, or put there by something else, can carry any text as its id: an
  * id of another shape is not written.
  */
-export function jobIdField(id: unknown): LogField {
+export function jobIdField(id: unknown): LogField<"id"> {
   return f.id(typeof id === "string" && JOB_ID.test(id) ? id : JOB_ID_UNRECOGNIZED);
 }
 
@@ -150,7 +150,7 @@ export function jobFailureCategory(error: unknown): JobFailureCategory {
   return "unclassified";
 }
 
-function elapsed(from: string | null, to: string | null): LogField | undefined {
+function elapsed(from: string | null, to: string | null): LogField<"ms"> | undefined {
   if (from === null || to === null) return undefined;
   const ms = Date.parse(to) - Date.parse(from);
   return Number.isFinite(ms) && ms >= 0 ? f.ms(ms) : undefined;
@@ -220,7 +220,7 @@ export function jobLogger(log: ServerLog): ((transition: JobTransition) => void)
 // --------------------------------------------------------------------------- //
 
 const YES_NO = ["yes", "no"] as const;
-const yesNo = (value: boolean): LogField => f.oneOf(YES_NO, value ? "yes" : "no");
+const yesNo = (value: boolean): LogField<"oneOf"> => f.oneOf(YES_NO, value ? "yes" : "no");
 /** The signals a child process of ours is ended by; any other is written as the placeholder. */
 const SIGNALS = [
   "SIGKILL",
@@ -405,7 +405,7 @@ export function observedMail<T extends object>(impl: T, log: ServerLog): T {
       const protocol = (SMTP_CALLS as readonly string[]).includes(property) ? "smtp" : "imap";
       return async (...args: unknown[]): Promise<unknown> => {
         const started = performance.now();
-        const fields = (): Record<string, LogField> => ({
+        const fields = (): ServerLogFields<"mail.remote_call"> => ({
           protocol: f.oneOf(MAIL_PROTOCOLS, protocol),
           call: f.oneOf(MAIL_CALLS, property),
           provider: f.oneOf(MAIL_PROVIDERS, mailProvider(protocol, args[0])),
@@ -442,7 +442,7 @@ export function observedMail<T extends object>(impl: T, log: ServerLog): T {
 }
 
 /** A mail account id is `acc-<12 hex digits>`, made here from random bytes; anything else is not written. */
-export function mailAccountField(id: string): LogField {
+export function mailAccountField(id: string): LogField<"id"> {
   return f.id(MAIL_ACCOUNT_ID_PATTERN.test(id) ? id : "acc-unrecognized");
 }
 

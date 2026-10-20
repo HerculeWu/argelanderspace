@@ -52,8 +52,8 @@ import {
   projectUnavailableLine,
   REJECT_REASONS,
   runDesktopHost,
-  SHELL_EVENTS,
 } from "../src/desktop-host.js";
+import { SHELL_EVENTS } from "../src/shell-events.js";
 
 // ---- the corpus ----------------------------------------------------------------------------------------------- //
 

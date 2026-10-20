@@ -23,13 +23,8 @@
 import { readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { JobKindSchema, ManuscriptIdSchema } from "@argelanderspace/contracts";
-import {
-  f,
-  type LogField,
-  type TexCompileFailure,
-  type TexFailureLogHook,
-} from "@argelanderspace/infra";
-import { type ServerLog, silentLog } from "./log.js";
+import { f, type TexCompileFailure, type TexFailureLogHook } from "@argelanderspace/infra";
+import { type ServerLog, type ServerLogFields, silentLog } from "./log.js";
 
 export const INGEST_FAILURE_LOGS_KEPT = 20;
 /**
@@ -232,9 +227,9 @@ const WRITER_LOG_FILES = [`manuscripts/m_<manuscript>/build/${WRITER_FAILURE_LOG
 function record(
   log: ServerLog,
   failure: TexCompileFailure,
-  who: Record<string, LogField>,
+  who: ServerLogFields<"tex.compile_failed">,
   /** Set when the log was kept: where, relative to the project data directory. */
-  logFile: LogField | undefined
+  logFile: ServerLogFields<"tex.compile_failed">["log_file"]
 ): void {
   const missing = classifyMissingTexFiles(failure.missingFiles);
   log.warn("tex.compile_failed", {

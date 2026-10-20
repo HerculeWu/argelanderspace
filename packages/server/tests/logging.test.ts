@@ -284,7 +284,7 @@ describe("a Doc whose id is made from a title or a folder name", () => {
   function written(docId: string): string {
     const lines: string[] = [];
     createLogger({ events: SERVER_LOG_EVENTS, sink: { write: (l) => lines.push(l) } }).info(
-      "server.started",
+      "job.created",
       { doc: f.docId(docId) }
     );
     return (JSON.parse(lines[0] as string) as { doc: string }).doc;
