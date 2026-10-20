@@ -4,7 +4,6 @@ import { type Job, LIBRARY_DETAIL_TABS, libraryRefBibtex } from "@argelanderspac
 import { Icon } from "../lib/icons";
 import { type DocProvenance, fetchDocProvenance, patchRef } from "../api/library";
 import { deletePaperDoc, fetchAnnotations } from "../api/annotations";
-import { createTextDoc } from "../api/text-docs";
 import i18n from "../i18n";
 import { ActionButton, Badge, Dialog, InlineMessage, Tabs, TooltipBubble, useSingleTooltip } from "../ui";
 import { cgKfmt } from "../graph/graphPhysics";
@@ -12,6 +11,7 @@ import { AbstractHtml } from "../lib/abstract";
 import { WorkArgumentEntry } from "../argument/ArgumentEntry";
 import { arxivAcquisitionDocId, uploadAcquisitionDocId } from "./acquisitionTargets";
 import { MergeNoteList } from "./MergeNotes";
+import { useTextDocCreation } from "./text-doc-creation";
 import type { GraphNode, LibraryRef } from "./types";
 import {
   type AcquisitionFlow,
@@ -164,13 +164,8 @@ export function RefDetail({
   const arxivPdfError = arxivPdf.error?.message ?? null;
   const [settingMain, setSettingMain] = useState(false);
   const [mainErr, setMainErr] = useState<string | null>(null);
-  // Text Doc creation (ticket 25): one in-flight request; the new Doc opens on its source editor.
-  const [textBusy, setTextBusy] = useState(false);
-  const [textError, setTextError] = useState<string | null>(null);
-  // One operation id per create ATTEMPT: a retry after a lost response or an error reuses it (the server then finds the
-  // same Doc instead of making another) until the creation succeeded, the Work changed, or the server says the
-  // operation can no longer be completed (409).
-  const createOperation = useRef<{ workId: string; id: string } | null>(null);
+  // Text Doc creation (ticket 25): one in-flight request; the new Doc opens on its source editor (text-doc-creation.ts).
+  const textDoc = useTextDocCreation(r.id, workSession, onOpenDoc);
   const [acquisition, setAcquisition] = useState<AcquisitionFlow | null>(null);
   const acquisitionFlowSequence = useRef(0);
   const submittingAcquisitionFlows = useRef(new Set<number>());
@@ -703,28 +698,11 @@ export function RefDetail({
                 mode="text"
                 data-ui="create-text-doc"
                 variant="ghost"
-                busy={textBusy}
+                busy={textDoc.busy}
                 busyLabel={t("library.detail.files.creatingText")}
                 label={t("library.detail.files.createText")}
                 tooltip={t("library.detail.files.createTextTip")}
-                onClick={() => {
-                  const workId = r.id;
-                  const session = { ...workSession.current() };
-                  setTextBusy(true);
-                  setTextError(null);
-                  const attempt =
-                    createOperation.current?.workId === workId
-                      ? createOperation.current
-                      : { workId, id: `create-${crypto.randomUUID()}` };
-                  createOperation.current = attempt;
-                  void createTextDoc(workId, attempt.id).then((result) => {
-                    if (result.ok || result.status === 409) createOperation.current = null;
-                    if (!isCurrentWorkSession(session)) return;
-                    setTextBusy(false);
-                    if (result.ok) onOpenDoc(result.docId);
-                    else setTextError(result.detail);
-                  });
-                }}
+                onClick={textDoc.create}
               >
                 {t("library.detail.files.createText")}
               </ActionButton>
@@ -739,7 +717,7 @@ export function RefDetail({
                 onClick={() => openAcquisition()}
               />
             </div>
-            {(jobs.mergeNotices.length > 0 || uploadJob || arxivJob || arxivPdfJob || uploadErr || arxivErr || arxivPdfError || mainErr || textError || pdfUploadJob || pdfUploadError) && (
+            {(jobs.mergeNotices.length > 0 || uploadJob || arxivJob || arxivPdfJob || uploadErr || arxivErr || arxivPdfError || mainErr || textDoc.error || pdfUploadJob || pdfUploadError) && (
               <div className="ref-task-messages" data-ui="acquisition-status">
                 {jobs.mergeNotices.map((notice) => (
                   <div key={notice.jobId} className="merge-note-bar" data-ui="task-graph-merges" data-ui-key={notice.jobId}>
@@ -844,7 +822,7 @@ export function RefDetail({
                   </InlineMessage>
                 )}
                 {mainErr && <InlineMessage uiId="set-main-doc-error" tone="danger">{mainErr}</InlineMessage>}
-                {textError && <InlineMessage uiId="create-text-doc-error" tone="danger" title={t("library.detail.files.createTextFailed")}>{textError}</InlineMessage>}
+                {textDoc.error && <InlineMessage uiId="create-text-doc-error" tone="danger" title={t("library.detail.files.createTextFailed")}>{textDoc.error}</InlineMessage>}
               </div>
             )}
             {versions.length === 0 && (
