@@ -413,31 +413,265 @@ pub(crate) fn parse_test_line(line: &str) -> HostLine {
     }
 }
 
+/// Tests: the line protocol's fixture corpus, which the host's tests read too (server
+/// `tests/fixtures/desktop-line-protocol.json`; docs/architecture.md「桌面壳」). Read when the test runs, from the
+/// repository's source tree: not built from anything, so `cargo test` needs nothing of the pnpm workspace.
+#[cfg(test)]
+pub(crate) fn corpus() -> Value {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../server/tests/fixtures/desktop-line-protocol.json");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("the corpus {}: {error}", path.display()));
+    serde_json::from_str(&text).expect("the corpus is JSON")
+}
+
+/// Tests: a corpus record's line as it goes over the protocol: `raw` as it is, else `line` written compactly.
+#[cfg(test)]
+pub(crate) fn corpus_line(record: &Value) -> String {
+    match record.get("raw").and_then(Value::as_str) {
+        Some(raw) => raw.to_owned(),
+        None => serde_json::to_string(&record["line"]).expect("a JSON line"),
+    }
+}
+
+/// Tests: the records of one direction of the corpus (`toShell`, `toHost`).
+#[cfg(test)]
+pub(crate) fn corpus_records<'a>(corpus: &'a Value, direction: &str) -> &'a [Value] {
+    corpus[direction]
+        .as_array()
+        .unwrap_or_else(|| panic!("the corpus has no {direction}"))
+}
+
+#[cfg(test)]
+/// Tests: every request the shell knows, one of each: the `match` stops compiling when a kind is added and not listed.
+pub(crate) fn every_request() -> Vec<Request> {
+    let all = vec![
+        Request::PickFolder { id: "i".into() },
+        Request::OpenInBrowser { url: "u".into() },
+        Request::OpenDevtools,
+        Request::OpenLogFolder { path: "p".into() },
+        Request::OpenConfigFile { path: "p".into() },
+        Request::OpenSkillsFolder { path: "p".into() },
+    ];
+    for request in &all {
+        match request {
+            Request::PickFolder { .. }
+            | Request::OpenInBrowser { .. }
+            | Request::OpenDevtools
+            | Request::OpenLogFolder { .. }
+            | Request::OpenConfigFile { .. }
+            | Request::OpenSkillsFolder { .. } => {}
+        }
+    }
+    all
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     // The test lines are written with Unix paths (`parse_test_line`).
     use super::parse_test_line as parse_host_line;
 
+    fn language_name(language: Language) -> &'static str {
+        match language {
+            Language::Chinese => "chinese",
+            Language::English => "english",
+        }
+    }
+
+    fn level_name(level: LogLevel) -> &'static str {
+        match level {
+            LogLevel::Debug => "debug",
+            LogLevel::Info => "info",
+            LogLevel::Warn => "warn",
+            LogLevel::Error => "error",
+        }
+    }
+
+    /// What the shell made of a line, in the corpus's own words (its `shell` of a line to the shell).
+    fn corpus_view(line: &HostLine) -> Value {
+        match line {
+            HostLine::Ready(r) => json!({"ready": {
+                "url": r.url,
+                "port": r.port,
+                "project": r.project,
+                "logDir": r.log_dir,
+                "language": language_name(r.language),
+                "logLevel": level_name(r.log_level),
+            }}),
+            HostLine::Request(request) => {
+                let mut view = Map::new();
+                view.insert("kind".into(), json!(request.kind()));
+                match request {
+                    Request::PickFolder { id } => {
+                        view.insert("id".into(), json!(id));
+                    }
+                    Request::OpenInBrowser { url } => {
+                        view.insert("url".into(), json!(url));
+                    }
+                    Request::OpenDevtools => {}
+                    Request::OpenLogFolder { path }
+                    | Request::OpenConfigFile { path }
+                    | Request::OpenSkillsFolder { path } => {
+                        view.insert("path".into(), json!(path));
+                    }
+                }
+                json!({ "request": view })
+            }
+            HostLine::Stopping { reason } => json!({"stopping": {"reason": reason}}),
+            HostLine::Stopped { next } => json!({"stopped": {"next": next}}),
+            HostLine::Failed { stage, log_dir } => json!({"failed": {
+                "stage": match stage {
+                    FailedStage::Start => "start",
+                    FailedStage::Project => "project",
+                },
+                "logDir": log_dir,
+            }}),
+            HostLine::Menu(model) => json!({"menu": {
+                "language": language_name(model.language),
+                "recent": model.recent.iter().map(|r| json!({
+                    "id": r.id,
+                    "label": r.label,
+                    "enabled": r.enabled,
+                })).collect::<Vec<_>>(),
+            }}),
+            HostLine::Unknown => json!("unknown"),
+        }
+    }
+
     #[test]
-    fn ready_line_with_a_project() {
-        let line = r#"{"type":"ready","url":"http://127.0.0.1:1859/","port":1859,"configuredPort":1859,"portFallback":false,"portOccupant":null,"project":"/home/u/My Project","logDir":"/home/u/.local/share/argelanderspace/logs","language":"en"}"#;
-        assert_eq!(
-            parse_host_line(line),
-            HostLine::Ready(Ready {
-                url: "http://127.0.0.1:1859/".into(),
-                port: 1859,
-                project: Some("/home/u/My Project".into()),
-                log_dir: Some("/home/u/.local/share/argelanderspace/logs".into()),
-                language: Language::English,
-                log_level: LogLevel::Info,
-            })
+    fn the_corpus_constants_are_the_shells() {
+        let corpus = corpus();
+        let c = &corpus["constants"];
+        assert_eq!(c["lineMaxBytes"], json!(LINE_MAX_BYTES));
+        let levels: Vec<&str> = [
+            LogLevel::Debug,
+            LogLevel::Info,
+            LogLevel::Warn,
+            LogLevel::Error,
+        ]
+        .into_iter()
+        .map(level_name)
+        .collect();
+        assert_eq!(c["logLevels"], json!(levels), "the levels, lowest first");
+        for (i, name) in levels.iter().enumerate() {
+            let level = LogLevel::parse(name).expect(name);
+            assert_eq!(level_name(level), *name);
+            // Lowest first: each level admits its own records and those above it, not those below.
+            for (j, other) in levels.iter().enumerate() {
+                assert_eq!(level.admits(other), j >= i, "{name} admits {other}");
+            }
+        }
+        assert_eq!(c["defaultLogLevel"], json!(level_name(LogLevel::DEFAULT)));
+        assert_eq!(c["menuRecentMax"], json!(MENU_RECENT_MAX));
+        // The host's labels (characters) always fit the shell's limit (bytes): four bytes at most per character.
+        let label_max = c["menuLabelMaxChars"].as_u64().expect("menuLabelMaxChars") as usize;
+        assert!(
+            4 * label_max <= MENU_TEXT_MAX,
+            "{label_max} characters within {MENU_TEXT_MAX} bytes"
         );
-        let with_level = line.replace(r#""language":"en""#, r#""language":"en","logLevel":"warn""#);
-        let HostLine::Ready(ready) = parse_host_line(&with_level) else {
-            panic!("ready")
+        let language_of_line = |line: Value| match parse_host_line(&line.to_string()) {
+            HostLine::Menu(model) => language_name(model.language),
+            other => panic!("{other:?}"),
         };
-        assert_eq!(ready.log_level, LogLevel::Warn);
+        let languages = c["languages"].as_object().expect("languages");
+        for (code, name) in languages {
+            assert_eq!(
+                json!(language_of_line(
+                    json!({"type":"menu","language":code,"recent":[]})
+                )),
+                *name,
+                "{code}"
+            );
+        }
+        // A line that names no language (or one of no table) is in the default one.
+        let default = &languages[c["defaultLanguage"].as_str().expect("defaultLanguage")];
+        assert_eq!(
+            json!(language_of_line(json!({"type":"menu","recent":[]}))),
+            *default
+        );
+        assert_eq!(
+            json!(language_of_line(
+                json!({"type":"menu","language":"fr","recent":[]})
+            )),
+            *default
+        );
+        let kinds: Vec<&str> = every_request().iter().map(Request::kind).collect();
+        assert_eq!(c["requestKinds"], json!(kinds));
+        // A line one byte over the limit is skipped, one at the limit is read (made here, not stored in the corpus).
+        let max = c["lineMaxBytes"].as_u64().expect("lineMaxBytes") as usize;
+        for (len, read) in [
+            (max + 1, LineRead::TooLong),
+            (max, LineRead::Line("x".repeat(max))),
+        ] {
+            let mut input = "x".repeat(len).into_bytes();
+            input.push(b'\n');
+            let mut seen = Vec::new();
+            read_lines(&input[..], LINE_MAX_BYTES, |l| {
+                seen.push(l);
+                true
+            });
+            assert_eq!(seen, vec![read], "{len} bytes");
+        }
+    }
+
+    #[test]
+    fn lines_from_the_host_are_read_as_the_corpus_says() {
+        let corpus = corpus();
+        let records = corpus_records(&corpus, "toShell");
+        assert!(!records.is_empty());
+        for record in records {
+            let id = &record["id"];
+            assert_eq!(
+                corpus_view(&parse_host_line(&corpus_line(record))),
+                record["shell"],
+                "{id}"
+            );
+        }
+        // Every stop reason the host gives is in a line the shell reads.
+        for reason in corpus["constants"]["stopReasons"]
+            .as_array()
+            .expect("stopReasons")
+        {
+            assert!(
+                records.iter().any(|r| r["valid"] == json!(true)
+                    && r["shell"] == json!({"stopping": {"reason": reason}})),
+                "{reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn lines_to_the_host_are_written_as_the_corpus_says() {
+        let corpus = corpus();
+        let mut written = 0;
+        for record in corpus_records(&corpus, "toHost") {
+            let id = &record["id"];
+            let shell = &record["shell"];
+            let line = if let Some(event) = shell.get("event").and_then(Value::as_str) {
+                let fields = record["line"]["fields"].as_object().expect("fields");
+                shell_event_line(event, fields)
+            } else if let Some(writer) = shell.get("writer").and_then(Value::as_str) {
+                let arg = |i: usize| shell["args"][i].as_str();
+                match writer {
+                    "quit_line" => quit_line(),
+                    "folder_picked_line" => folder_picked_line(arg(0).expect("id"), arg(1)),
+                    "menu_request_line" => menu_request_line(arg(0).expect("item")),
+                    "menu_recent_line" => menu_recent_line(arg(0).expect("id")),
+                    other => panic!("{id}: no writer {other}"),
+                }
+            } else {
+                // A line the shell does not write (the host's rejections and placeholders).
+                assert_eq!(*shell, Value::Null, "{id}");
+                assert_eq!(record["valid"], json!(false), "{id}");
+                continue;
+            };
+            assert_eq!(record["valid"], json!(true), "{id}");
+            let line: Value = serde_json::from_str(&line).expect("a JSON line");
+            assert_eq!(line, record["line"], "{id}");
+            written += 1;
+        }
+        assert!(written > 0);
     }
 
     #[test]
@@ -489,205 +723,10 @@ mod tests {
         assert_eq!(seen, 2);
     }
 
+    /// The shell's own rules for a menu line (the lines themselves are the corpus's): at most the limit, and an entry
+    /// not of the form left out alone.
     #[test]
-    fn ready_line_of_the_welcome_state_and_without_the_newer_fields() {
-        let line =
-            r#"{"type":"ready","url":"http://127.0.0.1:40000/","port":40000,"project":null}"#;
-        assert_eq!(
-            parse_host_line(line),
-            HostLine::Ready(Ready {
-                url: "http://127.0.0.1:40000/".into(),
-                port: 40000,
-                project: None,
-                log_dir: None,
-                language: Language::Chinese,
-                log_level: LogLevel::Info,
-            })
-        );
-    }
-
-    #[test]
-    fn a_ready_line_whose_address_is_not_the_local_page_is_not_taken() {
-        for url in [
-            "http://example.org/",
-            "https://127.0.0.1:1859/",
-            "http://127.0.0.1:1860/",
-            "http://localhost:1859/",
-            "http://127.0.0.1:1859/x",
-            "javascript:alert(1)",
-        ] {
-            let line = json!({"type":"ready","url":url,"port":1859,"project":null}).to_string();
-            assert_eq!(parse_host_line(&line), HostLine::Unknown, "{url}");
-        }
-        // A relative project path or a missing project is a bad shape too.
-        let line = json!({"type":"ready","url":"http://127.0.0.1:1/","port":1,"project":"rel"})
-            .to_string();
-        assert_eq!(parse_host_line(&line), HostLine::Unknown);
-        let line = json!({"type":"ready","url":"http://127.0.0.1:1/","port":1}).to_string();
-        assert_eq!(parse_host_line(&line), HostLine::Unknown);
-        let line =
-            json!({"type":"ready","url":"http://127.0.0.1:70000/","port":70000,"project":null})
-                .to_string();
-        assert_eq!(parse_host_line(&line), HostLine::Unknown);
-    }
-
-    #[test]
-    fn requests() {
-        let cases = [
-            (
-                r#"{"type":"request","kind":"pick_folder","id":"abc"}"#,
-                Request::PickFolder { id: "abc".into() },
-            ),
-            (
-                r#"{"type":"request","kind":"open_in_browser","url":"http://127.0.0.1:1859/"}"#,
-                Request::OpenInBrowser {
-                    url: "http://127.0.0.1:1859/".into(),
-                },
-            ),
-            (
-                r#"{"type":"request","kind":"open_devtools"}"#,
-                Request::OpenDevtools,
-            ),
-            (
-                r#"{"type":"request","kind":"open_log_folder","path":"/h/logs"}"#,
-                Request::OpenLogFolder {
-                    path: "/h/logs".into(),
-                },
-            ),
-            (
-                r#"{"type":"request","kind":"open_config_file","path":"/h/config.toml"}"#,
-                Request::OpenConfigFile {
-                    path: "/h/config.toml".into(),
-                },
-            ),
-            (
-                r#"{"type":"request","kind":"open_skills_folder","path":"/usr/lib/argelanderspace/skills"}"#,
-                Request::OpenSkillsFolder {
-                    path: "/usr/lib/argelanderspace/skills".into(),
-                },
-            ),
-        ];
-        for (line, request) in cases {
-            assert_eq!(parse_host_line(line), HostLine::Request(request));
-        }
-    }
-
-    #[test]
-    fn requests_of_the_wrong_shape_are_ignored() {
-        for line in [
-            r#"{"type":"request","kind":"pick_folder"}"#,
-            r#"{"type":"request","kind":"open_log_folder","path":"relative"}"#,
-            r#"{"type":"request","kind":"open_config_file"}"#,
-            // The skills folder is the host's own path (desktop-app ticket 24): absolute, and never left out.
-            r#"{"type":"request","kind":"open_skills_folder"}"#,
-            r#"{"type":"request","kind":"open_skills_folder","path":"skills"}"#,
-            r#"{"type":"request","kind":"open_skills_folder","path":7}"#,
-            r#"{"type":"request","kind":"format_disk"}"#,
-            // Opening in the browser takes the host's own page address only.
-            r#"{"type":"request","kind":"open_in_browser"}"#,
-            r#"{"type":"request","kind":"open_in_browser","url":"https://example.org/"}"#,
-            r#"{"type":"request","kind":"open_in_browser","url":"http://127.0.0.1:1859/x"}"#,
-            r#"{"type":"request","kind":"open_in_browser","url":"file:///etc/passwd"}"#,
-            r#"{"type":"request","kind":"open_in_browser","url":"http://127.0.0.1:99999/"}"#,
-            r#"{"type":"request"}"#,
-        ] {
-            assert_eq!(parse_host_line(line), HostLine::Unknown, "{line}");
-        }
-    }
-
-    #[test]
-    fn stopping_stopped_failed() {
-        assert_eq!(
-            parse_host_line(r#"{"type":"stopping","reason":"switch"}"#),
-            HostLine::Stopping {
-                reason: "switch".into()
-            }
-        );
-        assert_eq!(
-            parse_host_line(r#"{"type":"stopped"}"#),
-            HostLine::Stopped { next: None }
-        );
-        assert_eq!(
-            parse_host_line(r#"{"type":"stopped","next":"/p/next"}"#),
-            HostLine::Stopped {
-                next: Some("/p/next".into())
-            }
-        );
-        assert_eq!(
-            parse_host_line(r#"{"type":"stopped","next":"rel"}"#),
-            HostLine::Unknown
-        );
-        assert_eq!(
-            parse_host_line(r#"{"type":"failed","stage":"start","logDir":"/l"}"#),
-            HostLine::Failed {
-                stage: FailedStage::Start,
-                log_dir: Some("/l".into())
-            }
-        );
-        assert_eq!(
-            parse_host_line(r#"{"type":"failed","stage":"project","logDir":"/l"}"#),
-            HostLine::Failed {
-                stage: FailedStage::Project,
-                log_dir: Some("/l".into())
-            }
-        );
-        // An older host's failed line, without the log directory.
-        assert_eq!(
-            parse_host_line(r#"{"type":"failed","stage":"start"}"#),
-            HostLine::Failed {
-                stage: FailedStage::Start,
-                log_dir: None
-            }
-        );
-        assert_eq!(
-            parse_host_line(r#"{"type":"failed","stage":"boom"}"#),
-            HostLine::Unknown
-        );
-    }
-
-    #[test]
-    fn not_lines_of_the_protocol() {
-        for line in [
-            "",
-            "ready",
-            "[]",
-            "null",
-            "{}",
-            r#"{"type":"hello"}"#,
-            "{\"type\":\"ready\"",
-        ] {
-            assert_eq!(parse_host_line(line), HostLine::Unknown, "{line}");
-        }
-    }
-
-    #[test]
-    fn menu_lines() {
-        let line = r#"{"type":"menu","language":"en","recent":[{"id":"m1-0","label":"alpha — ~/p/alpha","enabled":true},{"id":"m1-1","label":"gone — ~/gone","enabled":false}]}"#;
-        assert_eq!(
-            parse_host_line(line),
-            HostLine::Menu(MenuModel {
-                language: Language::English,
-                recent: vec![
-                    MenuRecent {
-                        id: "m1-0".into(),
-                        label: "alpha — ~/p/alpha".into(),
-                        enabled: true
-                    },
-                    MenuRecent {
-                        id: "m1-1".into(),
-                        label: "gone — ~/gone".into(),
-                        enabled: false
-                    },
-                ],
-            })
-        );
-        assert_eq!(
-            parse_host_line(r#"{"type":"menu","language":"zh-CN","recent":[]}"#),
-            HostLine::Menu(MenuModel {
-                language: Language::Chinese,
-                recent: vec![]
-            })
-        );
+    fn menu_lines_over_the_limit_or_with_entries_not_of_the_form() {
         // More than the limit: the first ten.
         let many: Vec<Value> = (0..14)
             .map(|i| json!({"id": format!("m-{i}"), "label": "x", "enabled": true}))
@@ -698,10 +737,6 @@ mod tests {
             panic!("menu")
         };
         assert_eq!(model.recent.len(), MENU_RECENT_MAX);
-        // Not a menu line: no recent list, or not a list.
-        for bad in [r#"{"type":"menu"}"#, r#"{"type":"menu","recent":{}}"#] {
-            assert_eq!(parse_host_line(bad), HostLine::Unknown, "{bad}");
-        }
         // An entry not of the form, or with a label too long, is left out; the good ones stay.
         let long = "y".repeat(MENU_TEXT_MAX + 1);
         let good = json!({"id":"ok","label":"alpha","enabled":true});
@@ -741,33 +776,5 @@ mod tests {
         ] {
             assert!(!is_loopback_page(bad), "{bad}");
         }
-    }
-
-    #[test]
-    fn lines_to_the_host() {
-        assert_eq!(
-            menu_request_line("open_devtools"),
-            r#"{"type":"menu","item":"open_devtools"}"#
-        );
-        assert_eq!(
-            menu_recent_line("m2-0"),
-            r#"{"type":"menu","item":"open_recent","id":"m2-0"}"#
-        );
-        assert_eq!(quit_line(), r#"{"type":"quit"}"#);
-        let v: Value = serde_json::from_str(&folder_picked_line("i1", Some("/home/u/p"))).unwrap();
-        assert_eq!(
-            v,
-            json!({"type":"folder_picked","id":"i1","path":"/home/u/p"})
-        );
-        let v: Value = serde_json::from_str(&folder_picked_line("i2", None)).unwrap();
-        assert_eq!(v, json!({"type":"folder_picked","id":"i2","path":null}));
-        let mut fields = Map::new();
-        fields.insert("pid".into(), json!(12));
-        let v: Value =
-            serde_json::from_str(&shell_event_line("shell.host_started", &fields)).unwrap();
-        assert_eq!(
-            v,
-            json!({"type":"shell_event","event":"shell.host_started","fields":{"pid":12}})
-        );
     }
 }

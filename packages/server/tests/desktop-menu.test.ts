@@ -348,23 +348,4 @@ describe("the shell's menu lines", () => {
     expect(h.lines.some((l) => l.type === "stopping")).toBe(false);
     expect(existsSync(gone)).toBe(false);
   });
-
-  test("an id the host did not give, an item it does not know, a path instead of an id: not acted on", async () => {
-    const a = folder("alpha");
-    recordRecentProject(recentFile(), a, new Date("2026-01-01T00:00:00Z"));
-    const h = await startHost({ fromRecent: false });
-    await h.next("menu");
-    send(h, { type: "menu", item: "open_recent", id: "nope" });
-    send(h, { type: "menu", item: "open_recent", path: a });
-    send(h, { type: "menu", item: "format_disk" });
-    send(h, { type: "menu", item: "open_config_file" });
-    await waitFor(() => events(h, "desktop.protocol_rejected").length === 4);
-    expect(events(h, "desktop.protocol_rejected").map((e) => e.fields)).toEqual([
-      { reason: "unknown_id" },
-      { reason: "bad_shape" },
-      { reason: "bad_shape" },
-      { reason: "bad_shape" },
-    ]);
-    expect(h.lines.map((l) => l.type)).toEqual(["ready", "menu"]);
-  });
 });
