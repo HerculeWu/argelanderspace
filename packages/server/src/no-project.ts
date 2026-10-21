@@ -1,8 +1,10 @@
 /**
  * The server with no project open (desktop-app ticket 18; spec 「欢迎状态」): what the desktop host runs when it has no
  * project to enter — a first start, or the last project's folder is gone. It answers the page, the host interface
- * (host-routes.ts), the settings interface (settings.ts) and the page's own error reports (page-errors.ts: they go to
- * the user log only — user decision 2026-10-15), and every other endpoint with 409 `no_project`. It has
+ * (host-routes.ts), the settings interface (settings.ts), the tutorial progress (tutorial-routes.ts: global data, so
+ * that the welcome page can offer to continue the tutorial — in-app-tutorial ticket 18) and the page's own error
+ * reports (page-errors.ts: they go to the user log only — user decision 2026-10-15), and every other endpoint with
+ * 409 `no_project`. It has
  * no project data directory and touches none: no job runner, no file watcher of project data, no Copilot, no Mail.
  * The browser form (`serve`) never runs it: there the project is the working directory.
  *
@@ -11,12 +13,13 @@
  * watcher, and the global directories pinned for the server's life.
  */
 
+import { join } from "node:path";
 import {
   NO_PROJECT_CODE,
   type SettingsValues,
   type StartupLocations,
 } from "@argelanderspace/contracts";
-import { type GlobalDirs, pinGlobalDirs } from "@argelanderspace/infra";
+import { type GlobalDirs, pinGlobalDirs, TUTORIAL_PROGRESS_FILE } from "@argelanderspace/infra";
 import type { ServerType } from "@hono/node-server";
 import { serve } from "@hono/node-server";
 import type { Hono } from "hono";
@@ -26,6 +29,7 @@ import { applyLogLevel, type ServerLog, silentLog } from "./log.js";
 import { mountPageErrorRoute, type PageErrorOptions } from "./page-errors.js";
 import { createProtectedApp, listeningPort } from "./protected-app.js";
 import { mountSettingsRoutes, readSettings, shownPath, startSettingsWatcher } from "./settings.js";
+import { mountTutorialRoutes } from "./tutorial-routes.js";
 import { WsHub } from "./ws.js";
 
 export interface NoProjectServerOptions {
@@ -49,6 +53,8 @@ export interface NoProjectServerOptions {
   watchIntervalMs?: number;
   /** The rate window of the page-error reports (page-errors.ts); default a minute. */
   pageErrors?: Pick<PageErrorOptions, "windowMs">;
+  /** The tutorial sample that ships with the program (infra `bundledTutorialDir`); absent: none. */
+  tutorialSampleDir?: string;
 }
 
 export interface NoProjectServer {
@@ -101,6 +107,14 @@ export function createNoProjectServer(opts: NoProjectServerOptions): NoProjectSe
     },
   });
   mountHostRoutes(app, opts.host);
+  // The tutorial's entry announces its failures to the welcome page too (in-app-tutorial ticket 25).
+  opts.host.usePages((message) => broadcast(message));
+  // The tutorial progress is the person's, not a project's.
+  mountTutorialRoutes(app, {
+    file: () => join(opts.globalDirs.dataDir, TUTORIAL_PROGRESS_FILE),
+    sampleDir: opts.tutorialSampleDir ?? null,
+    log,
+  });
 
   // Everything else of the API (and a Doc's images) is project data: there is none.
   const noProject = (c: import("hono").Context) =>

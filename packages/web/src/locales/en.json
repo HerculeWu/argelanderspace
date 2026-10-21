@@ -2752,5 +2752,197 @@
     "confirm": "Switch anyway",
     "close": "Close",
     "gone": "This switch is no longer waiting for confirmation; nothing was switched."
+  },
+  "tutorial": {
+    "ui": {
+      "title": "Tutorial",
+      "cardHeader": "Chapter {{chapter}} · {{index}}/{{count}} · {{title}}",
+      "back": "Back",
+      "next": "Next",
+      "nextChapter": "Next chapter",
+      "finish": "Finish tutorial",
+      "skip": "Skip this step",
+      "leave": "Leave tutorial",
+      "takeMeThere": "Take me there",
+      "preparedText": "Prepared text",
+      "copy": "Copy",
+      "copied": "Copied",
+      "copyFailed": "Not copied: the browser does not allow writing to the clipboard",
+      "agentCard": "An agent can do this too",
+      "agentSkill": "skill: {{name}}",
+      "needsTex": "Needs TeX",
+      "noTexTitle": "No TeX found on this machine",
+      "noTexBody": "You can skip this step and look at the prepared result instead; after installing TeX, click “Check again”. {{alt}}",
+      "recheck": "Check again",
+      "recheckBusy": "Checking…",
+      "rail": {
+        "heading": "Tutorial · Chapters",
+        "title": "Chapters",
+        "collapse": "Collapse the chapter rail",
+        "expand": "Expand the chapter rail",
+        "more": "More",
+        "chapterLabel": "{{n}} {{title}} · {{state}}",
+        "chapterLabelNeedsTex": "{{n}} {{title}} · {{state}} · Needs TeX",
+        "stepRow": "{{number}} {{title}}",
+        "stepRowSkipped": "{{number}} {{title}} · Skipped",
+        "status": {
+          "notStarted": "Not started",
+          "inProgress": "In progress",
+          "done": "Done",
+          "skipped": "Skipped",
+          "needsTex": "Needs TeX"
+        },
+        "summary": "{{done}}/{{total}} done, {{skipped}} skipped"
+      },
+      "capsule": "Tutorial · Chapter {{chapter}}",
+      "capsuleResume": "Resume tutorial",
+      "anchorWaiting": "Waiting for the interface…",
+      "anchorMissingTitle": "The interface has changed",
+      "anchorMissingBody": "The place this step points to cannot be found. You can do the step yourself, then click “Next”.",
+      "anchorOffscreenTitle": "The target is outside the current view",
+      "anchorOffscreen": "Scroll to it",
+      "requiresTitle": "First go back to {{where}}",
+      "requiresBody": "This step happens there. Click “Take me there” and the tutorial switches to it.",
+      "requiresBodyNoAction": "This step happens there.",
+      "modalYield": "Continue after closing the dialog",
+      "progressNotSaved": "Progress was not saved. The tutorial goes on; next time it may start from the last saved place.",
+      "dismissNotice": "Dismiss",
+      "leaveDialog": {
+        "title": "Leave the tutorial?",
+        "body": "Your progress is saved. Next time, click “Resume tutorial” on the welcome page or in Settings to pick it up.",
+        "bodyNotSaved": "Some progress was not saved just now; next time it may start from the last saved place. Click “Resume tutorial” on the welcome page or in Settings to pick it up.",
+        "confirm": "Leave",
+        "cancel": "Stay in the tutorial"
+      },
+      "existsDialog": {
+        "title": "The tutorial folder is already there",
+        "body": "{{path}} holds your earlier tutorial. Continue, or empty it and start over?",
+        "continue": "Continue",
+        "restart": "Restart…"
+      },
+      "restartDialog": {
+        "title": "Restart the tutorial?",
+        "body": "{{path}} will be emptied and the sample copied again. The annotations, arguments, tasks and manuscripts you wrote in the tutorial will all be deleted and cannot be recovered.",
+        "confirm": "Empty and restart"
+      },
+      "restartBrowser": {
+        "title": "In the browser, restart from a terminal",
+        "body": "The workbench cannot empty its own data folder while it runs. Quit it, then run in a terminal:"
+      },
+      "where": {
+        "library": "the library",
+        "workDetail": "the details of {{work}}",
+        "reader": "the reader of {{work}}",
+        "plan": "the Plan page",
+        "writer": "the manuscript editor",
+        "settings": "Settings",
+        "argumentGraph": "the argument graph of {{work}}"
+      }
+    },
+    "entry": {
+      "start": "Start tutorial",
+      "resume": "Resume tutorial",
+      "restart": "Restart…",
+      "rowLabel": "Tutorial",
+      "rowHelp": "Walk through the workbench’s main features, chapter by chapter, in a separate sample project. Your own projects are not changed.",
+      "rowBrowser": "Run this command in a terminal to start the tutorial:",
+      "sampleMissing": "This installation does not include the tutorial sample",
+      "starting": "Preparing the tutorial folder…",
+      "failed": {
+        "target_conflict": "The tutorial did not start: {{path}} already exists and is not a tutorial folder. Pick another parent folder, or rename it.",
+        "copy_failed": "The tutorial did not start: the sample was not copied to {{path}}. Check the free disk space and the write permission, then try again; what had been written was removed.",
+        "not_a_folder": "The tutorial did not start: {{path}} is not a folder.",
+        "shutting_down": "The tutorial did not start: the workbench is closing. Try again later."
+      },
+      "outdatedSample": "This tutorial project was made from an older sample and may not load correctly. Restarting is recommended — it deletes the annotations, arguments, tasks and manuscripts you wrote in the tutorial."
+    },
+    "chapters": {
+      "prepare": {
+        "title": "Prepare"
+      },
+      "tour": {
+        "title": "Workbench tour"
+      },
+      "library": {
+        "title": "Add literature"
+      },
+      "reading": {
+        "title": "Read and annotate"
+      },
+      "discovery": {
+        "title": "Explore literature"
+      },
+      "argument": {
+        "title": "Argument graph"
+      },
+      "plan": {
+        "title": "Plan"
+      },
+      "writer": {
+        "title": "Writing"
+      },
+      "copilot": {
+        "title": "Copilot"
+      },
+      "finish": {
+        "title": "Finish"
+      }
+    },
+    "steps": {
+      "prepare": {
+        "settings": {
+          "title": "Open Settings",
+          "body": "Click “Settings” at the bottom of the navigation on the left. Settings come in groups: Appearance, Project, Literature services & credentials, TeX & environment, Copilot, Diagnostics. The tutorial uses three of them.",
+          "waiting": "Moves on once Settings is open"
+        },
+        "environment": {
+          "title": "Check for TeX",
+          "body": "In “TeX & environment”, click “Check again”: the workbench looks for latexmk, pdflatex and the other programs. If none is found, that is fine; the tutorial marks the steps that need TeX.",
+          "waiting": "Moves on once the check is done"
+        },
+        "ads": {
+          "title": "The ADS token goes here",
+          "body": "The ADS token under “Literature services & credentials” is for exploring literature online. This tutorial runs offline throughout: no need to enter or test it."
+        },
+        "agent": {
+          "title": "Give your agent the skills",
+          "intro": "Under “Command line & agents”, install the command-line tool, open the skills folder, and copy the five skills to your agent.",
+          "prompt": "Read through the ArgelanderSpace skills folder and tell me what each skill can do",
+          "skill": "argelander-paper-ingest · argelander-read-paper · argelander-find-papers · argelander-query-paper-library · argelander-argument-graph",
+          "introBrowser": "You already use the command-line tool: `argelanderspace tutorial` is it. The skills are in the repository; clone or download it, then copy them into your agent's skills folder.",
+          "promptBrowser": "https://github.com/HerculeWu/argelanderspace/tree/main/skills"
+        }
+      },
+      "tour": {
+        "library": {
+          "title": "Open the library",
+          "body": "The navigation on the left has six entries: Plan, Literature, Document, Write, Mail, Settings. Click “Literature”.",
+          "waiting": "Moves on once the library is open"
+        },
+        "split": {
+          "title": "Split right",
+          "body": "Click “Split right” in the title bar and a second pane appears on the right. Panes side by side show literature, documents and the plan at once.",
+          "waiting": "Moves on once a second pane appears"
+        },
+        "pane-views": {
+          "title": "One pane, many views",
+          "body": "The title at the top of each pane switches its view. The same pane can go from the library to a document or the plan at any time, without going back to the navigation."
+        },
+        "close-pane": {
+          "title": "Close the split",
+          "body": "When you have looked, click “Close pane” on the right pane to go back to one pane.",
+          "waiting": "Moves on once one pane is left"
+        },
+        "palette": {
+          "title": "Command palette",
+          "body": "Press Ctrl+K (⌘K on a Mac) to open the command palette, where you can search commands, files and literature. Press Esc to close it.",
+          "waiting": "Moves on once the command palette appears"
+        },
+        "tweaks": {
+          "title": "Quick appearance",
+          "body": "“Quick appearance” on the right of the title bar changes the theme, accent color, density and language. The Copilot switch beside it comes in chapter 8."
+        }
+      }
+    }
   }
 }

@@ -3,6 +3,7 @@ import {
   resolveGlobalDirs,
   resolveLogDir,
   resolveRecentProjectsPath,
+  resolveTutorialProgressPath,
   resolveUserBinDir,
 } from "@argelanderspace/infra";
 import { describeUserDirsGuard } from "../../infra/tests/user-dirs-guard.js";
@@ -14,6 +15,8 @@ describeUserDirsGuard(() => {
     "global cache": dirs.cacheDir,
     logs: resolveLogDir(),
     "recent projects": resolveRecentProjectsPath(),
+    // The tutorial progress (in-app-tutorial ticket 18).
+    "tutorial progress": resolveTutorialProgressPath(),
     // The command-line tool's launcher (desktop-app ticket 24): no test writes a real executable directory.
     "user executables": resolveUserBinDir(),
     "CLI launcher": cliLauncherFile(),

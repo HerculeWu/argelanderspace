@@ -75,7 +75,8 @@ afterEach(async () => {
 
 const q = (selector: string, root: ParentNode = document) => root.querySelector<HTMLElement>(selector);
 const all = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)];
-const business = () => calls.filter((c) => !c.url.startsWith("/api/host") && !c.url.startsWith("/api/settings"));
+// The welcome state answers the host, the settings and the tutorial progress (in-app-tutorial ticket 18) only.
+const business = () => calls.filter((c) => !c.url.startsWith("/api/host") && !c.url.startsWith("/api/settings") && c.url !== "/api/tutorial");
 
 async function welcome() {
   render(<App />);

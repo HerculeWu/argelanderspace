@@ -50,6 +50,7 @@ import {
   readConfigLeniently,
   resolveGlobalDirsLeniently,
   type SandboxViewOptions,
+  TUTORIAL_PROGRESS_FILE,
 } from "@argelanderspace/infra";
 import type { ServerType } from "@hono/node-server";
 import { serve } from "@hono/node-server";
@@ -131,6 +132,11 @@ export interface ServerOptions {
    * skill from (copilot ticket 58). Absent: it has none.
    */
   skillsDir?: string;
+  /**
+   * The tutorial sample that ships with the program (infra `bundledTutorialDir`), whose marker `GET /api/tutorial`
+   * reads (in-app-tutorial ticket 18). Absent: this installation has none.
+   */
+  tutorialSampleDir?: string;
   /** The user-level log (log.ts). Absent → nothing is recorded, and no log directory is resolved or made. */
   log?: ServerLog;
   /**
@@ -310,6 +316,11 @@ export function createServer(opts: ServerOptions): RunningServer {
     ...(opts.logDir === undefined ? {} : { logDir: opts.logDir }),
     ...(opts.version === undefined ? {} : { version: opts.version }),
     ...(opts.host === undefined ? {} : { host: opts.host }),
+    // The tutorial progress lives in the global directories this server pins.
+    tutorial: {
+      file: join(opts.globalDirs.dataDir, TUTORIAL_PROGRESS_FILE),
+      sampleDir: opts.tutorialSampleDir ?? null,
+    },
     ...(opts.settingsAtStart ? { settingsAtStart: opts.settingsAtStart } : {}),
     ...(opts.settingsFromFlags ? { settingsFromFlags: opts.settingsFromFlags } : {}),
   });
@@ -520,6 +531,8 @@ export interface StartOptions {
   keychainProbe?: () => Promise<KeychainProbe>;
   /** The folder of the skills that ship with the program, found from the CLI entry (infra `bundledSkillsDir`); absent: none. */
   skillsDir?: string;
+  /** The tutorial sample that ships with the program, found from the CLI entry (infra `bundledTutorialDir`); absent: none. */
+  tutorialSampleDir?: string;
   /**
    * The desktop host (desktop-app ticket 17, desktop-host.ts): the form is `desktop` in the start record and the
    * diagnostics, the page's native requests go to the bridge, the log file is the host's (`desktop`), and the three
@@ -566,6 +579,9 @@ export async function startServer(
       mailWatch: true,
       ...(start.desktop === undefined ? {} : { host: start.desktop.host }),
       ...(start.skillsDir === undefined ? {} : { skillsDir: start.skillsDir }),
+      ...(start.tutorialSampleDir === undefined
+        ? {}
+        : { tutorialSampleDir: start.tutorialSampleDir }),
       log: common.log,
       logDir: common.logDir,
       ...(start.version === undefined ? {} : { version: start.version }),
@@ -585,7 +601,7 @@ export async function startServer(
 /**
  * The desktop host's server with no project open (desktop-app ticket 18, no-project.ts): the same start — the lenient
  * reading, the log file, the start record (without a project root or data directory), the environment record — but
- * the server answers only the page, the host and the settings interfaces and the page-error report. `--data-dir` and `--port` are not read.
+ * the server answers only the page, the host, the settings and the tutorial interfaces and the page-error report. `--data-dir` and `--port` are not read.
  */
 export async function startNoProjectServer(
   argv: readonly string[],
@@ -600,6 +616,9 @@ export async function startNoProjectServer(
       globalDirs: common.globalDirs,
       startup: common.startup,
       settingsAtStart: common.values,
+      ...(start.tutorialSampleDir === undefined
+        ? {}
+        : { tutorialSampleDir: start.tutorialSampleDir }),
     }),
     project: null,
   }));

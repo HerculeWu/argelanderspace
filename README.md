@@ -132,6 +132,12 @@ npx argelanderspace ingest 2501.17225            # arXiv id → LaTeX pipeline
 npx argelanderspace library build                # seed + enrich the citation graph
 ```
 
+To learn the workbench with the in-app tutorial in the browser, run
+`npx argelanderspace tutorial`: it sets up (or resumes) the tutorial folder
+`~/ArgelanderSpace-Tutorial` from the bundled sample, starts the server in it and
+prints the address to open (`--dir <folder>` for another folder, `--reset` to
+start over). In the desktop app the tutorial starts from the welcome page.
+
 ## CLI
 
 ```
@@ -141,9 +147,12 @@ argelanderspace library build       rebuild the library (seed → enrich ADS▸C
 argelanderspace acquire <refs.bib>  add a .bib's works and print the acquisition plan
                                     [--dry-run] [--fetch] [--fetch-remaining] [--offline]
 argelanderspace serve               API + web UI + WebSocket progress  [--port N] [--web-dist DIR]
+argelanderspace tutorial            the in-app tutorial in the browser: set up or resume the tutorial
+                                    folder and serve it  [--dir DIR] [--port N] [--reset]
 ```
 
-Global option: `--data-dir <dir>` (may appear before or after the subcommand).
+Global option: `--data-dir <dir>` (may appear before or after the subcommand;
+not taken by `tutorial`, whose data is the tutorial folder).
 Useful ingest flags: `--no-assets` (skip figure materialization), `--no-cache`,
 `-o out.json` (also write the stored IR — a `TexDocIr` document — to a path).
 (`--figure-dpi` is still accepted for compatibility but ignored: figures are

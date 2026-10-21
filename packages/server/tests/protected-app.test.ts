@@ -264,8 +264,17 @@ const HOST_GUARDED: Array<[string, string]> = [
   ["GET", "/api/host/recent-projects"],
   ["POST", "/api/host/recent-projects/open"],
   ["POST", "/api/host/recent-projects/remove"],
+  // In-app-tutorial ticket 25: the tutorial's entry.
+  ["POST", "/api/host/tutorial/pick"],
+  ["POST", "/api/host/tutorial/continue"],
+  ["POST", "/api/host/tutorial/restart"],
   ["POST", "/api/host/switch/confirm"],
   ["POST", "/api/host/switch/cancel"],
+];
+/** The tutorial progress (in-app-tutorial ticket 18): the GET carries a local path, so it is guarded too. */
+const TUTORIAL_GUARDED: Array<[string, string]> = [
+  ["GET", "/api/tutorial"],
+  ["PUT", "/api/tutorial"],
 ];
 
 const CREATE_APP_GUARDED: Array<[string, string]> = [
@@ -277,6 +286,7 @@ const CREATE_APP_GUARDED: Array<[string, string]> = [
   ["POST", "/api/credentials/ads/import"],
   ["GET", "/api/environment"],
   ...HOST_GUARDED,
+  ...TUTORIAL_GUARDED,
   ["GET", "/api/diagnostics"],
   ["POST", "/api/diagnostics/export"],
   ["non-GET", "/api/copilot/providers/*"],
@@ -314,6 +324,7 @@ const NO_PROJECT_GUARDED: Array<[string, string]> = [
   ["POST", "/api/page-errors"],
   ["PUT", "/api/settings/:key"],
   ...HOST_GUARDED,
+  ...TUTORIAL_GUARDED,
 ];
 
 function projectApp() {
@@ -336,7 +347,7 @@ afterEach(async () => {
 
 async function noProjectApp(): Promise<Hono> {
   const srv = createNoProjectServer({
-    host: {} as HostBridge,
+    host: { usePages: () => {} } as unknown as HostBridge,
     globalDirs: isolatedGlobalDirs(),
     heartbeatMs: 0,
     webDist: null,
@@ -351,7 +362,7 @@ describe("the guarded set of each app", () => {
     expect(guardedRoutes(projectApp())).toEqual(CREATE_APP_GUARDED);
   });
 
-  test("the no-project server: page errors, settings and the host; its /api/* and /images/* answer anyone", async () => {
+  test("the no-project server: page errors, settings, the host and the tutorial; its /api/* and /images/* answer anyone", async () => {
     const app = await noProjectApp();
     expect(guardedRoutes(app)).toEqual(NO_PROJECT_GUARDED);
     const fallback = await send(app, "POST", "/api/library/works", FOREIGN, "{}");

@@ -5,6 +5,7 @@ import { fetchRecentProjects, openRecentProject, removeRecentProject } from "../
 import { usePreferences } from "../argelander/preferences";
 import { useHostRequest } from "../host";
 import { Icon } from "../lib/icons";
+import { TutorialEntryButtons, TutorialEntryMessages, TutorialRestartDialog, useTutorialEntry } from "../tutorial";
 import { Button, InlineMessage } from "../ui";
 import { RecentProjectList } from "./RecentProjectList";
 import "../settings/settings.css";
@@ -26,6 +27,9 @@ export function WelcomePage() {
   const [leaving, setLeaving] = useState(false);
   const alive = useRef(true);
   useEffect(() => () => void (alive.current = false), []);
+  // The tutorial's entry (in-app-tutorial ticket 25): a secondary button beside "Open folder…".
+  const tutorial = useTutorialEntry(null);
+  const [restartAsk, setRestartAsk] = useState(false);
 
   const reload = useCallback(async () => {
     const list = await fetchRecentProjects();
@@ -63,11 +67,18 @@ export function WelcomePage() {
             <span className="wordmark-mark">✦</span>ArgelanderSpace
           </span>
           <h1 className="serif wl-title">{t("welcome.title")}</h1>
-          <Button appearance="primary" data-ui="welcome-open-folder" disabled={leaving || pickFolder === null} onClick={pick}>
-            <Icon name="folder-open" cls="ico-sm" />
-            {t("welcome.openFolder")}
-          </Button>
+          <div className="wl-actions">
+            <Button appearance="primary" data-ui="welcome-open-folder" disabled={leaving || pickFolder === null} onClick={pick}>
+              <Icon name="folder-open" cls="ico-sm" />
+              {t("welcome.openFolder")}
+            </Button>
+            {tutorial.desktop && <TutorialEntryButtons entry={tutorial} ui="welcome" onRestart={() => setRestartAsk(true)} />}
+          </div>
         </div>
+        {tutorial.desktop && <TutorialEntryMessages entry={tutorial} hideFailure={restartAsk} />}
+        {restartAsk && tutorial.state?.project && (
+          <TutorialRestartDialog entry={tutorial} path={tutorial.state.project.path} desktop onClose={() => setRestartAsk(false)} />
+        )}
         {recent?.lastMissing && (
           <InlineMessage tone="warning" uiId="welcome-last-missing" title={t("welcome.lastMissing")}>
             <code className="st-path" title={recent.lastMissing.path}>{recent.lastMissing.display}</code>
