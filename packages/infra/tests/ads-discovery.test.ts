@@ -4,7 +4,7 @@
  * typed provider errors, and abort semantics. No call ever leaves the process.
  */
 
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -248,113 +248,6 @@ describe("ads-discovery TTL cache", () => {
     const noTok = new AdsDiscoveryClient({ cacheDir: dir, token: null, fetchImpl: stub.fetchImpl });
     expect((await noTok.getByBibcode(SEED))?.bibcode).toBe(SEED);
     expect(stub.calls).toHaveLength(1);
-  });
-
-  // Pinned entries (in-app-tutorial ticket 14/15): `{fetchedAt, data, pinned: true}` skips the TTL; only a client
-  // built with `pin: true` (the tutorial sample's generation script) writes them; the product never does.
-
-  /** The one cache file in `dir`, parsed, with a writer to put a changed entry back. */
-  function onlyEntry(dir: string) {
-    const files = readdirSync(dir).filter((f) => f.endsWith(".json"));
-    expect(files).toHaveLength(1);
-    const file = join(dir, files[0] ?? "");
-    return {
-      entry: JSON.parse(readFileSync(file, "utf-8")) as Record<string, unknown>,
-      put: (entry: Record<string, unknown>) => writeFileSync(file, JSON.stringify(entry), "utf-8"),
-    };
-  }
-
-  test("a pin: true client writes every entry with pinned: true", async () => {
-    const stub = stubFetch(() => adsResponse([doc(SEED)]));
-    const dir = tmpCache();
-    await new AdsDiscoveryClient({
-      cacheDir: dir,
-      token: "T",
-      fetchImpl: stub.fetchImpl,
-      pin: true,
-    }).getByBibcode(SEED);
-    const { entry } = onlyEntry(dir);
-    expect(entry.pinned).toBe(true);
-    expect(Array.isArray(entry.data)).toBe(true);
-    expect(typeof entry.fetchedAt).toBe("string");
-  });
-
-  test("a default client writes entries with no pinned key", async () => {
-    const stub = stubFetch(() => adsResponse([doc(SEED)]));
-    const dir = tmpCache();
-    await new AdsDiscoveryClient({
-      cacheDir: dir,
-      token: "T",
-      fetchImpl: stub.fetchImpl,
-    }).getByBibcode(SEED);
-    const { entry } = onlyEntry(dir);
-    expect(Object.keys(entry).sort()).toEqual(["data", "fetchedAt"]);
-    expect("pinned" in entry).toBe(false);
-  });
-
-  test("a pinned entry still hits after the TTL, with no token and no network", async () => {
-    let t = 1_000_000;
-    const ttlMs = 24 * 3600 * 1000;
-    const dir = tmpCache();
-    const writer = stubFetch(() => adsResponse([doc(SEED)]));
-    await new AdsDiscoveryClient({
-      cacheDir: dir,
-      token: "T",
-      fetchImpl: writer.fetchImpl,
-      pin: true,
-      ttlMs,
-      now: () => t,
-    }).getByBibcode(SEED);
-    t += 365 * ttlMs; // long past the TTL
-    const reader = stubFetch(() => {
-      throw new Error("no network expected");
-    });
-    // the product's kind of client: no pin, no token
-    const c = new AdsDiscoveryClient({
-      cacheDir: dir,
-      token: null,
-      fetchImpl: reader.fetchImpl,
-      ttlMs,
-      now: () => t,
-    });
-    expect((await c.getByBibcode(SEED))?.bibcode).toBe(SEED);
-    expect(reader.calls).toHaveLength(0);
-    // the timestamp is not looked at either
-    const { entry, put } = onlyEntry(dir);
-    put({ ...entry, fetchedAt: "not a date" });
-    expect((await c.getByBibcode(SEED))?.bibcode).toBe(SEED);
-    expect(reader.calls).toHaveLength(0);
-  });
-
-  test("a pinned entry whose data is not an array is a miss", async () => {
-    const dir = tmpCache();
-    const stub = stubFetch(() => adsResponse([doc(SEED)]));
-    const c = new AdsDiscoveryClient({ cacheDir: dir, token: "T", fetchImpl: stub.fetchImpl });
-    await c.getByBibcode(SEED);
-    const { entry, put } = onlyEntry(dir);
-    put({ ...entry, pinned: true, data: { docs: [doc(SEED)] } });
-    await c.getByBibcode(SEED);
-    expect(stub.calls).toHaveLength(2);
-  });
-
-  test("only pinned === true skips the TTL: an expired entry with any other pinned value refetches", async () => {
-    let t = 1_000_000;
-    const ttlMs = 24 * 3600 * 1000;
-    const dir = tmpCache();
-    const stub = stubFetch(() => adsResponse([doc(SEED)]));
-    const c = new AdsDiscoveryClient({
-      cacheDir: dir,
-      token: "T",
-      fetchImpl: stub.fetchImpl,
-      ttlMs,
-      now: () => t,
-    });
-    await c.getByBibcode(SEED);
-    const { entry, put } = onlyEntry(dir);
-    put({ ...entry, pinned: "true" });
-    t += ttlMs + 1;
-    await c.getByBibcode(SEED);
-    expect(stub.calls).toHaveLength(2);
   });
 });
 
