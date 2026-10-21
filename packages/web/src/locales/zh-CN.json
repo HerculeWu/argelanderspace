@@ -2836,7 +2836,8 @@
         "plan": "计划页",
         "writer": "稿件编辑器",
         "settings": "设置页",
-        "argumentGraph": "{{work}} 的论证图"
+        "argumentGraph": "{{work}} 的论证图",
+        "copilot": "Copilot 面板"
       }
     },
     "entry": {
@@ -2979,7 +2980,7 @@
           "title": "也可以让 agent 添加",
           "intro": "装了命令行工具的 agent 能直接添加并摄入一篇 arXiv 论文。把这句话发给它：",
           "prompt": "用 argelander-paper-ingest 把 arXiv:2202.06973 加进文献库并摄入正文",
-          "skill": "argelander-paper-ingest（命令行：`argelanderspace ingest arXiv:2202.06973`）"
+          "skill": "argelander-paper-ingest（命令行：`argelanderspace ingest arXiv:2202.06973`，之后再运行 `argelanderspace library build`）"
         }
       },
       "argument": {
@@ -3103,6 +3104,35 @@
           "skill": "Copilot（第 8 章）"
         }
       },
+      "copilot": {
+        "open": {
+          "title": "打开 Copilot",
+          "body": "点标题栏右侧的 Copilot 开关。面板里已经选中一段预置会话。注意：在这里发送消息会真的调用模型、花费 token，不属于教程。",
+          "waiting": "Copilot 面板打开后自动前进"
+        },
+        "context": {
+          "title": "它看得到你的页面",
+          "body": "展开第一条消息下以论文标题开头的折叠块，看 Copilot 收到了哪些页面上下文。发送时用户正在 Jerabkova 2021 的阅读器里，Copilot 拿到的是同一页面的结构化内容。"
+        },
+        "operations": {
+          "title": "操作卡",
+          "body": "后两次往返各有一张操作卡：一张建了任务，一张给稿件加了段落，状态「已应用」。那条任务在第 6 章的计划里，那一段在第 7 章的稿件里。（卡上「带我去」切到计划页）"
+        },
+        "conversations": {
+          "title": "会话独立保存",
+          "body": "点顶部的「会话」打开列表，再关上。每段会话单独保存，切换页面不会丢，随时能新建或切回。"
+        },
+        "provider": {
+          "title": "模型 key 填在这里",
+          "body": "点面板的设置图标打开模型设置：以后在这里选 provider、填 API key。本教程不填。"
+        },
+        "agent": {
+          "title": "Copilot 与外部 agent",
+          "intro": "Copilot 内置两个只读 skill：读一篇、跨库检索。添加文献、整理论证图、找论文交给装了随包 skills 的外部 agent。设置页「Copilot」组的「文件与命令权限」决定 Copilot 能否读写文件、跑命令。",
+          "prompt": "读一下当前这篇，总结它的 End 论证",
+          "skill": "argelander-read-paper · argelander-query-paper-library"
+        }
+      },
       "finish": {
         "page": {
           "title": "教程走完了",
@@ -3191,7 +3221,7 @@
           "title": "也可以让 agent 找",
           "intro": "找论文要联网和 ADS token，教程之外再试。把这句话发给你的 agent：",
           "prompt": "用 argelander-find-papers 从 Röser 2019 出发找 10 篇相关论文",
-          "skill": "argelander-find-papers"
+          "skill": "argelander-find-papers（ADS key 从 `~/.ads/dev_key` 读取，不读工作台里保存的 token）"
         }
       }
     }

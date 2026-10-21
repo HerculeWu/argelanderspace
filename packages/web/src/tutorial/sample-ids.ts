@@ -49,6 +49,8 @@ export const SAMPLE_LAST_CELL_ID = SAMPLE_CELL_IDS[SAMPLE_CELL_IDS.length - 1];
 /**
  * The preset Copilot conversation (copilot/conversations/<id>.json) and its three user messages in order: the
  * question asked in Jerabkova's reader (it carries that page's context), the Plan request, the manuscript request.
+ * `operationReplies` are the two assistant messages (Pi session entry ids, the panel's message keys) whose tool calls
+ * are the conversation's operation cards: the Plan task after the second question, the cell after the third.
  */
 export const SAMPLE_CONVERSATION = {
   id: "85b4af77-56d0-4684-8a1c-b8926dec17d0",
@@ -57,6 +59,7 @@ export const SAMPLE_CONVERSATION = {
     "d81e0685-3fc5-4ebf-9d33-1316e1a69691",
     "bf6e6695-9981-414d-9d17-7236849f58d5",
   ],
+  operationReplies: ["e391048f", "43bb4cbc"],
 } as const;
 
 /** Jerabkova 2021's argument graph: its End argument and the Native argument deliberately left unlinked. */

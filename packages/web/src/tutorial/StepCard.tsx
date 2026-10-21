@@ -81,6 +81,8 @@ export interface StepCardProps {
   onSkip: () => void;
   onLeave: () => void;
   onTakeMeThere: () => void;
+  /** The step's own view action (`step.takeMeThere`), offered while the card sits beside its anchor. */
+  onStepTakeMeThere?: () => void;
   onScrollTo: () => void;
   onRecheck: () => void;
 }
@@ -245,6 +247,11 @@ export function StepCard(props: StepCardProps) {
         )}
         <p className="tut-text">{intro}</p>
         {notice}
+        {step.takeMeThere && dock === null && (
+          <div>
+            <Button data-ui="tutorial-take-me-there" data-ui-key="step" onClick={props.onStepTakeMeThere}>{t("tutorial.ui.takeMeThere")}</Button>
+          </div>
+        )}
         {props.texBlocked && (
           <InlineMessage tone="warning" uiId="tutorial-needs-tex" title={t("tutorial.ui.noTexTitle")}>
             {t("tutorial.ui.noTexBody", { alt: tk(t, `${key}.alt`) })}

@@ -111,4 +111,30 @@ describe("the tutorial sample ids", () => {
     expect(manuscript.cells.map((c: { id: string }) => c.id)).toContain(SAMPLE_COPILOT_CELL_ID);
     expect(SAMPLE_CELL_IDS).toContain(SAMPLE_COPILOT_CELL_ID);
   });
+
+  it("names the two replies that carry the conversation's operations: a Plan task after the second question, a cell after the third", () => {
+    const record = json(join(LIT, "copilot", "conversations", `${SAMPLE_CONVERSATION.id}.json`));
+    const entries = readFileSync(join(LIT, "copilot", "sessions", `${record.sessionId}.jsonl`), "utf8")
+      .split("\n")
+      .filter((line) => line.trim())
+      .map((line) => JSON.parse(line));
+    // The panel's assistant messages carry the session entry's id; an operation is a tool call of that message.
+    const messages = entries.filter((e) => e.type === "message");
+    const questionAt = (messageId: string) =>
+      messages.findIndex((e) => e.message?.role === "user" && (e.message.content ?? []).some((part: { type: string; text?: string }) => part.type === "text" && part.text?.includes(messageId)));
+    const toolCalls = (e: { message?: { content?: { type: string; name?: string; arguments?: { action?: string } }[] } }) =>
+      (e.message?.content ?? []).filter((part) => part.type === "toolCall").map((part) => `${part.name}:${part.arguments?.action}`);
+    const [plan, writer] = SAMPLE_CONVERSATION.operationReplies;
+    const at = (id: string) => messages.findIndex((e) => e.id === id);
+    expect(messages[at(plan)]?.message.role).toBe("assistant");
+    expect(toolCalls(messages[at(plan)])).toEqual(["plan:create_task"]);
+    expect(at(plan)).toBeGreaterThan(questionAt(SAMPLE_CONVERSATION.questions[1]));
+    expect(at(plan)).toBeLessThan(questionAt(SAMPLE_CONVERSATION.questions[2]));
+    expect(messages[at(writer)]?.message.role).toBe("assistant");
+    expect(toolCalls(messages[at(writer)])).toEqual(["writer:insert_cell"]);
+    expect(at(writer)).toBeGreaterThan(questionAt(SAMPLE_CONVERSATION.questions[2]));
+    // No other reply carries a tool call: the chapter's operation anchors name every operation card there is.
+    const withTools = messages.filter((e) => e.message?.role === "assistant" && toolCalls(e).length > 0).map((e) => e.id);
+    expect(withTools).toEqual([plan, writer]);
+  });
 });
