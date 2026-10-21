@@ -122,7 +122,7 @@ export function ImportDialog({
   };
 
   return (
-    <div className="plan-modal-overlay" data-ui="import-overlay" onClick={close}>
+    <div className="plan-modal-overlay" data-ui="dialog-overlay" onClick={close}>
       <div
         className="plan-modal"
         data-ui="import-dialog" data-ui-key={mode}

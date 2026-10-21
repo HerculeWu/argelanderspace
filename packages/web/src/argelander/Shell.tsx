@@ -33,6 +33,7 @@ import { PortFallbackBanner } from "../settings/PortFallbackBanner";
 import { ProjectSwitchPrompt } from "../welcome/ProjectSwitch";
 import { SettingsNotices, SettingsView } from "../settings/SettingsView";
 import { createSettingsPane } from "../settings/settings-pane";
+import { TutorialLayer } from "../tutorial";
 
 interface NavItem {
   k: string;
@@ -341,6 +342,7 @@ export function Shell() {
         />
         <SettingsNotices notices={preferences.notices} dismiss={preferences.dismiss} notify={preferences.notify} configFile={preferences.settings?.file} />
         <ProjectSwitchPrompt notify={preferences.notify} />
+        <TutorialLayer context={pageContext} onViewAction={runViewAction} />
       </div>
     </WorkspaceProvider>
     </PreferencesProvider>
