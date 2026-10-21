@@ -6,6 +6,9 @@ import {
   SAMPLE_ANNOTATION_IDS,
   SAMPLE_ARGUMENT_IDS,
   SAMPLE_CELL_IDS,
+  SAMPLE_CONVERSATION,
+  SAMPLE_COPILOT_CELL_ID,
+  SAMPLE_COPILOT_TASK_ID,
   SAMPLE_DOC_ID,
   SAMPLE_LAST_CELL_ID,
   SAMPLE_MANUSCRIPT_ID,
@@ -76,5 +79,36 @@ describe("the tutorial sample ids", () => {
         e.from === SAMPLE_ARGUMENT_IDS.orphanNative || e.to === SAMPLE_ARGUMENT_IDS.orphanNative
     );
     expect(touched).toBe(false);
+  });
+
+  it("names the preset Copilot conversation, its three user messages, and the Task and cell it made", () => {
+    const record = json(join(LIT, "copilot", "conversations", `${SAMPLE_CONVERSATION.id}.json`));
+    expect(record.id).toBe(SAMPLE_CONVERSATION.id);
+    const session = join(LIT, "copilot", "sessions", `${record.sessionId}.jsonl`);
+    expect(existsSync(session)).toBe(true);
+    // The panel's user messages carry the request's messageId (the JSON a user entry of the Pi session holds).
+    const asked: string[] = [];
+    for (const line of readFileSync(session, "utf8").split("\n")) {
+      if (!line.trim()) continue;
+      const entry = JSON.parse(line);
+      if (entry.type !== "message" || entry.message?.role !== "user") continue;
+      for (const part of entry.message.content ?? []) {
+        if (part.type !== "text") continue;
+        try {
+          const request = JSON.parse(part.text);
+          if (typeof request.messageId === "string") asked.push(request.messageId);
+        } catch {
+          // a plain-text user part is not a request
+        }
+      }
+    }
+    expect(asked).toEqual([...SAMPLE_CONVERSATION.questions]);
+    // The Task and the cell the conversation made are in the sample's Plan and manuscript, and among the preset ids.
+    const plan = json(join(SAMPLE, "status", "plans.json")).plans.find((p: { id: string }) => p.id === SAMPLE_PLAN_ID);
+    expect(plan.tasks.map((t: { id: string }) => t.id)).toContain(SAMPLE_COPILOT_TASK_ID);
+    expect(SAMPLE_TASK_IDS).toContain(SAMPLE_COPILOT_TASK_ID);
+    const manuscript = json(join(LIT, "manuscripts", SAMPLE_MANUSCRIPT_ID, "manuscript.json"));
+    expect(manuscript.cells.map((c: { id: string }) => c.id)).toContain(SAMPLE_COPILOT_CELL_ID);
+    expect(SAMPLE_CELL_IDS).toContain(SAMPLE_COPILOT_CELL_ID);
   });
 });

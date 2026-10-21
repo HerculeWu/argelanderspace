@@ -34,6 +34,9 @@ import {
   loadStoredDocIr,
 } from "@argelanderspace/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { CopilotHost } from "../src/copilot.js";
+import { readCopilotHistory } from "../src/copilot-history.js";
+import { ProviderSettings } from "../src/providers.js";
 
 const SAMPLE = fileURLToPath(new URL("../../../tutorial-sample", import.meta.url));
 const DOC = "arxiv-2103.12080";
@@ -185,12 +188,37 @@ describe("the tutorial sample loads", () => {
     for (const work of store.works) expect(sources, work.id).toContain(work.cite_key);
   });
 
-  // ⑤ waits for the preset Copilot conversation (the user's ruling, ticket 17: recorded later, from a neutral path).
-  // Once tutorial-sample/literatures/copilot/{conversations/<id>.json, sessions/<sid>.jsonl} exist, this becomes a
-  // real test: both files read back through `readCopilotHistory` and `CopilotHost.snapshot` with three user
-  // questions (the first carrying the Jerabkova reader context), two operation cards that are not file-tool cards, and
-  // `confirmations` empty. The full assertions are in commit 9c55c8a of tut/17-content.
-  it.todo(
-    "⑤ 待预置 Copilot 会话录入: the preset conversation reads back with three questions, two operation cards, no confirmation"
-  );
+  it("⑤ the preset Copilot conversation reads back: three questions, two operation cards, no confirmation", async () => {
+    const records = join(dataDir, "copilot", "conversations");
+    expect(
+      existsSync(records),
+      "tutorial-sample has no preset Copilot conversation: run it by hand (spec §7) and copy its two files back"
+    ).toBe(true);
+    const names = readdirSync(records);
+    expect(names).toHaveLength(1);
+    const record = JSON.parse(readFileSync(join(records, names[0] as string), "utf8"));
+    const session = join(dataDir, "copilot", "sessions", `${record.sessionId}.jsonl`);
+    expect(readdirSync(join(dataDir, "copilot", "sessions"))).toEqual([
+      `${record.sessionId}.jsonl`,
+    ]);
+    expect(readCopilotHistory(session, record.sessionId).length).toBeGreaterThan(0);
+    const host = new CopilotHost(
+      dataDir,
+      new ProviderSettings({ configDir: join(root, "provider-config") }),
+      () => {}
+    );
+    try {
+      const snapshot = await host.snapshot(record.id);
+      const questions = snapshot.messages.filter((m) => m.role === "user" && m.kind !== "resume");
+      expect(questions).toHaveLength(3);
+      // the first question was asked in the Jerabkova reader and carries that page
+      expect(questions[0]?.context?.reader).toBeDefined();
+      const operations = snapshot.messages.flatMap((m) => m.operations ?? []);
+      expect(operations).toHaveLength(2);
+      expect(operations.some((o) => o.fileTool !== undefined)).toBe(false);
+      expect(snapshot.confirmations).toEqual([]);
+    } finally {
+      await host.close();
+    }
+  });
 });
