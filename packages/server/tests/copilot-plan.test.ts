@@ -280,6 +280,44 @@ test("the plan tool is the only active tool and an agent edit goes to the named 
   });
 });
 
+test("create_task with a note writes it; an undeclared key is still refused without a write (copilot ticket 62)", async () => {
+  script = [
+    () => ({
+      call: {
+        action: "create_task",
+        expectedRev: 7,
+        planId: B,
+        title: "Reproduce figure 3",
+        note: "Use $\\chi^2$ fit",
+      },
+    }),
+    (ctx) => ({
+      call: {
+        action: "create_task",
+        expectedRev: lastResult(ctx).rev,
+        planId: B,
+        title: "Bad",
+        focused: true,
+      },
+    }),
+    () => ({ text: "done" }),
+  ];
+  const { snapshot } = await run(page(B));
+  expect(snapshot.conversation.run?.status).toBe("completed");
+  const file = disk();
+  expect(file.rev).toBe(8);
+  expect(file.plans[1].tasks).toHaveLength(2);
+  expect(file.plans[1].tasks[1]).toMatchObject({
+    title: "Reproduce figure 3",
+    note: "Use $\\chi^2$ fit",
+    status: "todo",
+    due: "2026-12-31",
+  });
+  expect(
+    snapshot.messages.flatMap((m) => m.operations ?? []).map((o) => `${o.action}:${o.status}`)
+  ).toEqual(["create_task:ok", "create_task:unsupported"]);
+});
+
 test("a user save between read and write makes the agent write stale: rejected in the lock, reread, then merged without losing the user's field", async () => {
   const context = page(A);
   const userEdit = async () => {
