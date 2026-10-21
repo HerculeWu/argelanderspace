@@ -1,0 +1,280 @@
+{
+  "version": 1,
+  "rev": 1,
+  "work_id": "doi:10.1051/0004-6361/202039949",
+  "arguments": [
+    {
+      "id": "ak4e7r",
+      "title": "Hyades 潮汐尾延伸约 800 pc 且含 epicyclic overdensity 候选",
+      "claim": "用模型依赖的 CCP 方法，在 Gaia DR2 和 eDR3 中找回了 Hyades 潮汐尾在预期全长约 800 pc 上的候选成员；在 eDR3 中还发现前导尾和拖尾各一处空间 overdensity，运动学上与 epicyclic overdensity 一致，可能是疏散星团中第一次探测到这种结构。",
+      "grounds": "S1–S3 选出的候选覆盖约 800 pc 全长（3.1 节）；eDR3 候选中的两处 overdensity 与 M5 模型预言的位置吻合（3.3 节）。",
+      "warrant": "候选成员铺满了理论预期的尾长，并且同时满足 CCP、模型自行与模型空间形态三重条件，就可以把它们当作潮汐尾全长的观测证据；尾上出现与模型位置一致的成团，就是 epicyclic overdensity 的候选。",
+      "backing": "",
+      "qualifier": "结论是「候选」：成员身份与 overdensity 都有待更精确的 Gaia 数据和化学标记、自转周期检验（5.4–5.6 节）。",
+      "rebuttal": "若真实的 Hyades 偏离平滑银河势中的模型（例如曾与大质量团块近距离相遇，模型 M4），依赖模型的选择会不完整（5.4 节）。",
+      "warrant_implicit": false,
+      "kind": "end",
+      "sources": [
+        {
+          "text": "6 Conclusions，第 3、5 条",
+          "target": {
+            "doc_id": "arxiv-2103.12080",
+            "anchor": "sec-26"
+          }
+        },
+        {
+          "text": "Abstract",
+          "target": {
+            "doc_id": "arxiv-2103.12080",
+            "anchor": "sec-1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "an2r5m",
+      "title": "Röser 与 Meingast 用 Gaia DR2 发现潮汐尾",
+      "claim": "Röser 等（2019）与 Meingast & Alves（2019）各自用 Gaia DR2 在 Hyades 周围探测到潮汐尾：Röser 等的前导尾延伸到离星团中心 170 pc（292 颗星），拖尾到 70 pc（237 颗星）。",
+      "grounds": "Röser 等在太阳周围 200 pc 内用 CP 方法选星并公布成员表；Meingast & Alves 在银心柱坐标速度空间以 1.5 km/s 半径选星（5.1 节与 2.2.2 节的转述）。",
+      "warrant": "已发表的 Gaia DR2 观测结果可以直接作为本文找更长尾部的出发点。",
+      "backing": "",
+      "qualifier": "",
+      "rebuttal": "",
+      "warrant_implicit": false,
+      "kind": "native",
+      "sources": [
+        {
+          "text": "5.1 Comparison with the study of Röser et al. 2019",
+          "target": {
+            "doc_id": "arxiv-2103.12080",
+            "anchor": "sec-20"
+          }
+        },
+        {
+          "text": "2.2.2 Galaxy parameters and computation setup（Meingast & Alves 的方法）",
+          "target": {
+            "doc_id": "arxiv-2103.12080",
+            "anchor": "sec-7"
+          }
+        }
+      ]
+    },
+    {
+      "id": "an6b3x",
+      "title": "潮汐尾理论：蒸发的星形成双尾与 epicyclic overdensity",
+      "claim": "星团主要经能量均分（蒸发）失去成员；逃逸星相对星团只有几 km/s，在银河势中形成靠近银心的前导尾和远离银心的拖尾，并因反复离开、返回的周转运动在尾上留下规则间隔的 epicyclic（Küpper）overdensity，其间距取决于银河势。",
+      "grounds": "引言转述的既有理论与 N 体结果：Baumgardt & Makino 2003、Küpper 等 2008/2010/2012/2015、Just 等 2009。",
+      "warrant": "这是潮汐尾动力学的已知结果，不依赖本文的模拟或数据。",
+      "backing": "",
+      "qualifier": "",
+      "rebuttal": "",
+      "warrant_implicit": false,
+      "kind": "native",
+      "sources": [
+        {
+          "text": "1 Introduction，第 3 段",
+          "target": {
+            "doc_id": "arxiv-2103.12080",
+            "anchor": "sec-2"
+          }
+        }
+      ]
+    },
+    {
+      "id": "an9g1c",
+      "title": "既有 N 体模型预期 Hyades 潮汐尾约 800 pc",
+      "claim": "按 Ernst 等（2011）以 Röser 等（2011）观测为约束的 N 体模型（初始 Plummer 质量 1230 M⊙、半质量半径 2.62 pc、平均质量损失 1.4 M⊙/Myr），Hyades 现今的潮汐尾应长约 800 pc。",
+      "grounds": "引言中引述的 Ernst 等 2011；更早 Chumak 等 2005 的模型给出每条尾约 500 pc。",
+      "warrant": "经观测约束的已发表 N 体模型可以给出尾长的理论预期。",
+      "backing": "",
+      "qualifier": "这些推出的量依赖所选的银河势。",
+      "rebuttal": "",
+      "warrant_implicit": false,
+      "kind": "native",
+      "sources": [
+        {
+          "text": "1 Introduction，倒数第 3 段",
+          "target": {
+            "doc_id": "arxiv-2103.12080",
+            "anchor": "sec-2"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ap3c8w",
+      "title": "模拟显示潮汐尾在速度空间不成团",
+      "claim": "在真实银河势中演化的 Hyades 类星团（模型 M1）显示，潮汐尾在任何坐标系里都不是天然的速度团：在 CP 图上整条尾铺开到约 ±20 km/s，而场星污染随离太阳距离的三次方增长，所以标准的聚类或 CP 方法恢复不了尾部全长。",
+      "grounds": "M1 模型 620–695 Myr 叠加快照在 Gaia 观测量中的投影（2 节，图 4；图 6 上图）。",
+      "warrant": "模拟在 Hyades 的当前位置与年龄下重现了潮汐尾，就能预言它在 Gaia 观测量里的样子。",
+      "backing": "",
+      "qualifier": "",
+      "rebuttal": "",
+      "warrant_implicit": false,
+      "kind": "normal",
+      "sources": [
+        {
+          "text": "2 Simulated Gaia view of tidal tails",
+          "target": {
+            "doc_id": "arxiv-2103.12080",
+            "anchor": "sec-3"
+          }
+        },
+        {
+          "text": "Figure 6",
+          "target": {
+            "doc_id": "arxiv-2103.12080",
+            "anchor": "fig-6"
+          }
+        },
+        {
+          "text": "6 Conclusions，第 1、2 条",
+          "target": {
+            "doc_id": "arxiv-2103.12080",
+            "anchor": "sec-26"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ap5s2k",
+      "title": "CCP 方法把整条尾压成一个紧凑的团",
+      "claim": "CP 方法的速度残差 v∥pred − v∥obs 随离星团中心的距离近似线性变化，Λ(R − Rcl) = −0.026 (R − Rcl) − 0.06；扣除这一趋势（compact CP，CCP）后，星团连同整条尾被压进约 1.5 km/s 的范围。",
+      "grounds": "2.3 节的拟合（式 4）与图 6 中、下图；该关系在不同快照、M1 与 M5 中都稳健。",
+      "warrant": "速度—距离关系只取决于尾部动力学，在所用模型间几乎不变，所以按模型校正后的投影可以搬到真实数据上，方法只是轻度依赖模型。",
+      "backing": "",
+      "qualifier": "",
+      "rebuttal": "",
+      "warrant_implicit": false,
+      "kind": "normal",
+      "sources": [
+        {
+          "text": "2.3 Compact convergent point method",
+          "target": {
+            "doc_id": "arxiv-2103.12080",
+            "anchor": "sec-8"
+          }
+        },
+        {
+          "text": "式 (4)",
+          "target": {
+            "doc_id": "arxiv-2103.12080",
+            "anchor": "eq-8"
+          }
+        },
+        {
+          "text": "Figure 6",
+          "target": {
+            "doc_id": "arxiv-2103.12080",
+            "anchor": "fig-6"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ap7h4d",
+      "title": "S1–S3 选出铺满约 800 pc 的候选成员",
+      "claim": "对 Gaia DR2 依次施加 S1（CCP，1.5 km/s）、S2（模型自行，1.5 km/s）、S3（三维尾形，3σ）后得到 1109 个候选，其中前导尾 411、拖尾 331；eDR3 改用 M5 模型得到 862 个，前导尾 293、拖尾 166。候选覆盖了模型预期的约 800 pc 全长。",
+      "grounds": "3.1 节的选择流程与计数；图 10；附录表 B.1、B.2。",
+      "warrant": "同时满足 CCP、模型自行与模型空间形态三重条件的源，被场星偶然满足的概率低，可以当作尾部的候选成员。",
+      "backing": "",
+      "qualifier": "是候选成员：没有用到的径向速度与颜色—星等图只给出支持性证据（3.2 节）。",
+      "rebuttal": "",
+      "warrant_implicit": false,
+      "kind": "normal",
+      "sources": [
+        {
+          "text": "3.1 Hyades and tidal tail selection method",
+          "target": {
+            "doc_id": "arxiv-2103.12080",
+            "anchor": "sec-10"
+          }
+        },
+        {
+          "text": "Figure 10",
+          "target": {
+            "doc_id": "arxiv-2103.12080",
+            "anchor": "fig-10"
+          }
+        }
+      ]
+    },
+    {
+      "id": "ap8q2z",
+      "title": "eDR3 中的 overdensity 与 epicyclic overdensity 吻合",
+      "claim": "eDR3 的候选中，前导尾和拖尾各有一处空间 overdensity，位置和运动学都符合 M5 模型（Irrgang 等 2013 银河势）预言的 epicyclic overdensity。",
+      "grounds": "沿尾的 X–Y 直方图（3.3 节，图 13）；overdensity 成员的运动学（图 14）。",
+      "warrant": "理论预言尾上存在规则间隔的 epicyclic overdensity；观测到的成团位置与模型预言一致，就是它的候选。",
+      "backing": "",
+      "qualifier": "",
+      "rebuttal": "",
+      "warrant_implicit": false,
+      "kind": "normal",
+      "sources": [
+        {
+          "text": "3.3 Detection of epicyclic overdensities",
+          "target": {
+            "doc_id": "arxiv-2103.12080",
+            "anchor": "sec-12"
+          }
+        },
+        {
+          "text": "Figure 13",
+          "target": {
+            "doc_id": "arxiv-2103.12080",
+            "anchor": "fig-13"
+          }
+        },
+        {
+          "text": "Figure 14",
+          "target": {
+            "doc_id": "arxiv-2103.12080",
+            "anchor": "fig-14"
+          }
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "an6b3x",
+      "to": "ap3c8w",
+      "role": "grounds"
+    },
+    {
+      "from": "ap3c8w",
+      "to": "ap5s2k",
+      "role": "grounds"
+    },
+    {
+      "from": "ap5s2k",
+      "to": "ap7h4d",
+      "role": "grounds"
+    },
+    {
+      "from": "ap7h4d",
+      "to": "ap8q2z",
+      "role": "grounds"
+    },
+    {
+      "from": "an6b3x",
+      "to": "ap8q2z",
+      "role": "warrant"
+    },
+    {
+      "from": "ap7h4d",
+      "to": "ak4e7r",
+      "role": "grounds"
+    },
+    {
+      "from": "ap8q2z",
+      "to": "ak4e7r",
+      "role": "grounds"
+    },
+    {
+      "from": "an9g1c",
+      "to": "ak4e7r",
+      "role": "backing"
+    }
+  ]
+}
