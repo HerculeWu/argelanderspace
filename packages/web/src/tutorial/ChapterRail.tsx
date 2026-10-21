@@ -30,6 +30,11 @@ export interface ChapterRailProps {
   onRestart?: () => void;
   /** A product modal is open: the rail steps below its overlay and takes no input, as the card does. */
   yielded?: boolean;
+  /**
+   * The folded rail is over the step's highlighted element: hidden for that step (not seen, no input, out of the
+   * accessibility tree); still measured, so the next step can tell whether it may be shown again.
+   */
+  hidden?: boolean;
 }
 
 /** The chapter rail of prototype B: the registered chapters with their state, the current one opened to its steps. */
@@ -81,11 +86,12 @@ export function ChapterRail(props: ChapterRailProps) {
   const stateLabel = (s: ReturnType<typeof chapterStatus>) => t(`tutorial.ui.rail.status.${s}`);
   return (
     <aside
-      className={"tut-rail" + (collapsed ? " collapsed" : "") + (props.yielded ? " yielded" : "")}
+      className={"tut-rail" + (collapsed ? " collapsed" : "") + (props.yielded ? " yielded" : "") + (props.hidden ? " concealed" : "")}
       data-ui="tutorial-chapter-rail"
       aria-label={t("tutorial.ui.rail.title")}
+      aria-hidden={props.hidden ? true : undefined}
       // React 18 passes an unknown attribute through only as a string.
-      {...(props.yielded ? { inert: "" } : {})}
+      {...(props.yielded || props.hidden ? { inert: "" } : {})}
     >
       <div className="tut-rail-head">
         {!collapsed && (

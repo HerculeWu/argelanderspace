@@ -2772,7 +2772,7 @@
       "agentSkill": "skill: {{name}}",
       "needsTex": "Needs TeX",
       "noTexTitle": "No TeX found on this machine",
-      "noTexBody": "You can skip this step and look at the prepared result instead; after installing TeX, click “Check again”. {{alt}}",
+      "noTexBody": "You can skip this step; after installing TeX, click “Check again”. {{alt}}",
       "recheck": "Check again",
       "recheckBusy": "Checking…",
       "rail": {
@@ -2902,7 +2902,7 @@
         },
         "ads": {
           "title": "The ADS token goes here",
-          "body": "The ADS token under “Literature services & credentials” is for exploring literature online. This tutorial runs offline throughout: no need to enter or test it."
+          "body": "The ADS token under “Literature services & credentials” is for exploring literature online; the tutorial uses it only in chapter 4. Enter your own token to see real results there; without one you can still finish: skip those steps."
         },
         "agent": {
           "title": "Give your agent the skills",
@@ -3012,7 +3012,7 @@
         },
         "link-end": {
           "title": "Link it to the End argument",
-          "body": "In the new argument's details, click “Let another argument use it…”, choose the End argument, and set “As” to Grounds. The audit goes back to 1 finding.",
+          "body": "In the new argument's details, click “Let another argument use it…”, tick “Show all arguments” to find the End argument, choose it, and set “As” to Grounds. The audit goes back to 1 finding.",
           "waiting": "Moves on once a new edge is added"
         },
         "link-native": {
@@ -3039,7 +3039,7 @@
         },
         "create-task": {
           "title": "Create a task",
-          "body": "Click “New task”, paste the title below, pick a due date, and click “Add task”.",
+          "body": "Copy the task title below first, then click “New task”, paste it, pick a due date, and click “Add task”.",
           "waiting": "Moves on once there is one more task",
           "prepared": {
             "label": "Task title",
@@ -3090,7 +3090,7 @@
           "title": "Render",
           "body": "Press Shift+Enter or click “Render” in the top bar. The workbench compiles the whole manuscript with your local TeX, and the citations in the preview become authors and years; without chapter 2's import they cannot be resolved and show as question marks.",
           "waiting": "Moves on once rendering finishes",
-          "alt": "Without TeX there is no rendering. Come back to this step once it is installed."
+          "alt": "Without TeX the preview shows only the source. Come back to this step to render once TeX is installed."
         },
         "export": {
           "title": "Export and notes",
@@ -3132,7 +3132,7 @@
         },
         "open-annotation": {
           "title": "Open an annotation",
-          "body": "Click any one in the list. The text jumps to the place it points at and shows the annotation. An annotation belongs to this full text, not to the Work.",
+          "body": "Click any one in the list: the text jumps to the place it points at. Then click the highlighted words (or the number in the margin) to open it. An annotation belongs to this full text, not to the Work.",
           "waiting": "Moves on once the annotation opens"
         },
         "annotate": {
@@ -3174,8 +3174,8 @@
           "body": "“Related” are papers ADS finds close in topic; “Useful” are the papers they keep citing. The results come live from ADS and may differ each time."
         },
         "graph": {
-          "title": "Switch to the citation graph",
-          "body": "Click “Citation graph view”. The exploration graph links the starting paper with the related and useful ones; the links are still only citations.",
+          "title": "The citation graph view",
+          "body": "This is the citation graph view, which the exploration shows by default; “List view” next to it switches to a list. The graph links the starting paper with the related and useful ones; the links are still only citations.",
           "waiting": "Moves on once the graph view shows"
         },
         "detail": {

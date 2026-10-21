@@ -76,6 +76,7 @@ import {
   shaFromShasums,
   sidecarAppDistFilter,
   TUTORIAL_RESOURCE_DIR,
+  tutorialCacheEntries,
   verifyNodeSignature,
 } from "./desktop-package-lib.mjs";
 
@@ -321,6 +322,9 @@ writeFileSync(join(sidecar, "sidecar-manifest.json"), `${JSON.stringify(manifest
 const missing = missingRequiredFiles(out, target, existsSync);
 for (const f of missing) console.error(`MISSING ${f}`);
 if (missing.length) failed = true;
+const cached = tutorialCacheEntries(out, (dir) => readdirSync(dir, { recursive: true }));
+for (const f of cached) console.error(`FORBIDDEN ${f} (a library cache in the tutorial sample)`);
+if (cached.length) failed = true;
 const vendored = JSON.parse(
   readFileSync(join(sidecar, "app/licenses/runtime-licenses.json"), "utf8")
 );

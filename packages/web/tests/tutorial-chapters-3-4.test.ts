@@ -8,7 +8,7 @@ import { activeRungs, resolveLadder } from "../src/tutorial/anchors";
 import { CHAPTERS } from "../src/tutorial/chapters";
 import { annotationCountSource } from "../src/tutorial/chapters/reading";
 import { watchSources } from "../src/tutorial/l2";
-import { SAMPLE_ANNOTATION_IDS, SAMPLE_DOC_ID, SAMPLE_SEED_BIBCODE, SAMPLE_WORK_IDS } from "../src/tutorial/sample-ids";
+import { SAMPLE_ANNOTATION_IDS, SAMPLE_DOC_ID, SAMPLE_SEED_BIBCODE, SAMPLE_TEXT_ANNOTATION_BLOCK, SAMPLE_WORK_IDS } from "../src/tutorial/sample-ids";
 import type { GateRun, StepDefinition, WorkbenchSnapshot } from "../src/tutorial/types";
 import { fakePage, fakeSnapshot } from "./tutorial-fixtures";
 
@@ -171,6 +171,25 @@ describe("chapter 3 gates and requirements (fake snapshots)", () => {
     expect(top()).toBe("latex-annotation");
     document.body.insertAdjacentHTML("beforeend", `<div data-ui="latex-annotation-popover"></div>`);
     expect(top()).toBe("latex-annotation-popover");
+    document.body.innerHTML = "";
+  });
+  it("3.4 (user ruling F1): once the annotated block is in view, the text-annotation count in its gutter is the rung above the list entry", () => {
+    const ladder = step("reading.open-annotation").anchors;
+    const count = ladder.find((a) => a.ui === "latex-text-annotation-count");
+    expect(count?.within).toEqual({ ui: "latex-annotation-gutter", key: SAMPLE_TEXT_ANNOTATION_BLOCK });
+    const uis = ladder.map((a) => a.ui);
+    expect(uis.indexOf("latex-text-annotation-count")).toBeGreaterThan(uis.indexOf("latex-annotation"));
+    expect(uis.indexOf("latex-text-annotation-count")).toBeLessThan(uis.indexOf("latex-annotation-popover"));
+    const shown = (blocks: string[]) =>
+      at("doc", { reader: { ...reader(SAMPLE_DOC_ID), position: { activeSectionId: "s-3", visibleBlockIds: blocks } } as PageContext["reader"] });
+    expect(activeRungs(ladder, shown(["p-1", SAMPLE_TEXT_ANNOTATION_BLOCK])).map((a) => a.ui)).toContain("latex-text-annotation-count");
+    expect(activeRungs(ladder, shown(["p-1"])).map((a) => a.ui)).not.toContain("latex-text-annotation-count");
+    const rungs = activeRungs(ladder, shown([SAMPLE_TEXT_ANNOTATION_BLOCK]));
+    document.body.innerHTML = `<button data-ui="toggle-latex-right-panel"></button><button data-ui="show-annotations"></button>
+      <div data-ui="latex-annotation" data-ui-key="${SAMPLE_ANNOTATION_IDS.text}"></div>
+      <span data-ui="latex-annotation-gutter" data-ui-key="p-9"><button data-ui="latex-text-annotation-count"></button></span>
+      <span data-ui="latex-annotation-gutter" data-ui-key="${SAMPLE_TEXT_ANNOTATION_BLOCK}"><button data-ui="latex-text-annotation-count" id="mine"></button></span>`;
+    expect(resolveLadder(document, rungs, 1)?.element.id).toBe("mine");
     document.body.innerHTML = "";
   });
   it("3.5 passes once the annotation count read back is at least the step's own first read + 1 (L2)", () => {

@@ -11,6 +11,7 @@ import {
   SAMPLE_MANUSCRIPT_ID,
   SAMPLE_PLAN_ID,
   SAMPLE_TASK_IDS,
+  SAMPLE_TEXT_ANNOTATION_BLOCK,
   SAMPLE_WORK_IDS,
 } from "../src/tutorial/sample-ids";
 
@@ -38,6 +39,9 @@ describe("the tutorial sample ids", () => {
     expect(byId.get(SAMPLE_ANNOTATION_IDS.document)).toBe("document");
     expect(byId.get(SAMPLE_ANNOTATION_IDS.figure)).toBe("structure");
     expect(byId.get(SAMPLE_ANNOTATION_IDS.text)).toBe("text");
+    // The block the text annotation sits in: its gutter (`latex-annotation-gutter[<block>]`) is a rung of step 3.4.
+    const text = file.annotations.find((x: { id: string }) => x.id === SAMPLE_ANNOTATION_IDS.text);
+    expect(text.target.block).toBe(SAMPLE_TEXT_ANNOTATION_BLOCK);
   });
 
   it("names the preset Plan and its Tasks", () => {

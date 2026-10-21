@@ -10,6 +10,33 @@ import type { ChapterDefinition, StepDefinition, WhereKey } from "./types";
 /** Card placement (spec section 3): right, then left, below, above the anchor; 14 px away, 12 px from the window. */
 export const CARD_OFFSET = 14;
 export const CARD_MARGIN = 12;
+/** A docked card's distance from the window's right and bottom edges (`.tut-card.docked`). */
+export const DOCK_MARGIN = 16;
+
+interface Size {
+  width: number;
+  height: number;
+}
+interface Edges {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+/**
+ * Whether the card has room on at least one side of its anchor (right, left, below, above; 14 px away, inside the
+ * window's padding). An anchor as large as the window (a whole reader pane) has none: the card then sits where a docked
+ * card sits, not shifted over the page's top left (polish round, ticket 21).
+ */
+export function fitsBeside(anchor: Pick<DOMRect, "top" | "right" | "bottom" | "left">, card: Size, view: Size, padding: Edges): boolean {
+  return (
+    view.width - padding.right - (anchor.right + CARD_OFFSET) >= card.width ||
+    anchor.left - CARD_OFFSET - padding.left >= card.width ||
+    view.height - padding.bottom - (anchor.bottom + CARD_OFFSET) >= card.height ||
+    anchor.top - CARD_OFFSET - padding.top >= card.height
+  );
+}
 
 /** Why the card is docked at the bottom right instead of beside its anchor; null: it is beside its anchor. */
 export type Dock =
@@ -69,6 +96,7 @@ export function StepCard(props: StepCardProps) {
     const el = card.current;
     if (!el) return;
     if (docked || !anchor) {
+      delete el.dataset.placement;
       el.style.transform = "";
       el.style.visibility = "";
       return;
@@ -83,6 +111,19 @@ export function StepCard(props: StepCardProps) {
     let live = true;
     const stop = autoUpdate(anchor, el, () => {
       const mine = ++generation;
+      // The layout size (offsetWidth / offsetHeight: the card's entry animation scales it for a moment); the box where
+      // there is no layout (tests).
+      const box = el.getBoundingClientRect();
+      const own = { width: el.offsetWidth || box.width, height: el.offsetHeight || box.height };
+      const view = { width: window.innerWidth, height: window.innerHeight };
+      if (!fitsBeside(anchor.getBoundingClientRect(), own, view, padding)) {
+        // No room beside it: at the docked card's place (bottom right), still highlighting the anchor.
+        el.dataset.placement = "fallback";
+        el.style.transform = `translate(${Math.round(view.width - own.width - DOCK_MARGIN)}px, ${Math.round(view.height - own.height - DOCK_MARGIN)}px)`;
+        el.style.visibility = "";
+        return;
+      }
+      delete el.dataset.placement;
       void computePosition(anchor, el, {
         strategy: "fixed",
         placement: "right-start",

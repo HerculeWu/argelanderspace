@@ -48,6 +48,8 @@
 .tut-rail.collapsed { width: 44px; }
 /* a product modal is open: the rail steps below the modal's overlay (z 250) and takes no input, as the card does */
 .tut-rail.yielded { z-index: 240; pointer-events: none; }
+/* the folded rail is over the step's highlighted element: hidden for that step (still laid out, so it can be measured) */
+.tut-rail.concealed { visibility: hidden; pointer-events: none; animation: none; }
 .tut-rail-list > div > .ui-tooltip-anchor { display: flex; width: 100%; }
 .tut-rail-head { flex: none; display: flex; align-items: center; gap: 6px; height: 31px; padding: 0 4px 0 12px; border-bottom: 1px solid var(--border-soft); background: var(--bg-deep); position: relative; }
 .tut-rail.collapsed .tut-rail-head { padding: 0 4px; justify-content: center; }

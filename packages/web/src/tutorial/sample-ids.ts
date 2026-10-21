@@ -27,6 +27,9 @@ export const SAMPLE_ANNOTATION_IDS = {
   text: "a_8a62c4e3",
 } as const;
 
+/** The block the preset text annotation sits in (its `target.block`): the reader's gutter of that block carries its count. */
+export const SAMPLE_TEXT_ANNOTATION_BLOCK = "p-51";
+
 /** The preset Plan and its hand-written Tasks. */
 export const SAMPLE_PLAN_ID = "p_4e7a1c90";
 export const SAMPLE_TASK_IDS = ["t_1b3d5f70", "t_2c4e6a81"] as const;

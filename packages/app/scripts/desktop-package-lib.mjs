@@ -194,6 +194,27 @@ export function missingRequiredFiles(root, target, exists) {
 }
 
 /**
+ * Entries of the resource directory's tutorial/ that are a library cache (`literatures/library/cache` and anything
+ * below it), as `tutorial/...` paths; the assembly and the package smoke fail on any. A library cache holds source data
+ * (ADS API terms forbid redistributing anything obtained from ADS); the sample carries none since 2026-10-21, and the
+ * npm package's pack-contents rule refuses it the same way (in-app-tutorial tickets 16, 27). `list` is
+ * `(dir) => readdirSync(dir, { recursive: true })`; no tutorial/ at all is the required-files check's to report.
+ */
+export function tutorialCacheEntries(root, list) {
+  let entries;
+  try {
+    entries = list(`${root}/${TUTORIAL_RESOURCE_DIR}`);
+  } catch (error) {
+    if (error?.code === "ENOENT") return [];
+    throw error;
+  }
+  return entries
+    .map((e) => String(e).replaceAll("\\", "/"))
+    .filter((e) => /(^|\/)literatures\/library\/cache(\/|$)/.test(e))
+    .map((e) => `${TUTORIAL_RESOURCE_DIR}/${e}`);
+}
+
+/**
  * The cpSync filter for packages/app/dist → sidecar/app/dist: everything but dist/tutorial (the npm build's copy of
  * the sample, ticket 16). The desktop package carries the sample once, at the resource directory's tutorial/, which is
  * where bundledTutorialDir looks in the packaged layout; a second copy under dist/ would only be dead weight.

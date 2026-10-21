@@ -40,6 +40,7 @@ import {
   sidecarAppDistFilter,
   sidecarRequiredFiles,
   TUTORIAL_RESOURCE_DIR,
+  tutorialCacheEntries,
   vendoredLicense,
   verifyNodeSignature,
 } from "./desktop-package-lib.mjs";
@@ -121,6 +122,61 @@ test("the assembly fails when either tutorial file is missing: missingRequiredFi
   for (const f of ["tutorial/argelanderspace-tutorial.json", "tutorial/NOTICE.md"]) {
     const without = new Set([...all].filter((g) => g !== f));
     assert.deepEqual(missingRequiredFiles(root, "linux-x64", exists(without)), [f]);
+  }
+});
+
+test("the tutorial resource must not carry a library cache (as the npm package's pack-contents rule): the check names it", () => {
+  const root = "/res";
+  // `list` is readdirSync(dir, { recursive: true }): every entry below dir, relative to it.
+  const lister = (entries) => (dir) => {
+    assert.equal(dir, `${root}/tutorial`);
+    return entries;
+  };
+  const clean = [
+    "argelanderspace-tutorial.json",
+    "NOTICE.md",
+    "literatures",
+    "literatures/library",
+    "literatures/library/library.json",
+    "literatures/annotations/arxiv-2103.12080/current.json",
+  ];
+  assert.deepEqual(tutorialCacheEntries(root, lister(clean)), []);
+  assert.deepEqual(tutorialCacheEntries(root, lister([...clean, "literatures/library/cache"])), [
+    "tutorial/literatures/library/cache",
+  ]);
+  assert.deepEqual(
+    tutorialCacheEntries(
+      root,
+      lister([
+        ...clean,
+        "literatures/library/cache",
+        "literatures/library/cache/ads-discovery/0a1b.json",
+      ])
+    ),
+    [
+      "tutorial/literatures/library/cache",
+      "tutorial/literatures/library/cache/ads-discovery/0a1b.json",
+    ]
+  );
+  // Windows separators count too; a name that only starts the same does not.
+  assert.deepEqual(
+    tutorialCacheEntries(root, lister(["literatures\\library\\cache\\openalex\\x.json"])),
+    ["tutorial/literatures/library/cache/openalex/x.json"]
+  );
+  assert.deepEqual(tutorialCacheEntries(root, lister(["literatures/library/cached.json"])), []);
+  // No tutorial/ at all: nothing to report here (the required-files check reports the missing sample).
+  assert.deepEqual(
+    tutorialCacheEntries(root, () => {
+      throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    }),
+    []
+  );
+});
+
+test("the assembly and the package smoke both run the cache check", () => {
+  for (const script of ["desktop-sidecar.mjs", "smoke-desktop-package.mjs"]) {
+    const text = readFileSync(new URL(`./${script}`, import.meta.url), "utf8");
+    assert.match(text, /tutorialCacheEntries\(/, script);
   }
 });
 

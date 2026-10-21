@@ -263,9 +263,10 @@ describe("leaving and the capsule", () => {
 });
 
 describe("the rail folds away from the highlighted element (user ruling 2026-10-21)", () => {
-  const RAIL = () => new DOMRect(62, 0, 232, 900);
-  // The anchor of 0.3 under the rail (the settings groups), of 0.A on the right.
-  const boxes: Record<string, DOMRect> = { "settings-group": new DOMRect(66, 200, 200, 40), "ads-credential": new DOMRect(320, 160, 800, 60) };
+  // The rail's box as drawn: 232 px open, 44 px folded.
+  const RAIL = (rail: Element) => new DOMRect(62, 0, rail.classList.contains("collapsed") ? 44 : 232, 900);
+  // The anchor of 0.3 under the open rail but clear of the folded one (the settings groups), of 0.A on the right.
+  const boxes: Record<string, DOMRect> = { "settings-group": new DOMRect(120, 200, 150, 40), "ads-credential": new DOMRect(320, 160, 800, 60) };
   const measure = (el: Element) => {
     const box = boxes[el.getAttribute("data-ui") ?? ""] ?? new DOMRect(400, 400, 40, 20);
     return { rect: box, box, visible: true };
@@ -298,6 +299,56 @@ describe("the rail folds away from the highlighted element (user ruling 2026-10-
     await tick(64);
     expect(card()?.getAttribute("data-ui-key")).toBe("prepare.agent");
     expect(collapsed()).toBe(true);
+  });
+});
+
+describe("the folded rail steps out of the way of the highlighted element (user ruling F3, ticket 21)", () => {
+  const RAIL = (rail: Element) => new DOMRect(62, 0, rail.classList.contains("collapsed") ? 44 : 232, 900);
+  const rail = () => ui("tutorial-chapter-rail")!;
+  const hidden = () => rail().classList.contains("concealed");
+  it("an anchor under the folded 44 px rail hides the whole rail for that step: not seen, no room kept, no input", async () => {
+    // A left-edge control (the reader's outline toggle at x 67-89) under the folded rail.
+    const boxes: Record<string, DOMRect> = { "settings-group": new DOMRect(66, 200, 200, 40) };
+    const measure = (el: Element) => {
+      const box = boxes[el.getAttribute("data-ui") ?? ""] ?? new DOMRect(400, 400, 40, 20);
+      return { rect: box, box, visible: true };
+    };
+    document.body.insertAdjacentHTML("beforeend", `<button data-ui="settings-group" data-ui-key="services"></button><button data-ui="settings-group" data-ui-key="cli"></button>`);
+    setup({ context: fakePage("settings"), initial: fakeProgress({ position: "prepare.ads" }), deps: { measure, railBox: RAIL } });
+    await tick(64);
+    // Open rail over it → folded; the folded rail still over it → hidden.
+    expect(rail().classList.contains("collapsed")).toBe(true);
+    expect(hidden()).toBe(true);
+    expect(rail().hasAttribute("inert")).toBe(true);
+    expect(rail().getAttribute("aria-hidden")).toBe("true");
+  });
+  it("decided per step: a covered step hides it, moving to a step whose anchor is clear shows it (folded) again", async () => {
+    // 1.6's quick-appearance button sits at the bottom left, under the rail; 1.5's anchor, the navigation, ends where it begins.
+    const at: Record<string, DOMRect> = { "open-tweaks": new DOMRect(70, 860, 30, 30), "primary-navigation": new DOMRect(0, 0, 62, 900) };
+    const measure = (el: Element) => {
+      const box = at[el.getAttribute("data-ui") ?? ""] ?? new DOMRect(400, 400, 40, 20);
+      return { rect: box, box, visible: true };
+    };
+    document.body.innerHTML = `<nav data-ui="primary-navigation"></nav><button data-ui="open-tweaks"></button>`;
+    setup({ initial: fakeProgress({ position: "tour.tweaks" }), deps: { measure, railBox: RAIL } });
+    await tick(64);
+    expect(hidden()).toBe(true);
+    fireEvent.click(ui("tutorial-previous")!);
+    await tick(64);
+    expect(card()?.getAttribute("data-ui-key")).toBe("tour.palette");
+    expect(rail().classList.contains("collapsed")).toBe(true);
+    expect(hidden()).toBe(false);
+    expect(rail().hasAttribute("inert")).toBe(false);
+  });
+  it("an anchor clear of the folded rail leaves it shown (the user folded it)", async () => {
+    const measure = () => ({ rect: new DOMRect(400, 400, 40, 20), box: new DOMRect(400, 400, 40, 20), visible: true });
+    document.body.innerHTML = `<nav data-ui="primary-navigation"></nav>`;
+    setup({ initial: fakeProgress({ position: "tour.palette" }), deps: { measure, railBox: RAIL } });
+    await tick(64);
+    fireEvent.click(ui("toggle-tutorial-chapters")!);
+    await tick(64);
+    expect(rail().classList.contains("collapsed")).toBe(true);
+    expect(hidden()).toBe(false);
   });
 });
 
