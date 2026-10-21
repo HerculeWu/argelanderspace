@@ -51,9 +51,10 @@ describe("moving between steps", () => {
     expect(nextStepId(CHAPTERS, "prepare.agent")).toBe("tour.library");
     expect(previousStepId(CHAPTERS, "tour.library")).toBe("prepare.agent");
     expect(previousStepId(CHAPTERS, "prepare.settings")).toBeNull();
-    // After the last step of the last registered chapter there is nothing (later tickets register more chapters).
+    // after the last step of the last registered chapter (whichever chapters are registered) there is none
     const lastChapter = CHAPTERS[CHAPTERS.length - 1]!;
     expect(nextStepId(CHAPTERS, lastChapter.steps[lastChapter.steps.length - 1]!.id)).toBeNull();
+    expect(nextStepId(CHAPTERS, "tour.tweaks")).toBe(CHAPTERS[CHAPTERS.findIndex((c) => c.id === "tour") + 1]?.steps[0]?.id ?? null);
     expect(isLastOfChapter(CHAPTERS, "prepare.agent")).toBe(true);
     expect(isLastOfChapter(CHAPTERS, "tour.split")).toBe(false);
   });
