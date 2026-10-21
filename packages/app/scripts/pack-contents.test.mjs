@@ -92,7 +92,6 @@ test("the tutorial sample ships under dist/tutorial: its marker and notice are r
   // the sample is a project folder: its literature data, Doc and upload zip are allowed there
   const sample = [
     "dist/tutorial/literatures/library/library.json",
-    "dist/tutorial/literatures/library/cache/ads-discovery/0a1b.json",
     "dist/tutorial/literatures/output/arxiv-2103.12080/arxiv-2103.12080.json",
     "dist/tutorial/literatures/output/arxiv-2103.12080/assets/YX_D__pdf.svg",
     "dist/tutorial/status/plans.json",
@@ -128,6 +127,10 @@ for (const forbidden of [
   "dist/tutorial/literatures/copilot/conversations/x.jsonl",
   "dist/tutorial/literatures/copilot/sessions/nested/x.jsonl",
   "dist/tutorial/literatures/jobs/x.jsonl",
+  // the sample carries no library cache: ADS API terms forbid redistributing ADS data (2026-10-21)
+  "dist/tutorial/literatures/library/cache/ads-discovery/0a1b.json",
+  "dist/tutorial/literatures/library/cache/openalex/x.json",
+  "dist/tutorial/literatures/library/cache/",
 ]) {
   test(`forbidden ${forbidden} is reported even next to the tutorial sample`, () => {
     const problems = checkPackContents([...good, forbidden]);

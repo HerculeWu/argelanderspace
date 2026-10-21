@@ -7,9 +7,9 @@
 //               preset annotation files get their `content_fingerprint` recomputed and every target is checked (block
 //               id in the IR, a text target's quote equal to the canonical text), every argument source anchor on that
 //               Doc must exist, and library.json's Jerabkova Work must hold the Doc and carry the IR's title.
-//   cache       the three ADS discovery cache entries of the Röser seed, written by a `pin: true` client with the
-//               ADS token from the credential store, then every doc's `abstract` key is removed.
 //   assets      the pinned e-print 2202.06973v1, repacked as a zip with every file unchanged.
+// The sample carries no ADS discovery cache (ADS API terms: no redistribution of data obtained from its services),
+// so no sub-command talks to ADS.
 // Every run works on a staged copy of the sample: when anything fails (a check, the size budget) the sample is not
 // touched at all; when everything passes the marker's `sample` goes up by one and the staged copy replaces the sample.
 
@@ -30,19 +30,12 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { AnnotationsFileSchema, canonicalContainerText } from "../../contracts/dist/index.js";
 import {
-  discoverLiterature,
   docContentFingerprint,
   LibraryStore,
   libraryPaths,
   normArxiv,
 } from "../../core/dist/index.js";
-import {
-  AdsDiscoveryClient,
-  extractTar,
-  extractZip,
-  fetchStreamedBytes,
-  zipEntries,
-} from "../../infra/dist/index.js";
+import { extractTar, extractZip, fetchStreamedBytes, zipEntries } from "../../infra/dist/index.js";
 
 export const MARKER_FILE = "argelanderspace-tutorial.json";
 /** The one Doc of the sample (CC BY 4.0) and its pinned arXiv version. */
@@ -51,12 +44,9 @@ export const JERABKOVA_DOC_ID = "arxiv-2103.12080";
 /** The source uploaded live in chapter 2 (CC BY-NC-ND 4.0: copied unchanged, never adapted). */
 export const EVANS_OH_EPRINT = "2202.06973v1";
 export const EVANS_OH_ZIP = join("tutorial-assets", "evans-oh-2022-source.zip");
-export const ROSER_BIBCODE = "2019A&A...621L...2R";
-export const MEINGAST_BIBCODE = "2019A&A...621L...3M";
-export const JERABKOVA_BIBCODE = "2021A&A...647A.137J";
 /** The size budget of the sample directory: 100 MB (decimal) of file content (spec §1). */
 export const SAMPLE_BUDGET_BYTES = 100 * 1000 * 1000;
-export const SUBCOMMANDS = ["regenerate", "cache", "assets"];
+export const SUBCOMMANDS = ["regenerate", "assets"];
 /** 0 done; 1 a check or a step failed; 2 usage; 3 over the size budget. Nothing is written unless 0. */
 export const EXIT = { ok: 0, failed: 1, usage: 2, overBudget: 3 };
 /** The zip's member timestamps: fixed, so the same e-print always gives the same bytes. */
@@ -310,79 +300,6 @@ async function regenerate(stage, ports, log) {
   }
 }
 
-// ---- cache --------------------------------------------------------------------------------------------------------
-
-/** Remove the `abstract` key of every doc in every cache entry of `dir`; entries must be pinned arrays. */
-export function stripAbstracts(dir) {
-  const files = readdirSync(dir)
-    .filter((f) => f.endsWith(".json"))
-    .sort();
-  for (const name of files) {
-    const path = join(dir, name);
-    const entry = readJson(path);
-    if (entry?.pinned !== true || !Array.isArray(entry.data))
-      throw new SampleCheckError([`ads-discovery/${name}: not a pinned cache entry`]);
-    for (const doc of entry.data) if (doc && typeof doc === "object") delete doc.abstract;
-    writeFileSync(path, JSON.stringify(entry));
-  }
-  return files;
-}
-
-/** Problems of a discovery graph the tutorial relies on (chapter 4: Meingast and Jerabkova appear and are saved). */
-export function checkDiscovery(graph) {
-  if (graph === null) return [`ADS has no record for the seed ${ROSER_BIBCODE}`];
-  const problems = [];
-  if (graph.warnings.length > 0)
-    problems.push(`discovery warnings: ${graph.warnings.map((w) => w.code).join(", ")}`);
-  const related = graph.nodes.filter((n) => n.roles.includes("related"));
-  const useful = graph.nodes.filter((n) => n.roles.includes("useful"));
-  if (related.length === 0) problems.push("no related papers");
-  if (useful.length === 0) problems.push("no useful papers");
-  for (const bibcode of [MEINGAST_BIBCODE, JERABKOVA_BIBCODE]) {
-    const node = [...related, ...useful].find((n) => n.bibcode === bibcode);
-    if (!node) problems.push(`${bibcode} is not among the related or useful papers`);
-    else if (node.libraryId === null) problems.push(`${bibcode} is not matched to a library Work`);
-  }
-  return problems;
-}
-
-async function cache(stage, ports, log) {
-  const dataDir = join(stage, "literatures");
-  const token = await ports.readToken();
-  if (!token)
-    throw new SampleCheckError([
-      "no ADS token in the credential store (purpose ads): save one in the workbench settings, then run again",
-    ]);
-  const cacheDir = join(dataDir, "library", "cache", "ads-discovery");
-  rmSync(cacheDir, { recursive: true, force: true });
-  mkdirSync(cacheDir, { recursive: true });
-  const store = LibraryStore.load(libraryPaths(dataDir));
-  const online = new AdsDiscoveryClient({ cacheDir, token, pin: true, fetchImpl: ports.fetchImpl });
-  log(`discovering from ${ROSER_BIBCODE} with a pinning client`);
-  const graph = await discoverLiterature(ROSER_BIBCODE, { ads: online, store });
-  const problems = checkDiscovery(graph);
-  if (problems.length > 0) throw new SampleCheckError(problems);
-  const files = stripAbstracts(cacheDir);
-  if (files.length !== 3)
-    throw new SampleCheckError([
-      `expected 3 cache entries (seed, similar, useful), got ${files.length}`,
-    ]);
-  // The stripped entries must answer the same discovery offline: no token, a fetch that refuses.
-  const offline = new AdsDiscoveryClient({
-    cacheDir,
-    token: null,
-    fetchImpl: () => {
-      throw new Error("the sample cache missed");
-    },
-  });
-  const again = await discoverLiterature(ROSER_BIBCODE, { ads: offline, store });
-  const offlineProblems = checkDiscovery(again).map((p) => `offline replay: ${p}`);
-  if (offlineProblems.length > 0) throw new SampleCheckError(offlineProblems);
-  log(
-    `${graph.nodes.length} nodes (${graph.nodes.filter((n) => n.libraryId !== null).length} in the library), ${files.length} pinned entries without abstracts`
-  );
-}
-
 // ---- assets -------------------------------------------------------------------------------------------------------
 
 /** The members of a tar(.gz) as zip entries, unchanged, in name order. */
@@ -445,12 +362,11 @@ async function assets(stage, ports, log) {
 
 // ---- the run ------------------------------------------------------------------------------------------------------
 
-const STEPS = { regenerate, cache, assets };
+const STEPS = { regenerate, assets };
 
 /**
- * One sub-command over `sampleDir`, all or nothing. `ports`: `fetchImpl` (arXiv and ADS), `ingest(source, {outRoot,
- * docId, fetchImpl})`, `readToken()`, optional `tmpRoot` and `budgetBytes`. Returns `{code, sample, bytes}`; prints
- * through `log` (never a token).
+ * One sub-command over `sampleDir`, all or nothing. `ports`: `fetchImpl` (arXiv), `ingest(source, {outRoot, docId,
+ * fetchImpl})`, optional `tmpRoot` and `budgetBytes`. Returns `{code, sample, bytes}`; prints through `log`.
  */
 export async function runSampleCommand(command, sampleDir, ports, log = console.log) {
   if (!SUBCOMMANDS.includes(command)) {

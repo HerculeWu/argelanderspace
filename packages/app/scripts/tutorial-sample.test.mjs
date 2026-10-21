@@ -1,5 +1,5 @@
-// The tutorial sample's generation script (in-app-tutorial ticket 16), driven through its ports: fake arXiv / ADS
-// fetches, a fake ingest, a fake token reader. No network, no TeX, no keychain. Needs core/infra/contracts built (the
+// The tutorial sample's generation script (in-app-tutorial ticket 16), driven through its ports: fake arXiv fetches
+// and a fake ingest. No network, no TeX. Needs core/infra/contracts built (the
 // app package's tests run after `pnpm -r build`).
 import assert from "node:assert/strict";
 import {
@@ -21,15 +21,11 @@ import {
   EVANS_OH_ZIP,
   EXIT,
   eprintUrl,
-  JERABKOVA_BIBCODE,
   JERABKOVA_DOC_ID,
   listFiles,
   MARKER_FILE,
-  MEINGAST_BIBCODE,
-  ROSER_BIBCODE,
   runSampleCommand,
   SAMPLE_BUDGET_BYTES,
-  stripAbstracts,
   treeDigest,
 } from "./tutorial-sample-lib.mjs";
 
@@ -120,13 +116,18 @@ function makeSample({ annotations = GOOD_ANNOTATIONS, anchor = "sec-1", jerabkov
       version: 1,
       project: { name: "Tutorial" },
       works: [
-        work({ id: "doi:10.1/roser", title: "Röser", bibcode: ROSER_BIBCODE, doi: "10.1/roser" }),
-        work({ id: "doi:10.1/mein", title: "Meingast", bibcode: MEINGAST_BIBCODE }),
+        work({
+          id: "doi:10.1/roser",
+          title: "Röser",
+          bibcode: "2019A&A...621L...2R",
+          doi: "10.1/roser",
+        }),
+        work({ id: "doi:10.1/mein", title: "Meingast", bibcode: "2019A&A...621L...3M" }),
         work({
           id: "doi:10.1/jer",
           title: "The 800 pc long tidal tails: possible discovery of overdensities",
           arxiv_id: "2103.12080",
-          bibcode: JERABKOVA_BIBCODE,
+          bibcode: "2021A&A...647A.137J",
           doc_ids: [JERABKOVA_DOC_ID],
           ...jerabkova,
         }),
@@ -239,7 +240,7 @@ test("regenerate downloads the pinned v1 e-print, keeps only the IR and assets, 
   const r = await runSampleCommand(
     "regenerate",
     dir,
-    { fetchImpl: impl, ingest: fakeIngest(ingested), readToken: async () => null },
+    { fetchImpl: impl, ingest: fakeIngest(ingested) },
     out.log
   );
   assert.equal(r.code, EXIT.ok, out.lines.join("\n"));
@@ -415,106 +416,6 @@ test("a failed ingest or download writes nothing", async () => {
   assert.equal(treeDigest(dir), before);
 });
 
-// ---- cache -------------------------------------------------------------------------------------------------------
-
-const adsDoc = (bibcode, extra = {}) => ({
-  bibcode,
-  title: [bibcode],
-  author: ["A, B."],
-  year: "2021",
-  abstract: "Publisher's abstract text.",
-  reference: [],
-  ...extra,
-});
-
-function adsFetch({
-  related = [MEINGAST_BIBCODE, JERABKOVA_BIBCODE, "2020X"],
-  useful = ["2016Y"],
-} = {}) {
-  return fakeFetch((u) => {
-    if (!u.startsWith("https://api.adsabs.harvard.edu/")) return undefined;
-    const q = new URL(u).searchParams.get("q");
-    let docs;
-    if (q.startsWith("similar(")) docs = related.map((b) => adsDoc(b));
-    else if (q.startsWith("useful(")) docs = useful.map((b) => adsDoc(b));
-    else docs = [adsDoc(ROSER_BIBCODE, { reference: [MEINGAST_BIBCODE] })];
-    return new Response(JSON.stringify({ response: { docs } }));
-  });
-}
-
-test("cache writes the three pinned entries of the Röser discovery without abstracts", async () => {
-  const dir = makeSample();
-  const cacheDir = join(dir, "literatures", "library", "cache", "ads-discovery");
-  mkdirSync(cacheDir, { recursive: true });
-  writeFileSync(join(cacheDir, "stale.json"), "{}");
-  const { impl, calls } = adsFetch();
-  const out = quiet();
-  const r = await runSampleCommand(
-    "cache",
-    dir,
-    { fetchImpl: impl, readToken: async () => "fake-token-not-printed" },
-    out.log
-  );
-  assert.equal(r.code, EXIT.ok, out.lines.join("\n"));
-  assert.equal(calls.length, 3);
-  const files = readdirSync(cacheDir);
-  assert.equal(files.length, 3);
-  assert.ok(!files.includes("stale.json"));
-  for (const f of files) {
-    const entry = JSON.parse(readFileSync(join(cacheDir, f), "utf8"));
-    assert.equal(entry.pinned, true);
-    assert.ok(entry.data.length > 0);
-    for (const doc of entry.data) assert.equal(Object.hasOwn(doc, "abstract"), false);
-  }
-  assert.equal(marker(dir).sample, 5);
-  assert.ok(!out.lines.join("\n").includes("fake-token-not-printed"));
-});
-
-test("cache refuses when Meingast or Jerabkova are not related/useful, or without a token: nothing written", async () => {
-  for (const [ports, expected] of [
-    [
-      { fetchImpl: adsFetch({ related: [MEINGAST_BIBCODE] }).impl, readToken: async () => "t" },
-      /2021A&A...647A.137J is not among/,
-    ],
-    [
-      { fetchImpl: adsFetch().impl, readToken: async () => null },
-      /no ADS token in the credential store/,
-    ],
-  ]) {
-    const dir = makeSample();
-    const before = treeDigest(dir);
-    const out = quiet();
-    const r = await runSampleCommand("cache", dir, ports, out.log);
-    assert.equal(r.code, EXIT.failed);
-    assert.ok(
-      out.lines.some((l) => expected.test(l)),
-      out.lines.join("\n")
-    );
-    assert.equal(treeDigest(dir), before);
-  }
-});
-
-test("stripAbstracts removes every doc's abstract key and keeps the rest of the entry", () => {
-  const dir = mkdtempSync(join(tmpdir(), "strip-"));
-  roots.push(dir);
-  const entry = {
-    fetchedAt: ISO,
-    pinned: true,
-    data: [adsDoc("X"), { bibcode: "Y", abstract: null }, { bibcode: "Z" }],
-  };
-  writeFileSync(join(dir, "k.json"), JSON.stringify(entry));
-  stripAbstracts(dir);
-  const back = JSON.parse(readFileSync(join(dir, "k.json"), "utf8"));
-  assert.equal(back.pinned, true);
-  assert.equal(back.fetchedAt, ISO);
-  assert.deepEqual(
-    back.data.map((d) => Object.keys(d).sort()),
-    [["author", "bibcode", "reference", "title", "year"], ["bibcode"], ["bibcode"]]
-  );
-  writeFileSync(join(dir, "k.json"), JSON.stringify({ ...entry, pinned: undefined }));
-  assert.throws(() => stripAbstracts(dir), /not a pinned cache entry/);
-});
-
 // ---- assets ------------------------------------------------------------------------------------------------------
 
 test("assets repacks the pinned v1 e-print as a zip with every file unchanged", async () => {
@@ -609,11 +510,17 @@ test("the marker must be exactly {version: 1, sample: n}", async () => {
 });
 
 test("an unknown sub-command is a usage error that touches nothing", async () => {
-  const dir = makeSample();
-  const before = treeDigest(dir);
-  const out = quiet();
-  const r = await runSampleCommand("rebuild", dir, {}, out.log);
-  assert.equal(r.code, EXIT.usage);
-  assert.ok(out.lines[0].startsWith("usage:"));
-  assert.equal(treeDigest(dir), before);
+  // `cache` is gone (2026-10-21): the sample carries no ADS discovery cache (ADS API terms: no redistribution).
+  for (const command of ["rebuild", "cache"]) {
+    const dir = makeSample();
+    const before = treeDigest(dir);
+    const out = quiet();
+    const r = await runSampleCommand(command, dir, {}, out.log);
+    assert.equal(r.code, EXIT.usage, command);
+    assert.equal(
+      out.lines[0],
+      "usage: tutorial-sample.mjs <regenerate|assets> [--sample-dir <dir>]"
+    );
+    assert.equal(treeDigest(dir), before);
+  }
 });

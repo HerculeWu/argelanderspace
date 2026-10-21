@@ -66,6 +66,9 @@ const TUTORIAL_CONVERSATION =
 const FORBIDDEN = [
   [/(^|\/)\.scratch(\/|$)/, "a private scratch/ticket file"],
   [/(^|\/)literatures(\/|$)/, "literature data", "sample"],
+  // Never exempt, not even in the sample: a library cache holds source data (ADS API terms forbid redistributing
+  // anything obtained from ADS; the sample carries no cache since 2026-10-21, in-app-tutorial ticket 16).
+  [/(^|\/)literatures\/library\/cache(\/|$)/, "a library cache (e.g. ADS discovery data)"],
   [
     /(^|\/)(?:\.pi|\.git|\.codegraph|\.serena|node_modules|svglib)(\/|$)/,
     "a repository/tooling directory",

@@ -4,6 +4,10 @@ This folder is the sample project of the ArgelanderSpace in-app tutorial. It is 
 demonstration only. It grants no rights beyond the licenses named below; the papers' authors keep their copyright, and
 the arXiv pages linked below are the reference versions of the papers.
 
+Everything taken from a paper here comes from its arXiv version (the version linked below), not from the version
+published in the journal. The published versions are distributed by their publishers under the publishers' own terms
+and are not part of this sample.
+
 ## Papers
 
 ### Full text included: Jerabkova et al. 2021
@@ -31,10 +35,14 @@ the arXiv pages linked below are the reference versions of the papers.
 - License of the arXiv version: Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International
   (CC BY-NC-ND 4.0), <https://creativecommons.org/licenses/by-nc-nd/4.0/>
 - `tutorial-assets/evans-oh-2022-source.zip` holds the files of the arXiv e-print 2202.06973v1, unchanged, packed as a
-  zip archive. The tutorial uploads it to show how a LaTeX source is ingested. This paper is not in the sample's
-  library.
-- The main `.tex` file was written in the journal's official LaTeX template and keeps that template's header notice
-  ("Copyright (C) Royal Astronomical Society 2015") and its comments, as the authors distributed them on arXiv.
+  zip archive: only the container changed, no file in it was changed. The tutorial uploads it to show how a LaTeX
+  source is ingested. This paper is not in the sample's library.
+- The files in this zip are not covered by the license of the ArgelanderSpace software (MIT). They are used only under
+  CC BY-NC-ND 4.0: for non-commercial purposes, and adapted versions of them may not be shared.
+- The main `.tex` file was written on the MNRAS LaTeX template of the Royal Astronomical Society (the `mnras` package,
+  LaTeX Project Public License 1.3, <https://ctan.org/pkg/mnras>) and keeps that template's header notice
+  ("Copyright (C) Royal Astronomical Society 2015") and its comments, as the authors distributed them on arXiv. The zip
+  does not contain the `mnras` class itself; it is available from CTAN and TeX Live.
 
 ### Bibliographic records only
 
@@ -67,9 +75,9 @@ text is not included.
 
 ## NASA Astrophysics Data System
 
-The discovery results bundled in `literatures/library/cache/ads-discovery/` (the papers related to, and often cited
-together with, Röser et al. 2019) are responses of the NASA Astrophysics Data System, kept with their abstracts
-removed. This research has made use of NASA's Astrophysics Data System Bibliographic Services.
+The ADS bibcodes in the bibliographic records were looked up in the NASA Astrophysics Data System. This research has
+made use of the Astrophysics Data System, funded by NASA under Cooperative Agreement 80NSSC25M7105. The sample holds
+no other data obtained from ADS. ADS terms of use: <https://adsabs.github.io/help/terms/>.
 
 ## Other sources of the bibliographic records
 
