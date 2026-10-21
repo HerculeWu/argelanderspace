@@ -4,23 +4,25 @@
  * host, which alone knows the folders. The page never hands it a path.
  *
  * - pick: the host writes the existing `pick_folder` line with an id it marks as the tutorial's. The answer is the
- *   parent folder (or a tutorial folder itself, infra `tutorialTargetIn`): an `ArgelanderSpace-Tutorial` is made there
+ *   parent folder (or a tutorial folder itself): an `ArgelanderSpace-Tutorial` is made there
  *   and the bundled sample copied in (or the marked folder that is there taken as it is), the progress bound to it
  *   (cleared, unless it was bound to that folder already), the folder recorded among the recent projects, and left for.
  *   Which folder that is — the picked one when it has the marker, else `ArgelanderSpace-Tutorial` in it — is the
  *   host's rule ({@link tutorialTargetIn}); the copy and the emptying are infra's `tutorial-folder.ts` (shared with
  *   the `tutorial` command, ticket 26).
  * - continue: the folder `tutorial.json` is bound to, when it is there and marked; left for.
- * - restart: the bound folder, only when marked, emptied and filled with the sample again (infra
- *   `emptyTutorialFolder`, `copyTutorialSample`), the progress cleared, left for. When the tutorial project is the one
- *   open, that waits until its server has closed (before `stopped`); a copy that fails there leaves the folder empty
- *   (what was written is removed, the marker last), recorded only — nobody listens any more.
+ * - restart: the bound folder, only when marked, replaced by a fresh copy of the sample: copied first into a hidden
+ *   folder beside it (infra `stageTutorialCopy`; a failure is announced and the folder is left as it was), then swapped
+ *   in by rename (`swapInTutorialCopy`; a failed rename puts the folder back), the progress cleared, left for. When the
+ *   tutorial project is the one open, the swap waits until its server has closed (before `stopped`); a switch that is
+ *   given up removes the staged copy.
  *
  * Leaving goes through the host's own switch (`go`): at once in the welcome state or when nothing would be interrupted,
  * otherwise held and announced as a picked folder is (`host.switch-confirmation`) — the folder is made first, so a
  * cancelled switch leaves it bound and the page offers to resume. A failure after the request was taken is announced to
  * the pages (`host.tutorial-result`) and nothing is left for: what the copy wrote is removed (only what this host made),
- * and a half-made folder is never opened. The log has the action and the reason's category only, never a path.
+ * and a half-made folder is never opened. The copy is synchronous: the host answers
+ * nothing else meanwhile. The log has the action and the reason's category only, never a path.
  */
 
 import { rmdirSync, statSync } from "node:fs";
@@ -37,16 +39,17 @@ import {
 } from "@argelanderspace/contracts";
 import {
   copyTutorialSample,
+  discardTutorialCopy,
   emptyTutorialFolder,
   f,
   readTutorialProgress,
+  stageTutorialCopy,
+  swapInTutorialCopy,
+  TUTORIAL_FOLDER_NAME,
   tutorialFolderState,
   writeTutorialProgress,
 } from "@argelanderspace/infra";
 import type { ServerLog } from "./log.js";
-
-/** The folder the host makes in the parent folder the user picks (ASCII, the same in every language; spec §2). */
-export const TUTORIAL_FOLDER_NAME = "ArgelanderSpace-Tutorial";
 
 /** How an entry ended up, as `desktop.tutorial_entered` records it. */
 export const TUTORIAL_ENTRY_OUTCOMES = ["created", "resumed", "rebound", "restarted"] as const;
@@ -108,9 +111,9 @@ export interface TutorialHostDeps {
   record(path: string): void;
   /**
    * Leaves for the folder (at once, or once the user confirmed what the switch would interrupt). `afterClose` runs when
-   * the server has closed, before `stopped`.
+   * the server has closed, before `stopped`; `onDrop` when a held switch is given up instead (or the host stops).
    */
-  go(path: string, extra: { afterClose?: () => void }): void;
+  go(path: string, extra: { afterClose?: () => void; onDrop?: () => void }): void;
   /** Tells every page of the server (none while it is closing or closed). */
   broadcast(message: WsHostTutorialResult): void;
 }
@@ -240,10 +243,8 @@ export function createTutorialEntry(deps: TutorialHostDeps): TutorialEntry {
     }
   }
 
-  /** Restarts the folder: emptied (only with the marker) and filled again, the progress cleared. Throws on failure. */
-  function restartFolder(path: string, sample: string): void {
-    emptyTutorialFolder(path);
-    copyTutorialSample(sample, path);
+  /** The progress starts over once the folder is the sample again (a failure to write it is recorded only). */
+  function restarted(path: string): void {
     try {
       writeTutorialProgress(deps.progressFile, fresh(path));
     } catch {
@@ -281,23 +282,38 @@ export function createTutorialEntry(deps: TutorialHostDeps): TutorialEntry {
       const path = bound();
       // Only a folder with the marker is ever emptied.
       if (path === null || !marked(path)) return "tutorial_missing";
+      // The sample is copied beside the folder first (infra `stageTutorialCopy`): a failure here leaves the folder as
+      // it was and is announced while the page still listens.
+      let staging: string;
+      try {
+        staging = stageTutorialCopy(sample, path);
+      } catch {
+        fail("restart", "copy_failed", path);
+        return "accepted";
+      }
+      const swap = (): boolean => {
+        try {
+          swapInTutorialCopy(path, staging);
+        } catch {
+          discardTutorialCopy(staging);
+          return false;
+        }
+        restarted(path);
+        return true;
+      };
       if (deps.isCurrent(path)) {
-        // The open project itself: emptied once its server has closed, before the shell is told the next project.
+        // The open project itself: swapped in once its server has closed, before the shell is told the next project.
+        // A failed swap puts the folder back as it was, and that opens again (recorded as far as the log still is).
         deps.record(path);
         deps.go(path, {
           afterClose: () => {
-            try {
-              restartFolder(path, sample);
-            } catch {
-              recordFailure("restart", "copy_failed");
-            }
+            if (!swap()) recordFailure("restart", "copy_failed");
           },
+          onDrop: () => discardTutorialCopy(staging),
         });
         return "accepted";
       }
-      try {
-        restartFolder(path, sample);
-      } catch {
+      if (!swap()) {
         fail("restart", "copy_failed", path);
         return "accepted";
       }

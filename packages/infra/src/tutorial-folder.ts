@@ -7,9 +7,14 @@
  * data and is refused, with nothing written.
  */
 
-import { cpSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { randomBytes } from "node:crypto";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { readTutorialMarker, TUTORIAL_MARKER_FILE } from "./tutorial-progress.js";
+
+/** The folder the desktop app makes in the parent folder the user picks, and the `tutorial` command's default (ASCII,
+ * the same in every language; spec §2). */
+export const TUTORIAL_FOLDER_NAME = "ArgelanderSpace-Tutorial";
 
 /**
  * - `missing`: nothing at the path;
@@ -97,4 +102,73 @@ function emptyFolder(dir: string, last?: string): void {
     rmSync(join(dir, name), { recursive: true, force: true });
   }
   if (last !== undefined) rmSync(join(dir, last), { force: true });
+}
+
+/**
+ * Replaces a tutorial folder — one with the marker at its root — by a fresh copy of the sample, so that a failure at
+ * any step leaves it exactly as it was ({@link stageTutorialCopy}, then {@link swapInTutorialCopy}). Throws, touching
+ * nothing, when the folder has no usable marker. Returns the path of an old folder that could not be removed at the end
+ * (a hidden leftover beside it), null otherwise.
+ */
+export function replaceTutorialFolder(sampleDir: string, dir: string): string | null {
+  const staging = stageTutorialCopy(sampleDir, dir);
+  try {
+    return swapInTutorialCopy(dir, staging);
+  } catch (error) {
+    discardTutorialCopy(staging);
+    throw error;
+  }
+}
+
+const notTutorial = (dir: string) =>
+  new Error(`${JSON.stringify(dir)} is not a tutorial folder; it is not replaced`);
+
+/**
+ * The first half of {@link replaceTutorialFolder}: copies the sample into a new hidden folder beside the tutorial folder
+ * `dir` (same parent, so that it can take its place by a rename) and returns its path. `dir` is not touched; on failure
+ * the new folder is removed and the error thrown. Throws when `dir` has no usable marker.
+ */
+export function stageTutorialCopy(sampleDir: string, dir: string): string {
+  if (tutorialFolderState(dir).kind !== "marked") throw notTutorial(dir);
+  const staging = mkdtempSync(join(dirname(dir), `.${basename(dir)}-new-`));
+  try {
+    copyTutorialSample(sampleDir, staging);
+  } catch (error) {
+    discardTutorialCopy(staging);
+    throw error;
+  }
+  return staging;
+}
+
+/**
+ * The second half: the staged copy takes the place of the tutorial folder `dir`, whose marker is checked again — `dir`
+ * is renamed aside, the copy renamed into its place, the old one removed. When a rename fails `dir` is put back and the
+ * error thrown (the staged copy is left to {@link discardTutorialCopy}). Returns the path of an old folder that could
+ * not be removed (a hidden leftover beside it), null otherwise.
+ */
+export function swapInTutorialCopy(dir: string, staging: string): string | null {
+  if (tutorialFolderState(dir).kind !== "marked") throw notTutorial(dir);
+  const old = join(dirname(dir), `.${basename(dir)}-old-${randomBytes(4).toString("hex")}`);
+  renameSync(dir, old);
+  try {
+    renameSync(staging, dir);
+  } catch (error) {
+    renameSync(old, dir);
+    throw error;
+  }
+  try {
+    rmSync(old, { recursive: true, force: true });
+    return null;
+  } catch {
+    return old;
+  }
+}
+
+/** Removes a staged copy that is not used. */
+export function discardTutorialCopy(staging: string): void {
+  try {
+    rmSync(staging, { recursive: true, force: true });
+  } catch {
+    /* a hidden leftover beside the tutorial folder; nothing depends on it */
+  }
 }

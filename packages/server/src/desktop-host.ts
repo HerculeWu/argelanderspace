@@ -494,17 +494,21 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
   const impactNow = (): HostSwitchImpact => workbench?.impact() ?? EMPTY_SWITCH_IMPACT;
   /**
    * The folder the shell picked while a switch would interrupt work, waiting for the user's confirmation. A tutorial
-   * entry (in-app-tutorial ticket 25) may add what to do once the server has closed (`afterClose`).
+   * entry (in-app-tutorial ticket 25) may add what to do once the server has closed (`afterClose`) and what to undo
+   * when the switch is given up (`onDrop`).
    */
   let held: {
     id: string;
     path: string;
     source: (typeof LEAVE_SOURCES)[number];
     afterClose?: () => void;
+    onDrop?: () => void;
   } | null = null;
-  /** Ends the hold, or replaces it. */
+  /** Ends the hold (giving up what it carried), or replaces it. */
   function setHeld(next: typeof held): void {
+    const before = held;
     held = next;
+    if (before !== null && before !== next) before.onDrop?.();
   }
   /** Tells the pages of the server: given by the server of an open project, or by the welcome state's. */
   let pages: ((message: WsHostSwitchConfirmation | WsHostTutorialResult) => void) | null = null;
@@ -611,7 +615,7 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
   function holdOrLeave(
     path: string,
     source: (typeof LEAVE_SOURCES)[number],
-    extra: { afterClose?: () => void }
+    extra: { afterClose?: () => void; onDrop?: () => void }
   ): void {
     const ask = mayLeave(path, null, source);
     if (ask === null) {

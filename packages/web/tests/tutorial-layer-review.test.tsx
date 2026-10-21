@@ -413,7 +413,8 @@ describe("shared controls (review 11, 12)", () => {
     await tick(0);
     const item = ui("tutorial-restart")!;
     expect(document.activeElement).toBe(item);
-    expect(item.getAttribute("aria-disabled")).toBe("true");
+    // Wired by the entry ticket (25): the item is enabled; the restart dialog itself is tutorial-entry-settings.test.tsx.
+    expect(item.getAttribute("aria-disabled")).toBeNull();
     fireEvent.keyDown(item, { key: "ArrowDown" });
     expect(document.activeElement).toBe(item);
     fireEvent.keyDown(item, { key: "End" });

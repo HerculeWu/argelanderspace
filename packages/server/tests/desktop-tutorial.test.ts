@@ -320,6 +320,8 @@ describe("with a project open whose switch would interrupt work", () => {
     await sleep(50);
     expect(h.lines.some((l) => l.type === "stopping")).toBe(false);
     expect(readFileSync(join(tutorial, "mine.txt"), "utf8")).toBe("what I wrote");
+    // The copy staged beside it before the prompt is gone again.
+    expect(readdirSync(dirname(tutorial))).toEqual(["ArgelanderSpace-Tutorial"]);
     expect(JSON.parse(readFileSync(progressFile(), "utf8"))).toMatchObject({
       position: "tour.split",
     });
