@@ -2,8 +2,8 @@
  * The tutorial's entry in the desktop host (in-app-tutorial ticket 25), in this process — what needs a job held in the
  * server or a copy that waits: with a project open whose switch would interrupt work, the tutorial folder is made (and
  * bound) first and the switch then asked about as for any picked folder (`host.switch-confirmation`); cancelling keeps
- * the folder and the binding. A host that begins to close during a copy announces `shutting_down`, removes what the copy
- * wrote and leaves for nothing. A second entry while one is under way is refused. The browser form has none of it.
+ * the folder and the binding. A dialog answer that comes while the host stops makes nothing and leaves for nothing
+ * (`shutting_down`). The browser form has none of it.
  * The host as a child process (the main flows, the failures with real files) is `desktop-tutorial-host.test.ts`.
  *
  * Everything below the home directory is the throwaway one of the isolation setup (checked by `isolated`).
@@ -30,10 +30,8 @@ import type {
 import {
   __setWriterSandboxForTests,
   configFilePath,
-  copyTutorialSample,
   resolveRecentProjectsPath,
   resolveTutorialProgressPath,
-  type TutorialCopyOptions,
 } from "@argelanderspace/infra";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { WebSocket } from "ws";
@@ -79,7 +77,10 @@ function folder(name: string): string {
 beforeEach(() => {
   web = join(folder("web"), "dist");
   mkdirSync(web);
-  writeFileSync(join(web, "index.html"), "<!doctype html><title>tutorial test</title><div id=root>");
+  writeFileSync(
+    join(web, "index.html"),
+    "<!doctype html><title>tutorial test</title><div id=root>"
+  );
   sample = folder("sample");
   writeFileSync(join(sample, MARKER_FILE), '{"version":1,"sample":2}\n');
   mkdirSync(join(sample, "literatures"));
@@ -101,24 +102,6 @@ afterEach(async () => {
   rmSync(progressFile(), { force: true });
 });
 
-/** A copy that waits for `open()` before it copies (`started` resolves once it is waiting). */
-function gatedCopy() {
-  let open!: () => void;
-  const gate = new Promise<void>((r) => {
-    open = r;
-  });
-  let started!: () => void;
-  const waiting = new Promise<void>((r) => {
-    started = r;
-  });
-  const copy = async (from: string, into: string, opts: TutorialCopyOptions) => {
-    started();
-    await gate;
-    await copyTutorialSample(from, into, opts);
-  };
-  return { copy, open, waiting };
-}
-
 interface Running {
   host: DesktopHost;
   server: RunningServer;
@@ -128,9 +111,13 @@ interface Running {
   get(path: string): Promise<{ status: number; body: Record<string, unknown> }>;
   post(path: string, body?: unknown): Promise<{ status: number; body: Record<string, unknown> }>;
   pickTutorial(path: string | null): Promise<void>;
+  /** Asks for the tutorial's dialog; the id of its request line. */
+  askPick(): Promise<string>;
+  answer(id: string, path: string | null): void;
+  log(): Array<Record<string, unknown>>;
 }
 
-async function startHost(opts: { copy?: TutorialCopyOptions["copy"] } = {}): Promise<Running> {
+async function startHost(): Promise<Running> {
   const input = new PassThrough();
   const output = new PassThrough();
   const lines: HostOutLine[] = [];
@@ -156,6 +143,8 @@ async function startHost(opts: { copy?: TutorialCopyOptions["copy"] } = {}): Pro
     }
     throw new Error(`no ${type} line; got ${JSON.stringify(lines)}`);
   };
+  const logDir = join(process.env.XDG_DATA_HOME ?? "", "argelanderspace", "logs");
+  const before = new Set(existsSync(logDir) ? readdirSync(logDir) : []);
   const host = await runDesktopHost({
     input,
     output,
@@ -163,7 +152,6 @@ async function startHost(opts: { copy?: TutorialCopyOptions["copy"] } = {}): Pro
     keychainProbe: KEYCHAIN,
     webDist: web,
     tutorialSampleDir: sample,
-    ...(opts.copy === undefined ? {} : { tutorialCopy: opts.copy }),
   });
   closers.push(() => host.stop());
   const ready = await next("ready");
@@ -191,6 +179,20 @@ async function startHost(opts: { copy?: TutorialCopyOptions["copy"] } = {}): Pro
       expect((await post("/api/host/tutorial/pick")).status).toBe(202);
       const request = (await next("request")) as { id: string };
       input.write(`${JSON.stringify({ type: "folder_picked", id: request.id, path })}\n`);
+    },
+    async askPick() {
+      expect((await post("/api/host/tutorial/pick")).status).toBe(202);
+      return ((await next("request")) as { id: string }).id;
+    },
+    answer(id, path) {
+      input.write(`${JSON.stringify({ type: "folder_picked", id, path })}\n`);
+    },
+    log: () => {
+      const mine = readdirSync(logDir).filter((name) => !before.has(name));
+      return readFileSync(join(logDir, mine[0] ?? "missing"), "utf8")
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
     },
   };
 }
@@ -292,15 +294,18 @@ describe("with a project open whose switch would interrupt work", () => {
     const second = page.switches[1];
     if (second === undefined) throw new Error("no second prompt");
     expect(
-      (await h.post("/api/host/switch/confirm", { id: second.id, acknowledged: ack(second.impact) }))
-        .status
+      (
+        await h.post("/api/host/switch/confirm", {
+          id: second.id,
+          acknowledged: ack(second.impact),
+        })
+      ).status
     ).toBe(202);
     expect(await h.next("stopped")).toEqual({ type: "stopped", next: target });
   });
 
-  test("restart of the open tutorial project: the copy is staged and the switch asked about; cancelled, the folder is as it was and the staged copy gone", async () => {
-    const tutorial = markedFolder(join(current, "..", `${current.split("/").at(-1)}-tut`));
-    roots.push(tutorial);
+  test("restart of the open tutorial project: the switch is asked about first; cancelled, nothing changed; then emptied after the server closed", async () => {
+    const tutorial = markedFolder(join(folder("tut-parent"), "ArgelanderSpace-Tutorial"));
     process.chdir(tutorial);
     bindTo(tutorial);
     const h = await startHost();
@@ -311,63 +316,44 @@ describe("with a project open whose switch would interrupt work", () => {
     const asked = page.switches[0];
     if (asked === undefined) throw new Error("no prompt");
     expect(asked.target.path).toBe(tutorial);
-    const beside = () => readdirSync(dirname(tutorial)).filter((n) => n.startsWith(`.${tutorial.split("/").at(-1)}-`));
-    expect(beside()).toHaveLength(1);
     expect((await h.post("/api/host/switch/cancel", { id: asked.id })).status).toBe(200);
-    expect(beside()).toEqual([]);
+    await sleep(50);
+    expect(h.lines.some((l) => l.type === "stopping")).toBe(false);
     expect(readFileSync(join(tutorial, "mine.txt"), "utf8")).toBe("what I wrote");
-    expect(JSON.parse(readFileSync(progressFile(), "utf8"))).toMatchObject({ position: "tour.split" });
+    expect(JSON.parse(readFileSync(progressFile(), "utf8"))).toMatchObject({
+      position: "tour.split",
+    });
 
-    // The job has ended: asked again, the host leaves at once; emptied after the server closed, before stopped.
+    // The job has ended (in this process it would write into the emptied folder otherwise): asked again, the host
+    // leaves at once, and the folder is emptied once the server has closed, before stopped.
     job.release();
     await h.server.runner.waitFor(job.id);
     expect((await h.post("/api/host/tutorial/restart")).status).toBe(202);
     expect(await h.next("stopped")).toEqual({ type: "stopped", next: tutorial });
     expect(existsSync(join(tutorial, "mine.txt"))).toBe(false);
     expect(readdirSync(tutorial).sort()).toEqual([MARKER_FILE, "literatures"]);
-    expect(beside()).toEqual([]);
-    expect(JSON.parse(readFileSync(progressFile(), "utf8"))).toMatchObject({ position: null, steps: {} });
+    expect(JSON.parse(readFileSync(progressFile(), "utf8"))).toMatchObject({
+      position: null,
+      steps: {},
+    });
   });
 });
 
-describe("one entry at a time, and a host that closes", () => {
-  test("a second entry while a copy is under way: 409 tutorial_busy", async () => {
+describe("a host that stops", () => {
+  test("the dialog answers while the host stops: nothing is made, nothing left for; recorded as shutting_down", async () => {
     const parent = folder("parent");
-    const gated = gatedCopy();
-    const h = await startHost({ copy: gated.copy });
-    await h.pickTutorial(parent);
-    await gated.waiting;
-    expect(await h.post("/api/host/tutorial/pick")).toMatchObject({
-      status: 409,
-      body: { code: "tutorial_busy" },
-    });
-    gated.open();
-    expect(await h.next("stopped")).toEqual({
-      type: "stopped",
-      next: join(parent, "ArgelanderSpace-Tutorial"),
-    });
-  });
-
-  test("closing during the copy: shutting_down is announced, what the copy wrote is removed, nothing is left for", async () => {
-    const parent = folder("parent");
-    writeFileSync(join(parent, "mine.txt"), "the user's");
-    const gated = gatedCopy();
-    const h = await startHost({ copy: gated.copy });
-    const page = await listen(h.url);
-    await h.pickTutorial(parent);
-    await gated.waiting;
+    const h = await startHost();
+    const id = await h.askPick();
     const stopped = h.host.stop("quit");
-    await until(() => page.results.length === 1);
-    expect(page.results[0]).toMatchObject({
-      type: "host.tutorial-result",
-      reason: "shutting_down",
-      path: { path: join(parent, "ArgelanderSpace-Tutorial") },
-    });
-    gated.open();
+    h.answer(id, parent);
     expect(await stopped).toBe("quit");
     expect(await h.next("stopped")).toEqual({ type: "stopped" });
-    expect(readdirSync(parent)).toEqual(["mine.txt"]);
+    expect(readdirSync(parent)).toEqual([]);
     expect(existsSync(progressFile())).toBe(false);
+    expect(h.log().find((r) => r.event === "desktop.tutorial_failed")).toMatchObject({
+      action: "pick",
+      reason: "shutting_down",
+    });
   });
 });
 

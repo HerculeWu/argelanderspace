@@ -72,7 +72,10 @@ function world(opts: { sample?: boolean } = {}): World {
   roots.push(root);
   const web = join(root, "web");
   mkdirSync(web);
-  writeFileSync(join(web, "index.html"), "<!doctype html><title>tutorial host</title><div id=root>");
+  writeFileSync(
+    join(web, "index.html"),
+    "<!doctype html><title>tutorial host</title><div id=root>"
+  );
   const sample = join(root, "sample");
   mkdirSync(join(sample, "literatures", "library"), { recursive: true });
   mkdirSync(join(sample, "status"));
@@ -189,7 +192,8 @@ async function startHost(w: World, project?: string) {
       for (let i = 0; i < 400 && results.length === 0; i++)
         await new Promise((r) => setTimeout(r, 25));
       const first = results.shift();
-      if (first === undefined) throw new Error(`no host.tutorial-result; lines ${JSON.stringify(lines)}`);
+      if (first === undefined)
+        throw new Error(`no host.tutorial-result; lines ${JSON.stringify(lines)}`);
       return first;
     },
   };
@@ -208,7 +212,8 @@ function tree(dir: string): Record<string, string> {
   return out;
 }
 
-const progress = (w: World) => JSON.parse(readFileSync(w.progressFile, "utf8")) as Record<string, unknown>;
+const progress = (w: World) =>
+  JSON.parse(readFileSync(w.progressFile, "utf8")) as Record<string, unknown>;
 const recentPaths = (w: World): string[] =>
   (JSON.parse(readFileSync(w.recentFile, "utf8")) as { projects: { path: string }[] }).projects.map(
     (p) => p.path
@@ -278,7 +283,9 @@ describe("start: a parent folder picked in the welcome state", () => {
       action: "pick",
       outcome: "created",
     });
-    expect(records.find((r) => r.event === "desktop.leaving")).toMatchObject({ source: "tutorial" });
+    expect(records.find((r) => r.event === "desktop.leaving")).toMatchObject({
+      source: "tutorial",
+    });
     expect(JSON.stringify(records)).not.toContain("Documents");
 
     // The shell starts the next host for that folder: the tutorial project is open and ready.
@@ -365,7 +372,9 @@ describe("start: what fails is announced, nothing is left for", () => {
     expect((await h.post("/api/host/tutorial/pick")).status).toBe(202);
     expect(await h.quit()).toBe(0);
     const failed = logRecords(w).filter((r) => r.event === "desktop.tutorial_failed");
-    expect(failed).toEqual([expect.objectContaining({ action: "pick", reason: "target_conflict" })]);
+    expect(failed).toEqual([
+      expect.objectContaining({ action: "pick", reason: "target_conflict" }),
+    ]);
     expect(JSON.stringify(failed)).not.toContain("Work");
   }, 30_000);
 
@@ -438,7 +447,10 @@ describe("continue", () => {
     const existing = tutorialFolder(join(w.root, "ArgelanderSpace-Tutorial"));
     bind(w, existing);
     const h = await startHost(w);
-    expect(await h.post("/api/host/tutorial/continue")).toEqual({ status: 202, body: { ok: true } });
+    expect(await h.post("/api/host/tutorial/continue")).toEqual({
+      status: 202,
+      body: { ok: true },
+    });
     expect(await h.next("stopped")).toEqual({ type: "stopped", next: existing });
     expect(h.lines.some((l) => l.type === "request")).toBe(false);
     expect(progress(w)).toMatchObject({ position: "tour.palette" });

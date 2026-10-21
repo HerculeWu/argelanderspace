@@ -7,10 +7,14 @@
  *   parent folder (or a tutorial folder itself, infra `tutorialTargetIn`): an `ArgelanderSpace-Tutorial` is made there
  *   and the bundled sample copied in (or the marked folder that is there taken as it is), the progress bound to it
  *   (cleared, unless it was bound to that folder already), the folder recorded among the recent projects, and left for.
+ *   Which folder that is — the picked one when it has the marker, else `ArgelanderSpace-Tutorial` in it — is the
+ *   host's rule ({@link tutorialTargetIn}); the copy and the emptying are infra's `tutorial-folder.ts` (shared with
+ *   the `tutorial` command, ticket 26).
  * - continue: the folder `tutorial.json` is bound to, when it is there and marked; left for.
- * - restart: the bound folder, only when marked, emptied and filled with the sample again (a copy staged beside it
- *   first, which then takes its place: infra `stageTutorialSample` / `swapStagedTutorial`), the progress cleared, left
- *   for. When the tutorial project is the one open, the swap waits until the server has closed (before `stopped`).
+ * - restart: the bound folder, only when marked, emptied and filled with the sample again (infra
+ *   `emptyTutorialFolder`, `copyTutorialSample`), the progress cleared, left for. When the tutorial project is the one
+ *   open, that waits until its server has closed (before `stopped`); a copy that fails there leaves the folder empty
+ *   (what was written is removed, the marker last), recorded only — nobody listens any more.
  *
  * Leaving goes through the host's own switch (`go`): at once in the welcome state or when nothing would be interrupted,
  * otherwise held and announced as a picked folder is (`host.switch-confirmation`) — the folder is made first, so a
@@ -19,30 +23,30 @@
  * and a half-made folder is never opened. The log has the action and the reason's category only, never a path.
  */
 
-import type {
-  HostShownPath,
-  HostTutorialAction,
-  HostTutorialFailure,
-  HostTutorialRefusal,
-  TutorialProgress,
-  WsHostTutorialResult,
-} from "@argelanderspace/contracts";
-import { HOST_TUTORIAL_ACTIONS, HOST_TUTORIAL_FAILURES } from "@argelanderspace/contracts";
+import { rmdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import {
-  discardStagedTutorial,
+  HOST_TUTORIAL_ACTIONS,
+  HOST_TUTORIAL_FAILURES,
+  type HostShownPath,
+  type HostTutorialAction,
+  type HostTutorialFailure,
+  type HostTutorialRefusal,
+  type TutorialProgress,
+  type WsHostTutorialResult,
+} from "@argelanderspace/contracts";
+import {
+  copyTutorialSample,
+  emptyTutorialFolder,
   f,
-  fillTutorialFolder,
-  isTutorialFolder,
   readTutorialProgress,
-  type StagedTutorial,
-  stageTutorialSample,
-  swapStagedTutorial,
-  type TutorialCopyOptions,
-  tutorialTargetIn,
-  unfillTutorialFolder,
+  tutorialFolderState,
   writeTutorialProgress,
 } from "@argelanderspace/infra";
 import type { ServerLog } from "./log.js";
+
+/** The folder the host makes in the parent folder the user picks (ASCII, the same in every language; spec §2). */
+export const TUTORIAL_FOLDER_NAME = "ArgelanderSpace-Tutorial";
 
 /** How an entry ended up, as `desktop.tutorial_entered` records it. */
 export const TUTORIAL_ENTRY_OUTCOMES = ["created", "resumed", "rebound", "restarted"] as const;
@@ -51,6 +55,37 @@ export const TUTORIAL_ENTRY_OUTCOMES = ["created", "resumed", "rebound", "restar
  * was made but `tutorial.json` could not be written (announced as `copy_failed`; the folder is removed again).
  */
 export const TUTORIAL_FAILURE_RECORDS = [...HOST_TUTORIAL_FAILURES, "bind_failed"] as const;
+
+/**
+ * Where the tutorial goes for a folder the user picked: the folder itself when it holds the marker; else
+ * `ArgelanderSpace-Tutorial` in it — taken as it is when marked, filled when missing or empty, a conflict otherwise.
+ */
+export type TutorialTarget =
+  | { kind: "marked"; path: string }
+  | { kind: "copy"; path: string }
+  | { kind: "conflict"; path: string }
+  | { kind: "not_a_folder"; path: string };
+
+export function tutorialTargetIn(picked: string): TutorialTarget {
+  let isDir = false;
+  try {
+    isDir = statSync(picked).isDirectory();
+  } catch {
+    /* not there, or not to be looked at */
+  }
+  if (!isDir) return { kind: "not_a_folder", path: picked };
+  if (tutorialFolderState(picked).kind === "marked") return { kind: "marked", path: picked };
+  const child = join(picked, TUTORIAL_FOLDER_NAME);
+  switch (tutorialFolderState(child).kind) {
+    case "marked":
+      return { kind: "marked", path: child };
+    case "missing":
+    case "empty":
+      return { kind: "copy", path: child };
+    case "unmarked":
+      return { kind: "conflict", path: child };
+  }
+}
 
 /** What the host gives the tutorial's entry. */
 export interface TutorialHostDeps {
@@ -73,13 +108,11 @@ export interface TutorialHostDeps {
   record(path: string): void;
   /**
    * Leaves for the folder (at once, or once the user confirmed what the switch would interrupt). `afterClose` runs when
-   * the server has closed, before `stopped`; `onDrop` when a held switch is given up instead.
+   * the server has closed, before `stopped`.
    */
-  go(path: string, extra: { afterClose?: () => void; onDrop?: () => void }): void;
+  go(path: string, extra: { afterClose?: () => void }): void;
   /** Tells every page of the server (none while it is closing or closed). */
   broadcast(message: WsHostTutorialResult): void;
-  /** Tests only: the copy (default infra's). */
-  copy?: (sample: string, into: string, opts: TutorialCopyOptions) => Promise<void>;
 }
 
 export type TutorialRequestOutcome = "accepted" | HostTutorialRefusal;
@@ -90,23 +123,16 @@ export interface TutorialEntry {
   restart(): TutorialRequestOutcome;
   /** Whether the answer to a `pick_folder` line is the tutorial's; if so it is taken care of here. */
   picked(id: string, path: string | null): boolean;
-  /** The host begins to stop: an entry under way is told to stop and announced as `shutting_down` while pages listen. */
-  onStopping(): void;
-  /** Resolves once no entry is under way (what a stopped copy wrote is removed by then). */
-  settled(): Promise<void>;
 }
 
 export function createTutorialEntry(deps: TutorialHostDeps): TutorialEntry {
   const tutorialPicks = new Set<string>();
-  /** The entry under way (a copy): its action, the folder it is about, and its end. */
-  let running: { action: HostTutorialAction; path: string; done: Promise<void> } | null = null;
-  /** Whether the pages were told already that the entry under way ends because the host stops. */
-  let toldStopping = false;
 
   const bound = (): string | null => {
     const { progress } = readTutorialProgress(deps.progressFile);
     return progress?.project?.path ?? null;
   };
+  const marked = (path: string) => tutorialFolderState(path).kind === "marked";
 
   const fresh = (path: string): TutorialProgress => {
     const now = new Date().toISOString();
@@ -121,46 +147,33 @@ export function createTutorialEntry(deps: TutorialHostDeps): TutorialEntry {
     };
   };
 
-  const record = (action: HostTutorialAction, outcome: (typeof TUTORIAL_ENTRY_OUTCOMES)[number]) =>
+  const entered = (action: HostTutorialAction, outcome: (typeof TUTORIAL_ENTRY_OUTCOMES)[number]) =>
     deps.log()?.info("desktop.tutorial_entered", {
       action: f.oneOf(HOST_TUTORIAL_ACTIONS, action),
       outcome: f.oneOf(TUTORIAL_ENTRY_OUTCOMES, outcome),
     });
 
-  /** Records the failure and tells the pages; `announce` is what they are told (default the recorded reason). */
-  const fail = (
+  const recordFailure = (
     action: HostTutorialAction,
-    reason: (typeof TUTORIAL_FAILURE_RECORDS)[number],
-    path: string,
-    announce: HostTutorialFailure = reason === "bind_failed" ? "copy_failed" : reason
-  ) => {
+    reason: (typeof TUTORIAL_FAILURE_RECORDS)[number]
+  ) =>
     deps.log()?.warn("desktop.tutorial_failed", {
       action: f.oneOf(HOST_TUTORIAL_ACTIONS, action),
       reason: f.oneOf(TUTORIAL_FAILURE_RECORDS, reason),
     });
-    // While the host stops, the pages were told once already (onStopping), and nobody listens any more.
-    if (announce === "shutting_down" && toldStopping) return;
+
+  /** Records the failure and tells the pages what it was about. */
+  const fail = (
+    action: HostTutorialAction,
+    reason: (typeof TUTORIAL_FAILURE_RECORDS)[number],
+    path: string
+  ) => {
+    recordFailure(action, reason);
+    const announce: HostTutorialFailure = reason === "bind_failed" ? "copy_failed" : reason;
     deps.broadcast({ type: "host.tutorial-result", reason: announce, path: deps.shownPath(path) });
   };
 
-  const copyOpts: TutorialCopyOptions = {
-    shouldStop: () => deps.stopping(),
-    ...(deps.copy === undefined ? {} : { copy: deps.copy }),
-  };
-
-  /** Runs an entry's asynchronous part as the one under way. */
-  const under = (action: HostTutorialAction, path: string, work: () => Promise<void>): void => {
-    const done = work()
-      .catch(() => {
-        /* each step records its own failure */
-      })
-      .finally(() => {
-        running = null;
-      });
-    running = { action, path, done };
-  };
-
-  /** Writes a progress bound to the folder; false (recorded) when it could not be written. */
+  /** Binds a fresh progress to the folder; false (recorded and announced) when it could not be written. */
   const bind = (action: HostTutorialAction, path: string): boolean => {
     try {
       writeTutorialProgress(deps.progressFile, fresh(path));
@@ -172,12 +185,12 @@ export function createTutorialEntry(deps: TutorialHostDeps): TutorialEntry {
   };
 
   /** A folder the shell picked for the tutorial. */
-  function onPicked(picked: string): void {
+  function onPicked(picked: string, sample: string): void {
+    // The answer came while the host stops: nothing is made, nothing left for.
     if (deps.stopping()) {
       fail("pick", "shutting_down", picked);
       return;
     }
-    if (deps.sampleDir === null) return;
     const target = tutorialTargetIn(picked);
     if (target.kind === "not_a_folder") {
       fail("pick", "not_a_folder", target.path);
@@ -192,48 +205,58 @@ export function createTutorialEntry(deps: TutorialHostDeps): TutorialEntry {
       // Bound to it already: resumed as it was. Otherwise bound anew, from the start (spec §2: 改绑并续上).
       const already = bound() === path;
       if (!already && !bind("pick", path)) return;
-      record("pick", already ? "resumed" : "rebound");
+      entered("pick", already ? "resumed" : "rebound");
       deps.record(path);
       if (!deps.isCurrent(path)) deps.go(path, {});
       return;
     }
-    const sample = deps.sampleDir;
-    under("pick", target.path, async () => {
-      try {
-        await fillTutorialFolder(sample, target, copyOpts);
-      } catch {
-        fail("pick", deps.stopping() ? "shutting_down" : "copy_failed", target.path);
-        return;
-      }
-      // Copied, but the host began to stop meanwhile: what was made is removed again, nothing is left for.
-      if (deps.stopping()) {
-        await unfillTutorialFolder(target);
-        fail("pick", "shutting_down", target.path);
-        return;
-      }
-      const path = deps.canonical(target.path);
-      if (!bind("pick", path)) {
-        await unfillTutorialFolder(target);
-        return;
-      }
-      record("pick", "created");
-      deps.record(path);
-      deps.go(path, {});
-    });
+    // Missing or empty: filled. A failed copy removes what it wrote (the folder itself when it made it).
+    const existed = tutorialFolderState(target.path).kind === "empty";
+    try {
+      copyTutorialSample(sample, target.path);
+    } catch {
+      fail("pick", "copy_failed", target.path);
+      return;
+    }
+    const path = deps.canonical(target.path);
+    if (!bind("pick", path)) {
+      // Never left for, and not left behind half-bound: what was made goes again.
+      undoCopy(target.path, existed);
+      return;
+    }
+    entered("pick", "created");
+    deps.record(path);
+    deps.go(path, {});
   }
 
-  /** Checks shared by the three requests. */
-  function refused(): HostTutorialRefusal | null {
-    if (deps.stopping()) return "shutting_down";
-    if (deps.sampleDir === null) return "no_sample";
-    if (running !== null) return "tutorial_busy";
-    return null;
+  /** Empties again a folder this host just filled; removes it when the host made it. */
+  function undoCopy(path: string, existed: boolean): void {
+    try {
+      emptyTutorialFolder(path);
+      // Emptied just before: only the folder itself is left.
+      if (!existed) rmdirSync(path);
+    } catch {
+      /* recorded as the failure it was */
+    }
+  }
+
+  /** Restarts the folder: emptied (only with the marker) and filled again, the progress cleared. Throws on failure. */
+  function restartFolder(path: string, sample: string): void {
+    emptyTutorialFolder(path);
+    copyTutorialSample(sample, path);
+    try {
+      writeTutorialProgress(deps.progressFile, fresh(path));
+    } catch {
+      // The folder is complete again: still left for; the old progress stays bound to the same folder.
+      recordFailure("restart", "bind_failed");
+    }
+    entered("restart", "restarted");
   }
 
   return {
     pick() {
-      const no = refused();
-      if (no !== null) return no;
+      if (deps.stopping()) return "shutting_down";
+      if (deps.sampleDir === null) return "no_sample";
       const id = deps.requestPick();
       if (id === null) return "shutting_down";
       tutorialPicks.add(id);
@@ -242,87 +265,51 @@ export function createTutorialEntry(deps: TutorialHostDeps): TutorialEntry {
 
     continue() {
       if (deps.stopping()) return "shutting_down";
-      if (running !== null) return "tutorial_busy";
       const path = bound();
-      if (path === null || !isTutorialFolder(path)) return "tutorial_missing";
+      if (path === null || !marked(path)) return "tutorial_missing";
       if (deps.isCurrent(path)) return "current_project";
-      record("continue", "resumed");
+      entered("continue", "resumed");
       deps.record(path);
       deps.go(path, {});
       return "accepted";
     },
 
     restart() {
-      const no = refused();
-      if (no !== null) return no;
+      if (deps.stopping()) return "shutting_down";
+      const sample = deps.sampleDir;
+      if (sample === null) return "no_sample";
       const path = bound();
       // Only a folder with the marker is ever emptied.
-      if (path === null || !isTutorialFolder(path)) return "tutorial_missing";
-      const sample = deps.sampleDir as string;
-      under("restart", path, async () => {
-        let staged: StagedTutorial;
-        try {
-          staged = await stageTutorialSample(sample, path, copyOpts);
-        } catch {
-          fail("restart", deps.stopping() ? "shutting_down" : "copy_failed", path);
-          return;
-        }
-        if (deps.stopping()) {
-          discardStagedTutorial(staged);
-          fail("restart", "shutting_down", path);
-          return;
-        }
-        const swap = (): boolean => {
-          try {
-            swapStagedTutorial(staged);
-          } catch {
-            discardStagedTutorial(staged);
-            fail("restart", "copy_failed", path);
-            return false;
-          }
-          // The folder is the sample again: the progress starts over (a failure to write it is recorded; the folder
-          // is complete, so it is still left for).
-          try {
-            writeTutorialProgress(deps.progressFile, fresh(path));
-          } catch {
-            deps.log()?.warn("desktop.tutorial_failed", {
-              action: f.oneOf(HOST_TUTORIAL_ACTIONS, "restart"),
-              reason: f.oneOf(TUTORIAL_FAILURE_RECORDS, "bind_failed"),
-            });
-          }
-          record("restart", "restarted");
-          return true;
-        };
-        if (deps.isCurrent(path)) {
-          // The open project itself: emptied once its server has closed, before the shell is told the next project.
-          // When that fails the folder is as it was, and that is what opens again.
-          deps.record(path);
-          deps.go(path, { afterClose: () => void swap(), onDrop: () => discardStagedTutorial(staged) });
-          return;
-        }
-        if (!swap()) return;
+      if (path === null || !marked(path)) return "tutorial_missing";
+      if (deps.isCurrent(path)) {
+        // The open project itself: emptied once its server has closed, before the shell is told the next project.
         deps.record(path);
-        deps.go(path, {});
-      });
+        deps.go(path, {
+          afterClose: () => {
+            try {
+              restartFolder(path, sample);
+            } catch {
+              recordFailure("restart", "copy_failed");
+            }
+          },
+        });
+        return "accepted";
+      }
+      try {
+        restartFolder(path, sample);
+      } catch {
+        fail("restart", "copy_failed", path);
+        return "accepted";
+      }
+      deps.record(path);
+      deps.go(path, {});
       return "accepted";
     },
 
     picked(id, path) {
       if (!tutorialPicks.delete(id)) return false;
-      if (path !== null) onPicked(path);
+      if (path !== null && deps.sampleDir !== null) onPicked(path, deps.sampleDir);
       return true;
     },
-
-    onStopping() {
-      if (running === null) return;
-      deps.broadcast({
-        type: "host.tutorial-result",
-        reason: "shutting_down",
-        path: deps.shownPath(running.path),
-      });
-      toldStopping = true;
-    },
-
-    settled: () => running?.done ?? Promise.resolve(),
   };
 }

@@ -13,7 +13,7 @@ import "../settings/settings.css";
 import "./tutorial-entry.css";
 
 /**
- * The tutorial's entry (in-app-tutorial ticket 25; spec §2 「入口」, §6 「重新开始」「旧版示例」): "Start / Resume
+ * The tutorial's entry (in-app-tutorial ticket 25; spec §2 entry points, §6 restart and older samples): "Start / Resume
  * tutorial" and "Restart…" on the welcome page and the settings page, and the restart dialog the chapter rail's
  * "Restart…" opens too. The label follows `GET /api/tutorial`: a bound folder that is there and marked is resumed,
  * otherwise the tutorial starts (the host asks for a parent folder). Everything is carried out by the desktop host;

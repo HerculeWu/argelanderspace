@@ -79,10 +79,10 @@ import {
   type HostSwitchImpact,
   type HostSwitchTarget,
   isHostInfo,
-  type WsHostSwitchConfirmation,
-  type WsHostTutorialResult,
   type SETTINGS_UI_LANGUAGES,
   switchAcknowledged,
+  type WsHostSwitchConfirmation,
+  type WsHostTutorialResult,
 } from "@argelanderspace/contracts";
 import {
   CLI_COMMAND,
@@ -103,7 +103,6 @@ import {
   recordRecentProject,
   removeRecentProject,
   TUTORIAL_PROGRESS_FILE,
-  type TutorialCopyOptions,
   uninstallCliLauncher,
 } from "@argelanderspace/infra";
 import { createTutorialEntry } from "./desktop-tutorial.js";
@@ -274,8 +273,6 @@ export interface DesktopHostOptions {
    * bundle, infra `bundledTutorialDir`): whose marker `GET /api/tutorial` reads. Absent: the installation has none.
    */
   tutorialSampleDir?: string;
-  /** Tests only: the copy of the tutorial sample (in-app-tutorial ticket 25; default infra's). */
-  tutorialCopy?: (sample: string, into: string, opts: TutorialCopyOptions) => Promise<void>;
   /**
    * The app's own Node and CLI entry, which the command-line tool's launcher runs (desktop-app ticket 24; the CLI entry
    * gives its `process.execPath` and its bundle). Absent: the host interface answers that the tool is unavailable.
@@ -497,21 +494,17 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
   const impactNow = (): HostSwitchImpact => workbench?.impact() ?? EMPTY_SWITCH_IMPACT;
   /**
    * The folder the shell picked while a switch would interrupt work, waiting for the user's confirmation. A tutorial
-   * entry (in-app-tutorial ticket 25) may add what to do once the server has closed (`afterClose`) and what to undo
-   * when the switch is given up (`onDrop`).
+   * entry (in-app-tutorial ticket 25) may add what to do once the server has closed (`afterClose`).
    */
   let held: {
     id: string;
     path: string;
     source: (typeof LEAVE_SOURCES)[number];
     afterClose?: () => void;
-    onDrop?: () => void;
   } | null = null;
-  /** Ends the hold (and gives up what it carried), or replaces it. */
+  /** Ends the hold, or replaces it. */
   function setHeld(next: typeof held): void {
-    const before = held;
     held = next;
-    if (before !== null && before !== next) before.onDrop?.();
   }
   /** Tells the pages of the server: given by the server of an open project, or by the welcome state's. */
   let pages: ((message: WsHostSwitchConfirmation | WsHostTutorialResult) => void) | null = null;
@@ -618,7 +611,7 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
   function holdOrLeave(
     path: string,
     source: (typeof LEAVE_SOURCES)[number],
-    extra: { afterClose?: () => void; onDrop?: () => void }
+    extra: { afterClose?: () => void }
   ): void {
     const ask = mayLeave(path, null, source);
     if (ask === null) {
@@ -660,7 +653,6 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
       else leave(path, "tutorial", extra.afterClose);
     },
     broadcast: (message) => pages?.(message),
-    ...(options.tutorialCopy === undefined ? {} : { copy: options.tutorialCopy }),
   });
   const bridge: HostBridge = {
     get portFallback() {
@@ -893,8 +885,6 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
     stopping = (async () => {
       log.info("desktop.stopping", { reason: f.oneOf(HOST_STOP_REASONS, reason) });
       write({ type: "stopping", reason });
-      // A tutorial entry under way ends; the pages hear why while they still listen.
-      tutorial.onStopping();
       let deadline: NodeJS.Timeout | undefined;
       const limit = options.stopDeadline;
       if (limit !== undefined && SHELL_GONE.has(reason)) {
@@ -913,8 +903,7 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
       } finally {
         clearTimeout(deadline);
       }
-      // A copy that was stopped has removed what it wrote; a switch still held is given up.
-      await tutorial.settled();
+      // A switch still held is given up.
       setHeld(null);
       if (afterClose !== null) {
         try {

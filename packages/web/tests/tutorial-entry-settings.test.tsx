@@ -7,7 +7,7 @@
  */
 import type { HostInfo, TutorialState } from "@argelanderspace/contracts";
 import { HOST_REQUEST_KINDS } from "@argelanderspace/contracts";
-import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type Preferences, PreferencesProvider } from "../src/argelander/preferences";
 import { Shell } from "../src/argelander/Shell";

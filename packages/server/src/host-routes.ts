@@ -27,6 +27,7 @@ import {
   type HostSwitchImpact,
   type HostSwitchJob,
   type HostSwitchTarget,
+  type HostTutorialRefusal,
   isHostRequestKind,
   isJobFormat,
   type Job,
@@ -34,7 +35,6 @@ import {
   SWITCH_ACK_MAX_ID_LENGTH,
   SWITCH_ACK_MAX_IDS,
   SWITCH_CONFIRMATION_CODE,
-  type HostTutorialRefusal,
   type WsHostSwitchConfirmation,
   type WsHostTutorialResult,
 } from "@argelanderspace/contracts";
@@ -410,7 +410,6 @@ const TUTORIAL_REFUSAL_DETAIL: Record<HostTutorialRefusal, string> = {
   no_sample: "this installation has no tutorial sample",
   tutorial_missing: "there is no tutorial folder to use",
   current_project: "the tutorial project is open",
-  tutorial_busy: "a tutorial folder is being prepared",
   shutting_down: "the host is stopping",
 };
 

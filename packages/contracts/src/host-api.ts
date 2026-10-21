@@ -69,7 +69,7 @@
  *                                       clears the progress and leaves for it.
  *   409 {@link HOST_TUTORIAL_REFUSALS}: `no_sample` (this installation has no sample), `tutorial_missing` (`continue` /
  *   `restart`: no bound folder, or it is gone or has no marker), `current_project` (`continue`: the tutorial is the
- *   project open now), `tutorial_busy` (one of these is still under way), `shutting_down`. With a project open whose
+ *   project open now), `shutting_down`. With a project open whose
  *   switch would interrupt work, the folder is made first and the switch is then held and announced as any picked
  *   folder (`host.switch-confirmation`). What fails after the 202 — the copy, the folder the shell answered — is
  *   announced to every page as {@link WsHostTutorialResult}; nothing is left for then.
@@ -372,7 +372,7 @@ export function isWsHostSwitchConfirmation(value: unknown): value is WsHostSwitc
  * Why the tutorial did not start, announced to the pages after the request was taken: `target_conflict` — the parent
  * folder already holds an `ArgelanderSpace-Tutorial` that is not empty and is not a tutorial folder; `copy_failed` —
  * the sample could not be copied (permissions, a full disk; what was written is removed again); `not_a_folder` — what
- * the dialog answered is not a folder; `shutting_down` — the workbench is closing.
+ * the dialog answered is not a folder; `shutting_down` — the dialog's answer came while the workbench was closing.
  */
 export const HOST_TUTORIAL_FAILURES = [
   "target_conflict",
@@ -387,7 +387,6 @@ export const HOST_TUTORIAL_REFUSALS = [
   "no_sample",
   "tutorial_missing",
   "current_project",
-  "tutorial_busy",
   "shutting_down",
 ] as const;
 export type HostTutorialRefusal = (typeof HOST_TUTORIAL_REFUSALS)[number];
