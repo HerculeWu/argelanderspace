@@ -59,6 +59,8 @@ literatures/copilot/
 
 # Plan page store (user data; Stage 4)
 status/
+# ...but the tutorial sample's plan file is part of the committed sample (in-app-tutorial ticket 16).
+!/tutorial-sample/status/
 
 # OS / editor
 .DS_Store

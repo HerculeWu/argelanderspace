@@ -463,7 +463,7 @@ export interface EnsureCurrentAnnotationsResult {
  * no `version` marker → pre-migration document, `corrupt_ir`; schema-invalid
  * → `corrupt_ir`.
  */
-function loadStoredDocIr(dataDir: string, docId: string): StoredDocIr {
+export function loadStoredDocIr(dataDir: string, docId: string): StoredDocIr {
   const p = docJsonPath(dataDir, docId);
   if (!existsSync(p) || !statSync(p).isFile()) {
     throw new AnnotationsError("not_found", `annotations: doc "${docId}" not found (${p})`);

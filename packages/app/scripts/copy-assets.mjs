@@ -46,6 +46,17 @@ if (!existsSync(stySrc)) {
 }
 copyFileSync(stySrc, join(appRoot, "dist", "argelander.sty"));
 
+// The tutorial sample (in-app-tutorial ticket 16): the frozen sample project at the repository root goes to
+// dist/tutorial, where infra's bundledTutorialDir finds it in the npm and development layouts (the desktop package
+// copies it on its own). Copied whole and unchanged; a sample without its marker file stops the build.
+const tutorialSrc = join(repoRoot, "tutorial-sample");
+if (!existsSync(join(tutorialSrc, "argelanderspace-tutorial.json"))) {
+  throw new Error("tutorial-sample/argelanderspace-tutorial.json is missing");
+}
+const tutorialTarget = join(appRoot, "dist", "tutorial");
+rmSync(tutorialTarget, { recursive: true, force: true });
+cpSync(tutorialSrc, tutorialTarget, { recursive: true });
+
 for (const name of ["README.md", "LICENSE"]) {
   copyFileSync(join(repoRoot, name), join(appRoot, name));
 }
@@ -286,5 +297,5 @@ writeFileSync(join(target, "THIRD-PARTY-EDITOR-NOTICES.txt"), noticeText);
 writeFileSync(join(appRoot, "dist", "THIRD-PARTY-EMBEDPDF-NOTICES.txt"), embedPdfNoticeText);
 writeFileSync(join(target, "THIRD-PARTY-EMBEDPDF-NOTICES.txt"), embedPdfNoticeText);
 console.log(
-  `copied web/sty/root assets, ${notices.size} editor notices, ${sdkNotices.size} EmbedPDF notices, ${bundledNotices.size} bundled-library notices and ${mailNotices.size} Mail notices`
+  `copied web/sty/tutorial/root assets, ${notices.size} editor notices, ${sdkNotices.size} EmbedPDF notices, ${bundledNotices.size} bundled-library notices and ${mailNotices.size} Mail notices`
 );

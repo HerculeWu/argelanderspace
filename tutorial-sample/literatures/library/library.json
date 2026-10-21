@@ -1,0 +1,178 @@
+{
+  "version": 1,
+  "project": {
+    "name": "Hyades tidal tails (tutorial)",
+    "short": "Tutorial",
+    "field": "Astrophysics"
+  },
+  "works": [
+    {
+      "id": "doi:10.1051/0004-6361/201834608",
+      "title": "Hyades tidal tails revealed by Gaia DR2",
+      "authors": [
+        "Röser",
+        "Schilbach",
+        "Goldman"
+      ],
+      "year": 2019,
+      "venue": "Astronomy and Astrophysics",
+      "type": "article",
+      "doi": "10.1051/0004-6361/201834608",
+      "arxiv_id": "1811.03845",
+      "bibcode": "2019A&A...621L...2R",
+      "openalex_id": "W2900237302",
+      "abstract": "Within a 200 pc sphere around the Sun we search for the Hyades tidal tails in the Gaia DR2 dataset. We use a modified convergent point method to search for stars with space velocities close to the space velocity of the Hyades cluster. We find a clear indication for the existence of the Hyades tidal tails, a preceding tail extending up to 170 pc from the centre of the Hyades with 292 stars (36 contaminants), and a following tail up to 70 pc with 237 stars (32 contaminants). A comparison with an N-body model of the cluster and its tails shows remarkably good coincidence. Five white dwarfs are found in the tails.",
+      "cite_key": "2019A&A...621L...2R",
+      "referenced_works": [
+        "W2901641795"
+      ],
+      "read": false,
+      "star": false,
+      "origin": "manual",
+      "added_at": "2026-10-21T00:00:00.000Z",
+      "journal": "A&A",
+      "volume": "621",
+      "pages": "L2"
+    },
+    {
+      "id": "doi:10.1051/0004-6361/201834622",
+      "title": "Extended stellar systems in the solar neighborhood. I. The tidal tails of the Hyades",
+      "authors": [
+        "Meingast",
+        "Alves"
+      ],
+      "year": 2019,
+      "venue": "Astronomy and Astrophysics",
+      "type": "article",
+      "doi": "10.1051/0004-6361/201834622",
+      "arxiv_id": "1811.04931",
+      "bibcode": "2019A&A...621L...3M",
+      "openalex_id": "W2901641795",
+      "abstract": "We report the discovery of two well-defined tidal tails emerging from the Hyades star cluster. The tails were detected in Gaia DR2 data by selecting cluster members in the three-dimensional galactocentric cylindrical velocity space. The robustness of our member selection is reinforced by the fact that the sources depict an almost noiseless, coeval stellar main sequence in the observational Hertzsprung-Russel diagram. The spatial arrangement of the selected members represents a highly flattened shape with respect to the direction of movement along the clusters' orbit in the Galaxy. The size of the entire structure, within the limits of the observations, measures about 200 pc in its largest extent, while being only about 25 pc thick. This translates to an on-sky extent of well beyond 100 deg. Intriguingly, a top-down view on the spatial distribution reveals as distinct S-shape, reminiscent of tidal tails both observed for globular clusters, as well as modelled for star clusters bound to the Galactic disk. Even more remarkable, the spatial arrangement, as well as the velocity dispersion of our source selection is in excellent agreement with previously published theoretical predictions for the tidal tails of the Hyades. An investigation into observed signatures of equipartition of kinetic energy, i.e. mass segregation, remains unsuccessful, most likely due to the sensitivity limit for radial velocity measurements with Gaia.",
+      "cite_key": "2019A&A...621L...3M",
+      "referenced_works": [
+        "W2900237302"
+      ],
+      "read": false,
+      "star": false,
+      "origin": "manual",
+      "added_at": "2026-10-21T00:00:00.000Z",
+      "journal": "A&A",
+      "volume": "621",
+      "pages": "L3"
+    },
+    {
+      "id": "doi:10.1051/0004-6361/202039949",
+      "title": "The 800 pc long tidal tails of the Hyades star cluster: Possible discovery of candidate epicyclic overdensities from an open star cluster",
+      "authors": [
+        "Jerabkova",
+        "Boffin",
+        "Beccari",
+        "de Marchi",
+        "de Bruijne",
+        "Prusti"
+      ],
+      "year": 2021,
+      "venue": "Astronomy and Astrophysics",
+      "type": "article",
+      "doi": "10.1051/0004-6361/202039949",
+      "arxiv_id": "2103.12080",
+      "bibcode": "2021A&A...647A.137J",
+      "openalex_id": "W3131141353",
+      "abstract": "The tidal tails of stellar clusters provide an important tool for studying the birth conditions of the clusters and their evolution, coupling, and interaction with the Galactic potential. We present the N-body evolution of a Hyades-like stellar cluster with backward-integrated initial conditions on a realistic 3D orbit in the Milky Way computed within the AMUSE framework. For the first time, we explore the effect of the initial cluster rotation and the presence of lumps in the Galactic potential on the formation and evolution of tidal tails. We show that the tidal tails are not naturally clustered in any coordinate system. Models with initial rotation result in significant differences in the cluster mass loss and follow different angular momentum time evolution. The orientation of the tidal tails relative to the motion vector of the cluster and the current cluster angular momentum constrain the initial rotation of the cluster. We highlight the use of the convergent point (CP) method in searches for co-moving groups and introduce a new compact CP (CCP) method that accounts for internal kinematics based on an assumed model. Using the CCP method, we are able to recover candidate members of the Hyades tidal tails in the Gaia DR2 and eDR3 reaching a total extent of almost 1kpc. We confirm the previously noted asymmetry in the detected tidal tails. In the eDR3 data we recovered spatial overdensities in the leading and trailing tails that are kinematically consistent with being epicyclic overdensities and thus present candidates for the first such detection in an open star cluster. We show that the epicyclic overdensities are able to provide constraints not only on the cluster properties, but also on the Galactic potential. Finally, based on N-body simulations, a close encounter with a massive Galactic lump can explain the observed asymmetry in the tidal tails of the Hyades.(abriged)",
+      "cite_key": "2021A&A...647A.137J",
+      "referenced_works": [
+        "W2900237302",
+        "W2901641795"
+      ],
+      "doc_ids": [
+        "arxiv-2103.12080"
+      ],
+      "read": false,
+      "star": false,
+      "origin": "ingested",
+      "added_at": "2026-10-21T00:00:00.000Z",
+      "journal": "A&A",
+      "volume": "647",
+      "pages": "A137"
+    },
+    {
+      "id": "doi:10.1051/0004-6361/202244243",
+      "title": "Degree of stochastic asymmetry in the tidal tails of star clusters",
+      "authors": [
+        "Pflamm-Altenburg",
+        "Kroupa",
+        "Thies",
+        "Jerabkova",
+        "Beccari",
+        "Prusti",
+        "Boffin"
+      ],
+      "year": 2023,
+      "venue": "Astronomy and Astrophysics",
+      "type": "article",
+      "doi": "10.1051/0004-6361/202244243",
+      "arxiv_id": "2301.02251",
+      "bibcode": "2023A&A...671A..88P",
+      "openalex_id": "W4319303506",
+      "abstract": "Context: Tidal tails of star clusters are commonly understood to be populated symmetrically. Recently, the analysis of Gaia data revealed large asymmetries between the leading and trailing tidal tail arms of the four open star clusters Hyades, Praesepe, Coma Berenices and NGC 752. Aims: As the evaporation of stars from star clusters into the tidal tails is a stochastic process, the degree of stochastic asymmetry is quantified in this work. Methods: For each star cluster 1000 configurations of test particles are integrated in the combined potential of a Plummer sphere and the Galactic tidal field over the life time of the particular star cluster. For each of the four star clusters the distribution function of the stochastic asymmetry is determined and compared with the observed asymmetry. Results: The probabilities for a stochastic origin of the observed asymmetry of the four star clusters are: Praesepe ~1.7 sigma, Coma Berenices ~2.4 sigma, Hyades ~6.7 sigma, NGC 752 ~1.6 sigma. Conclusions: In the case of Praesepe, Coma Berenices and NGC 752 the observed asymmetry can be interpreted as a stochastic evaporation event. However, for the formation of the asymmetric tidal tails of the Hyades additional dynamical processes beyond a pure statistical evaporation effect are required.",
+      "cite_key": "2023A&A...671A..88P",
+      "referenced_works": [
+        "W3131141353",
+        "W4307291121"
+      ],
+      "read": false,
+      "star": false,
+      "origin": "manual",
+      "added_at": "2026-10-21T00:00:00.000Z",
+      "journal": "A&A",
+      "volume": "671",
+      "pages": "A88"
+    },
+    {
+      "id": "doi:10.1093/mnras/stac2563",
+      "title": "Asymmetrical tidal tails of open star clusters: stars crossing their cluster's práh challenge Newtonian gravitation",
+      "authors": [
+        "Kroupa",
+        "Jerabkova",
+        "Thies",
+        "Pflamm-Altenburg",
+        "Famaey",
+        "Boffin",
+        "Dabringhausen",
+        "Beccari",
+        "Prusti",
+        "Boily",
+        "Haghi",
+        "Wu",
+        "Haas",
+        "Hasani Zonoozi",
+        "Thomas",
+        "Šubr",
+        "Aarseth"
+      ],
+      "year": 2022,
+      "venue": "Monthly Notices of the Royal Astronomical Society",
+      "type": "article",
+      "doi": "10.1093/mnras/stac2563",
+      "arxiv_id": "2210.13472",
+      "bibcode": "2022MNRAS.517.3613K",
+      "openalex_id": "W4307291121",
+      "abstract": "After their birth a significant fraction of all stars pass through the tidal threshold (prah) of their cluster of origin into the classical tidal tails. The asymmetry between the number of stars in the leading and trailing tails tests gravitational theory. All five open clusters with tail data (Hyades, Praesepe, Coma Berenices, COIN-Gaia 13, NGC 752) have visibly more stars within dcl = 50 pc of their centre in their leading than their trailing tail. Using the Jerabkova-compact-convergent-point (CCP) method, the extended tails have been mapped out for four nearby 600-2000 Myr old open clusters to dcl>50 pc. These are on near-circular Galactocentric orbits, a formula for estimating the orbital eccentricity of an open cluster being derived. Applying the Phantom of Ramses code to this problem, in Newtonian gravitation the tails are near-symmetrical. In Milgromian dynamics (MOND) the asymmetry reaches the observed values for 50 < dcl/pc < 200, being maximal near peri-galacticon, and can slightly invert near apo-galacticon, and the Küpper epicyclic overdensities are asymmetrically spaced. Clusters on circular orbits develop orbital eccentricity due to the asymmetrical spill-out, therewith spinning up opposite to their orbital angular momentum. This positive dynamical feedback suggests Milgromian open clusters to demise rapidly as their orbital eccentricity keeps increasing. Future work is necessary to better delineate the tidal tails around open clusters of different ages and to develop a Milgromian direct n-body code.",
+      "cite_key": "2022MNRAS.517.3613K",
+      "referenced_works": [
+        "W2900237302",
+        "W2901641795",
+        "W3131141353"
+      ],
+      "read": false,
+      "star": false,
+      "origin": "manual",
+      "added_at": "2026-10-21T00:00:00.000Z",
+      "journal": "MNRAS",
+      "volume": "517",
+      "number": "3",
+      "pages": "3613-3639"
+    }
+  ]
+}
