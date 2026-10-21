@@ -20,7 +20,7 @@ function setup() {
 describe("the catalog", () => {
   test("names the server's events and the shell's, the shell's with the fields of the host's table", () => {
     const names = Object.keys(SERVER_LOG_EVENTS);
-    expect(names).toHaveLength(58);
+    expect(names).toHaveLength(60);
     const shell = names.filter((name) => name.startsWith("shell."));
     expect(shell.sort()).toEqual(Object.keys(SHELL_EVENTS).sort());
     const writers = { id: f.id, num: f.num, ms: f.ms } as const;

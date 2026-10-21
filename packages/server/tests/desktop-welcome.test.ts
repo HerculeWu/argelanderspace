@@ -101,7 +101,9 @@ interface Running {
   log(): Array<Record<string, unknown>>;
 }
 
-async function startHost(opts: { fromRecent?: boolean } = { fromRecent: true }): Promise<Running> {
+async function startHost(
+  opts: { fromRecent?: boolean; tutorialSampleDir?: string } = { fromRecent: true }
+): Promise<Running> {
   const input = new PassThrough();
   const output = new PassThrough();
   const lines: HostOutLine[] = [];
@@ -136,6 +138,7 @@ async function startHost(opts: { fromRecent?: boolean } = { fromRecent: true }):
     keychainProbe: KEYCHAIN,
     webDist: web,
     ...(opts.fromRecent ? { fromRecent: true } : {}),
+    ...(opts.tutorialSampleDir === undefined ? {} : { tutorialSampleDir: opts.tutorialSampleDir }),
   });
   closers.push(() => host.stop());
   const ready = await next("ready");
@@ -285,6 +288,17 @@ describe("which project the host enters", () => {
 });
 
 describe("with no project open", () => {
+  test("the tutorial progress answers (in-app-tutorial ticket 18), with the sample the host was given", async () => {
+    const sample = folder("sample");
+    writeFileSync(join(sample, "argelanderspace-tutorial.json"), '{"version":1,"sample":5}');
+    const h = await startHost({ fromRecent: true, tutorialSampleDir: sample });
+    expect(h.host.project).toBe("none");
+    expect(await h.get("/api/tutorial")).toEqual({
+      status: 200,
+      body: { progress: null, project: null, sample: { bundled: 5, project: null } },
+    });
+  });
+
   test("business endpoints answer 409 no_project; the page, the host and the settings interfaces answer", async () => {
     const h = await startHost();
     for (const path of BUSINESS) {

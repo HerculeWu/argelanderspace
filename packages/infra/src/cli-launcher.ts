@@ -57,6 +57,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, posix, resolve, win32 } from "node:path";
+import { TUTORIAL_MARKER_FILE } from "./tutorial-progress.js";
 
 /** The npm package's command (`packages/app/package.json` `bin`), and the launcher's file name. */
 export const CLI_COMMAND = "argelanderspace";
@@ -557,13 +558,10 @@ export function bundledSkillsDir(cliEntry: string): string | null {
   return folderWith(join(layout.root, "skills"), "README.md");
 }
 
-/** The marker file at the root of the tutorial sample (and of a tutorial project copied from it). */
-const TUTORIAL_SAMPLE_MARKER = "argelanderspace-tutorial.json";
-
 /**
  * The tutorial sample that ships with the app (in-app-tutorial ticket 15), found from the CLI entry: `<resources>/tutorial`
  * in the desktop package, and `dist/tutorial` beside the CLI in an npm install or the development form
- * (`packages/{app,cli}/dist/tutorial`). Only a folder holding the marker file {@link TUTORIAL_SAMPLE_MARKER} counts;
+ * (`packages/{app,cli}/dist/tutorial`). Only a folder holding the marker file {@link TUTORIAL_MARKER_FILE} counts;
  * null otherwise (an installation without the sample).
  */
 export function bundledTutorialDir(cliEntry: string): string | null {
@@ -572,5 +570,5 @@ export function bundledTutorialDir(cliEntry: string): string | null {
     layout.form === "packaged"
       ? join(layout.root, "tutorial")
       : resolve(dirname(cliEntry), "tutorial");
-  return folderWith(dir, TUTORIAL_SAMPLE_MARKER);
+  return folderWith(dir, TUTORIAL_MARKER_FILE);
 }

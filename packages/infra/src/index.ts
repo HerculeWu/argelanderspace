@@ -76,3 +76,4 @@ export * from "./tex/sandbox.js";
 export * from "./tex/sandbox-view.js";
 export * from "./tex/toolchain.js";
 export * from "./tex/workspace.js";
+export * from "./tutorial-progress.js";

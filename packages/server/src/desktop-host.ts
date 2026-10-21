@@ -265,6 +265,11 @@ export interface DesktopHostOptions {
    */
   skillsDir?: string;
   /**
+   * The tutorial sample that ships with the app (in-app-tutorial ticket 18; the CLI entry finds it next to its own
+   * bundle, infra `bundledTutorialDir`): whose marker `GET /api/tutorial` reads. Absent: the installation has none.
+   */
+  tutorialSampleDir?: string;
+  /**
    * The app's own Node and CLI entry, which the command-line tool's launcher runs (desktop-app ticket 24; the CLI entry
    * gives its `process.execPath` and its bundle). Absent: the host interface answers that the tool is unavailable.
    */
@@ -759,6 +764,9 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
       ...(options.version === undefined ? {} : { version: options.version }),
       ...(options.keychainProbe ? { keychainProbe: options.keychainProbe } : {}),
       ...(options.skillsDir === undefined ? {} : { skillsDir: options.skillsDir }),
+      ...(options.tutorialSampleDir === undefined
+        ? {}
+        : { tutorialSampleDir: options.tutorialSampleDir }),
       desktop: {
         host: bridge,
         listenPort,

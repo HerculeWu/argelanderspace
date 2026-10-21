@@ -61,8 +61,9 @@
  * no host: its answer is `mode: "browser"` with no requests, and the page hides the desktop-only controls.
  *
  * With no project open (the desktop host's welcome state, `project: "none"`) the server answers only the page, the
- * host interface, the settings interface and the page's own error reports (`POST /api/page-errors`, written to the
- * user log only); every other endpoint answers 409 {@link NO_PROJECT_CODE}.
+ * host interface, the settings interface, the tutorial progress (`/api/tutorial`, `tutorial.ts`) and the page's own
+ * error reports (`POST /api/page-errors`, written to the user log only); every other endpoint answers 409
+ * {@link NO_PROJECT_CODE}.
  */
 
 import { z } from "zod";
