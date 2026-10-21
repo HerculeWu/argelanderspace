@@ -21,6 +21,8 @@ function WithCode({ text }: { text: string }) {
 export interface FinishCardProps {
   /** The desktop app (its folder picker), or the browser form (the command to run). */
   desktop: boolean;
+  /** A product modal is open: the card steps below its overlay and takes no input, as a step card and the rail do. */
+  yielded?: boolean;
   /** Open the chapter rail, so any chapter can be picked again. */
   onReview: () => void;
   /** Close the tutorial: the card goes, the capsule stays, the project stays open. */
@@ -34,7 +36,7 @@ export interface FinishCardProps {
  * folder…"; in the browser form, the command to run), review any chapter, close — and two notes on where settings and
  * diagnostics are. Nothing here switches the project by itself.
  */
-export function FinishCard({ desktop, onReview, onClose, onLeave }: FinishCardProps) {
+export function FinishCard({ desktop, yielded = false, onReview, onClose, onLeave }: FinishCardProps) {
   const { t } = useTranslation();
   const pickFolder = useHostRequest("pick_folder");
   const [asking, setAsking] = useState(false);
@@ -57,13 +59,14 @@ export function FinishCard({ desktop, onReview, onClose, onLeave }: FinishCardPr
   const titleId = "tut-title-finish";
   return (
     <div
-      className="tut-card docked tut-finish"
+      className={"tut-card docked tut-finish" + (yielded ? " yielded" : "")}
       role="dialog"
       aria-modal="false"
       aria-labelledby={titleId}
       data-ui="tutorial-step-card"
       data-ui-key={FINISH_STEP_ID}
-      data-state="none"
+      data-state={yielded ? "modal" : "none"}
+      {...(yielded ? { inert: "" } : {})}
     >
       <div className="tut-card-head">
         <div className="tut-crumb">
@@ -84,6 +87,7 @@ export function FinishCard({ desktop, onReview, onClose, onLeave }: FinishCardPr
       </div>
       <div className="tut-card-body" data-ui="tutorial-finish">
         <h2 className="tut-title" id={titleId}>{tk(t, `${KEY}.title`)}</h2>
+        {yielded && <p className="tut-text" data-ui="tutorial-modal-yield">{t("tutorial.ui.modalYield")}</p>}
         <p className="tut-text">{tk(t, `${KEY}.body`)}</p>
         <div className="tut-finish-ways">
           {desktop && pickFolder ? (

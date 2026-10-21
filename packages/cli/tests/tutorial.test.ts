@@ -13,7 +13,9 @@
  */
 
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
+  chmodSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -41,6 +43,8 @@ const BUNDLED_SAMPLE = (
 let installs: string;
 let BIN: string;
 let BIN_WITHOUT_SAMPLE: string;
+/** An install whose sample cannot be copied (a file in it cannot be read). */
+let BIN_UNCOPYABLE_SAMPLE: string;
 const roots: string[] = [];
 
 /** A copy of the built package at `<dir>/dist`, resolving its dependencies through the package's node_modules. */
@@ -56,6 +60,10 @@ beforeAll(() => {
   installs = mkdtempSync(join(tmpdir(), "aspace-cli-tutorial-install-"));
   BIN = install(join(installs, "with-sample"), true);
   BIN_WITHOUT_SAMPLE = install(join(installs, "without-sample"), false);
+  BIN_UNCOPYABLE_SAMPLE = install(join(installs, "uncopyable-sample"), true);
+  const unreadable = join(installs, "uncopyable-sample", "dist", "tutorial", "unreadable.txt");
+  writeFileSync(unreadable, "cannot be copied");
+  chmodSync(unreadable, 0o000);
 }, 120_000);
 
 afterAll(() => {
@@ -192,7 +200,7 @@ async function getJson(port: number, path: string): Promise<unknown> {
 
 interface TutorialAnswer {
   progress: { project: { path: string } | null; position: string | null; steps: object } | null;
-  project: { path: string; state: string } | null;
+  project: { path: string; display: string; state: string } | null;
   sample: { bundled: number | null; project: number | null };
 }
 
@@ -207,6 +215,28 @@ function snapshot(dir: string): string[] {
         walk(join(d, e.name), r);
       } else {
         out.push(`${r} ${statSync(join(d, e.name)).size}`);
+      }
+    }
+  };
+  walk(dir, "");
+  return out.sort();
+}
+
+/** Every file below `dir` with a hash of its bytes, and every directory (to prove not a byte changed). */
+function bytesSnapshot(dir: string): string[] {
+  const out: string[] = [];
+  const walk = (d: string, rel: string) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const r = rel === "" ? e.name : `${rel}/${e.name}`;
+      if (e.isDirectory()) {
+        out.push(`${r}/`);
+        walk(join(d, e.name), r);
+      } else {
+        out.push(
+          `${r} ${createHash("sha256")
+            .update(readFileSync(join(d, e.name)))
+            .digest("hex")}`
+        );
       }
     }
   };
@@ -256,7 +286,11 @@ describe("where the tutorial folder is", () => {
       );
       expect(srv.stderr()).toBe("");
       const tutorial = (await getJson(srv.port, "/api/tutorial")) as TutorialAnswer;
-      expect(tutorial.project).toEqual({ path: w.defaultDir, state: "ready" });
+      expect(tutorial.project).toEqual({
+        path: w.defaultDir,
+        display: "~/ArgelanderSpace-Tutorial",
+        state: "ready",
+      });
       expect(tutorial.progress?.project).toEqual({ path: w.defaultDir });
       expect(tutorial.progress?.position).toBeNull();
       expect(tutorial.progress?.steps).toEqual({});
@@ -288,7 +322,7 @@ describe("where the tutorial folder is", () => {
         )
       );
       const tutorial = (await getJson(srv.port, "/api/tutorial")) as TutorialAnswer;
-      expect(tutorial.project).toEqual({ path: bound, state: "ready" });
+      expect(tutorial.project).toEqual({ path: bound, display: bound, state: "ready" });
     } finally {
       expect(await srv.stop()).toBe(0);
     }
@@ -317,7 +351,11 @@ describe("where the tutorial folder is", () => {
           )
         );
         const tutorial = (await getJson(srv.port, "/api/tutorial")) as TutorialAnswer;
-        expect(tutorial.project).toEqual({ path: w.defaultDir, state: "ready" });
+        expect(tutorial.project).toEqual({
+          path: w.defaultDir,
+          display: "~/ArgelanderSpace-Tutorial",
+          state: "ready",
+        });
         expect(tutorial.progress?.position).toBeNull();
         expect(tutorial.progress?.steps).toEqual({});
       } finally {
@@ -341,7 +379,7 @@ describe("--dir", () => {
         )
       );
       const tutorial = (await getJson(srv.port, "/api/tutorial")) as TutorialAnswer;
-      expect(tutorial.project).toEqual({ path: dir, state: "ready" });
+      expect(tutorial.project).toEqual({ path: dir, display: dir, state: "ready" });
       expect(tutorial.progress?.steps).toEqual({});
     } finally {
       expect(await srv.stop()).toBe(0);
@@ -398,7 +436,7 @@ describe("--dir", () => {
         new RegExp(`^${escapeRe(`tutorial folder: ${dir} (resuming)\n`)}`)
       );
       const tutorial = (await getJson(srv.port, "/api/tutorial")) as TutorialAnswer;
-      expect(tutorial.project).toEqual({ path: dir, state: "ready" });
+      expect(tutorial.project).toEqual({ path: dir, display: dir, state: "ready" });
       expect(tutorial.progress?.steps).toEqual({});
     } finally {
       expect(await srv.stop()).toBe(0);
@@ -465,9 +503,9 @@ describe("an older sample", () => {
 });
 
 /** `tutorial` under a pseudo-terminal (util-linux `script`); the terminal's output, with "\r\n" made "\n". */
-function onTerminal(w: World, args: string[]) {
+function onTerminal(w: World, args: string[], bin = BIN) {
   // exec: the shell `script` starts is replaced by the CLI, so the terminal's Ctrl-C reaches the CLI alone.
-  const command = `exec ${[process.execPath, BIN, "tutorial", ...args].map(shellQuote).join(" ")}`;
+  const command = `exec ${[process.execPath, bin, "tutorial", ...args].map(shellQuote).join(" ")}`;
   const child = spawn("script", ["-qefc", command, "/dev/null"], {
     env: w.env,
     cwd: join(w.root, "cwd"),
@@ -534,7 +572,7 @@ describe("--reset", () => {
           )
         );
         const tutorial = (await getJson(port, "/api/tutorial")) as TutorialAnswer;
-        expect(tutorial.project).toEqual({ path: dir, state: "ready" });
+        expect(tutorial.project).toEqual({ path: dir, display: dir, state: "ready" });
         expect(tutorial.sample).toEqual({ bundled: BUNDLED_SAMPLE, project: BUNDLED_SAMPLE });
         expect(tutorial.progress?.position).toBeNull();
         expect(tutorial.progress?.steps).toEqual({});
@@ -563,6 +601,26 @@ describe("--reset", () => {
         expect(term.output()).toBe(`${question(dir)}${answer}cancelled; nothing was changed\n`);
         expect(snapshot(w.root)).toEqual(before);
       }
+    },
+    120_000
+  );
+
+  test.skipIf(!haveScript || process.getuid?.() === 0)(
+    "on a terminal, y with a sample that cannot be copied: an error, and the folder, its parent and the progress are byte for byte as before",
+    async () => {
+      const w = world();
+      const dir = tutorialFolder(join(w.root, "mine"));
+      writeFileSync(join(dir, "written-in-the-tutorial.txt"), "stays");
+      writeProgress(w, progressBoundTo(dir));
+      const before = bytesSnapshot(w.root);
+      const term = onTerminal(w, ["--dir", dir, "--port", "0", "--reset"], BIN_UNCOPYABLE_SAMPLE);
+      await term.waitFor("[y/N] ");
+      term.type("y\n");
+      expect(await term.exited).toBe(1);
+      expect(term.output()).toMatch(new RegExp(`^${escapeRe(`${question(dir)}y\nerror: `)}`));
+      expect(term.output()).not.toContain("tutorial folder:");
+      // No staged copy left beside the folder, nothing of the folder emptied, the progress not rewritten.
+      expect(bytesSnapshot(w.root)).toEqual(before);
     },
     120_000
   );

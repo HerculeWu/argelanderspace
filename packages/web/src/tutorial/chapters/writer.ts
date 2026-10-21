@@ -46,8 +46,10 @@ const MANUSCRIPT_PAPER = { ui: "manuscript-paper" } as const;
 const ADD_AFTER_LAST = { ui: "add-cell-after", within: { ui: "manuscript-cell", key: SAMPLE_LAST_CELL_ID } } as const;
 const ADD_CELL_MENU = { ui: "add-cell-menu" } as const;
 const ADD_LATEX = { ui: "add-cell-type", key: "latex" } as const;
-/** The editing form's text field and its Render button: only the cell being edited has them. */
-const CELL_SOURCE = { ui: "cell-field", key: "source" } as const;
+/**
+ * The editing form's Render button: only the cell being edited has it. (A LaTeX cell is edited in a code editor, not
+ * a `cell-field` text field, so the ladder has no rung for the field.)
+ */
 const COMMIT_CELL = { ui: "commit-cell" } as const;
 const TOGGLE_REFERENCES = { ui: "toggle-writer-reference-panel" } as const;
 const WRITER_REFERENCES = { ui: "writer-references" } as const;
@@ -92,7 +94,7 @@ export const WRITER: ChapterDefinition = {
     {
       id: "writer.add-cell",
       kind: "do",
-      anchors: [ADD_AFTER_LAST, ADD_CELL_MENU, ADD_LATEX, CELL_SOURCE, COMMIT_CELL],
+      anchors: [ADD_AFTER_LAST, ADD_CELL_MENU, ADD_LATEX, COMMIT_CELL],
       // L1, a "+1" gate: one saved cell more than at the start, a new one with text that is no longer being edited
       // (choosing LaTeX in the menu saves an empty cell at once; Shift+Enter closes the form).
       gate: (s, run) => {

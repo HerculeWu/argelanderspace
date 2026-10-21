@@ -23,7 +23,7 @@ function mount(projectRoot: string | null) {
 }
 const stateFor = (path: string | null): TutorialState => ({
   progress: fakeProgress({ project: path ? { path } : null, position: "tour.split" }),
-  project: path ? { path, state: "ready" } : null,
+  project: path ? { path, display: path, state: "ready" } : null,
   sample: { bundled: 1, project: 1 },
 });
 
@@ -64,4 +64,14 @@ describe("the tutorial layer's mount condition", () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(document.querySelector('[data-ui="tutorial-layer"]')).toBeNull();
   });
+  it.each(["unmarked", "missing"] as const)(
+    "the open project is the bound path but its folder is %s now (no tutorial marker): no layer, whatever the mark says",
+    async (folder) => {
+      h.state = { ...stateFor(BOUND), project: { path: BOUND, display: BOUND, state: folder } };
+      markTutorialEntry();
+      mount(BOUND);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(document.querySelector('[data-ui="tutorial-layer"]')).toBeNull();
+    },
+  );
 });

@@ -7,8 +7,9 @@
  *   `~/ArgelanderSpace-Tutorial`. Missing or empty → the bundled sample is copied in; with the marker → resumed (a
  *   note when its sample is older than the bundled one, then the start as usual); anything else → refused, nothing
  *   written.
- * - `--reset` empties only a folder with the marker, after one `y/N` on a terminal; without a terminal it is refused.
- *   There is no `--yes`.
+ * - `--reset` replaces only a folder with the marker by a fresh copy, after one `y/N` on a terminal (copied beside it
+ *   first, then renamed into its place, as the desktop app's restart: a failure leaves the folder as it was); without
+ *   a terminal it is refused. There is no `--yes`.
  * - The server is `serve`'s: the process changes into the folder and passes `--data-dir <dir>/literatures`, so the
  *   lenient reading, the log, the start record and the port chain (`--port` > config.toml > 1859, no fallback) are
  *   the same. `--data-dir` is not taken.
@@ -28,9 +29,10 @@ import {
   bundledTutorialDir,
   configFilePath,
   copyTutorialSample,
-  emptyTutorialFolder,
+  newTutorialProgress,
   readTutorialMarker,
   readTutorialProgress,
+  replaceTutorialFolder,
   TUTORIAL_FOLDER_NAME,
   TUTORIAL_PROGRESS_FILE,
   tutorialFolderState,
@@ -38,7 +40,7 @@ import {
 } from "@argelanderspace/infra";
 import { serveStart, startServer } from "@argelanderspace/server";
 import type { Command } from "commander";
-import { fail } from "./common.js";
+import { fail, realpathOr } from "./common.js";
 import { APP_VERSION } from "./generated/app-version.js";
 
 /** The folder used when nothing else names one: in the home directory, so every working directory finds it. */
@@ -121,8 +123,9 @@ async function runTutorial(opts: TutorialOpts): Promise<void> {
       console.log(TUTORIAL_MESSAGES.resetCancelled);
       return;
     }
-    emptyTutorialFolder(dir);
-    copyTutorialSample(sampleDir, dir);
+    // Staged beside the folder and renamed into its place, as the desktop app's restart: a failure at any step leaves
+    // the folder as it was. An old folder that could not be removed at the end stays as a hidden leftover beside it.
+    replaceTutorialFolder(sampleDir, dir);
     lines = [TUTORIAL_MESSAGES.created(dir)];
     fresh = true;
   } else if (state.kind === "marked") {
@@ -141,7 +144,7 @@ async function runTutorial(opts: TutorialOpts): Promise<void> {
   // page compares it with.
   const bound = realpathSync(dir);
   if (fresh || !sameFolder(progress?.project?.path, bound)) {
-    writeTutorialProgress(progressFile, newProgress(bound));
+    writeTutorialProgress(progressFile, newTutorialProgress(bound, APP_VERSION));
   }
   for (const line of lines) console.log(line);
 
@@ -173,19 +176,6 @@ function targetFolder(dirFlag: string | undefined, progress: TutorialProgress | 
   return join(homedir(), DEFAULT_TUTORIAL_FOLDER);
 }
 
-function newProgress(path: string): TutorialProgress {
-  const now = new Date().toISOString();
-  return {
-    version: 1,
-    project: { path },
-    startedAt: now,
-    updatedAt: now,
-    position: null,
-    steps: {},
-    appVersion: APP_VERSION,
-  };
-}
-
 function sameFolder(a: string | undefined, b: string): boolean {
   return a !== undefined && realpathOr(a) === b;
 }
@@ -212,13 +202,4 @@ function webDistFrom(cwd: string): string | null {
     join(cwd, "packages", "web", "dist"),
   ];
   return candidates.find((p) => existsSync(p)) ?? null;
-}
-
-/** The path with its symbolic links resolved; the path itself when that fails. */
-function realpathOr(path: string): string {
-  try {
-    return realpathSync(path);
-  } catch {
-    return path;
-  }
 }

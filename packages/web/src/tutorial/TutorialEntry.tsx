@@ -230,7 +230,7 @@ export function TutorialCommand({ command, ui }: { command: string; ui: string }
  * the focus; while the host takes the request nothing closes it; a failure stays in it to retry or cancel); in the
  * browser the command to run in a terminal.
  */
-export function TutorialRestartDialog({ entry, path, desktop, onClose }: { entry: TutorialEntryState; path: string; desktop: boolean; onClose: () => void }) {
+export function TutorialRestartDialog({ entry, path, display, desktop, onClose }: { entry: TutorialEntryState; path: string; display?: string; desktop: boolean; onClose: () => void }) {
   const { t } = useTranslation();
   const safe = useRef<HTMLButtonElement>(null);
   const [busy, setBusy] = useState(false);
@@ -239,6 +239,10 @@ export function TutorialRestartDialog({ entry, path, desktop, onClose }: { entry
   /** The request itself got no answer. */
   const [unanswered, setUnanswered] = useState(false);
   const announced = asked ? entry.failure : null;
+  // The folder as the page shows paths everywhere (the server's `display`, its home directory as `~`): the entry's
+  // state, else the one the caller already has; the raw path only when neither has answered.
+  const bound = entry.state?.project;
+  const shown = bound && samePath(bound.path, path) ? bound.display : (display ?? path);
   useEffect(() => {
     if (announced !== null) setBusy(false);
   }, [announced]);
@@ -274,7 +278,7 @@ export function TutorialRestartDialog({ entry, path, desktop, onClose }: { entry
         <Button ref={safe} data-ui="restart-tutorial-cancel" disabled={busy} onClick={onClose}>{t("common.cancel")}</Button>
         <Button appearance="primary" tone="danger" data-ui="restart-tutorial-confirm" busy={busy} disabled={busy} onClick={() => void confirm()}>{t("tutorial.ui.restartDialog.confirm")}</Button>
       </>}>
-      <p>{t("tutorial.ui.restartDialog.body", { path })}</p>
+      <p>{t("tutorial.ui.restartDialog.body", { path: shown })}</p>
       {announced && <TutorialFailure failure={announced} />}
       {unanswered && <InlineMessage tone="danger" uiId="restart-tutorial-failed">{t("settings.host.requestFailed")}</InlineMessage>}
     </Dialog>

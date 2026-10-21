@@ -3,13 +3,16 @@
 // assembly (desktop-sidecar.mjs) and the smoke (smoke-desktop-package.mjs) are run by hand; see their headers.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import {
   PROD_LICENSE_ALLOWED,
   SHELL_CRATE_LICENSE_ALLOWED,
   WITH_LICENSE_ALLOWED,
 } from "../../../scripts/license-allowlist.mjs";
+import { bundledTutorialDir, TUTORIAL_MARKER_FILE } from "../../infra/dist/index.js";
 import {
   cargoLicenseExpression,
   crateLicenseFiles,
@@ -111,6 +114,22 @@ test("the tutorial sample is a required resource: its marker and its notice (in-
     const files = sidecarRequiredFiles(target);
     assert.ok(files.includes("tutorial/argelanderspace-tutorial.json"), target);
     assert.ok(files.includes("tutorial/NOTICE.md"), target);
+  }
+});
+
+test("infra's bundledTutorialDir finds the packaged sample at TUTORIAL_RESOURCE_DIR, by infra's marker name", () => {
+  const res = mkdtempSync(join(tmpdir(), "aspace-desktop-tutorial-res-"));
+  try {
+    const entry = join(res, "sidecar", "app", "dist", "bin.js");
+    const sample = join(res, TUTORIAL_RESOURCE_DIR);
+    mkdirSync(sample, { recursive: true });
+    writeFileSync(join(sample, TUTORIAL_MARKER_FILE), '{"version":1,"sample":1}');
+    assert.equal(bundledTutorialDir(entry), sample);
+    assert.ok(
+      sidecarRequiredFiles("linux-x64").includes(`${TUTORIAL_RESOURCE_DIR}/${TUTORIAL_MARKER_FILE}`)
+    );
+  } finally {
+    rmSync(res, { recursive: true, force: true });
   }
 });
 

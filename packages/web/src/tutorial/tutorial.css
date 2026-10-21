@@ -9,7 +9,11 @@
 @keyframes tutPulse { 0%, 100% { box-shadow: 0 0 0 2px var(--accent), 0 0 0 6px color-mix(in oklch, var(--accent) 35%, transparent); } 50% { box-shadow: 0 0 0 2px var(--accent), 0 0 0 10px color-mix(in oklch, var(--accent) 18%, transparent); } }
 
 /* step card */
-.tut-card { position: fixed; z-index: 320; top: 0; left: 0; width: 340px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); display: flex; flex-direction: column; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-pop); animation: popIn .14s ease; }
+.tut-card { position: fixed; z-index: 320; top: 0; left: 0; width: 340px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); display: flex; flex-direction: column; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-pop); animation: tutCardIn .14s ease; }
+/* the product's popIn on the individual scale / translate properties: they compose with the inline transform that places
+   the card instead of overriding it (popIn animates transform, which left the card at the top left, over the chapter
+   rail, while it played; ticket 28 cleanup) */
+@keyframes tutCardIn { from { opacity: 0; scale: .97; translate: 0 6px; } to { opacity: 1; scale: 1; translate: 0 0; } }
 [data-density="compact"] .tut-card { width: 320px; }
 [data-density="comfy"] .tut-card { width: 360px; }
 .tut-card.docked { top: auto; left: auto; right: 16px; bottom: 16px; transform: none !important; }

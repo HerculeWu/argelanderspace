@@ -43,8 +43,8 @@ export interface TutorialLayerProps {
 
 /**
  * The tutorial layer (spec sections 3, 5, 6). Mounted by the Shell on every page; renders only when the open project is
- * the one `tutorial.json` is bound to. Entered through the tutorial's entry it shows the card of the step it was at;
- * entered any other way, only the capsule.
+ * the one `tutorial.json` is bound to and that folder still carries the tutorial marker. Entered through the
+ * tutorial's entry it shows the card of the step it was at; entered any other way, only the capsule.
  */
 export function TutorialLayer({ context, onViewAction }: TutorialLayerProps) {
   const { settings } = usePreferences();
@@ -57,14 +57,24 @@ export function TutorialLayer({ context, onViewAction }: TutorialLayerProps) {
   }, []);
   const root = settings?.running.project_root?.path ?? null;
   const progress = state?.progress ?? null;
-  if (host === undefined || !progress || !samePath(progress.project?.path, root)) return null;
-  return <TutorialRunner initial={progress} context={context} onViewAction={onViewAction} desktop={host?.mode === "desktop"} entered={takeTutorialEntryOnce()} />;
+  // The bound folder must still carry the tutorial marker (`ready`): a folder that lost it, or is gone, has no layer.
+  if (host === undefined || !progress || state?.project?.state !== "ready" || !samePath(progress.project?.path, root)) return null;
+  return (
+    <TutorialRunner
+      initial={progress}
+      projectDisplay={state?.project?.display}
+      context={context}
+      onViewAction={onViewAction}
+      desktop={host?.mode === "desktop"}
+      entered={takeTutorialEntryOnce()}
+    />
+  );
 }
 
 /** The restart dialog the chapter rail opens: the entry's own, on the open tutorial project. */
-function RailRestart({ path, desktop, onClose }: { path: string; desktop: boolean; onClose: () => void }) {
+function RailRestart({ path, display, desktop, onClose }: { path: string; display?: string; desktop: boolean; onClose: () => void }) {
   const entry = useTutorialEntry(path);
-  return <TutorialRestartDialog entry={entry} path={path} desktop={desktop} onClose={onClose} />;
+  return <TutorialRestartDialog entry={entry} path={path} display={display} desktop={desktop} onClose={onClose} />;
 }
 
 export interface RunnerDeps {
@@ -94,6 +104,8 @@ const DEFAULT_DEPS: RunnerDeps = {
 
 export interface TutorialRunnerProps extends TutorialLayerProps {
   initial: TutorialProgress;
+  /** The bound folder as the page shows it (`GET /api/tutorial`'s `project.display`), for the rail's restart dialog. */
+  projectDisplay?: string;
   desktop: boolean;
   entered: boolean;
   chapters?: readonly ChapterDefinition[];
@@ -117,6 +129,11 @@ const sameBox = (a: DOMRect | null, b: DOMRect | null) => a === b || (!!a && !!b
 /** Two boxes share some area. */
 const overlaps = (a: DOMRect, b: DOMRect) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 const NO_ANCHORS: AnchorLadder = [];
+/**
+ * The overlays of the product's modal dialogs: the shared `ui/Dialog` (and ImportDialog's own) and the Writer's own
+ * modal. Any of them present is the snapshot's `modalOpen`: the card and the rail step below it.
+ */
+const MODAL_OVERLAYS = ["dialog-overlay", "writer-dialog-overlay"] as const;
 const NO_DATA: Readonly<Record<string, unknown>> = Object.freeze({});
 
 /**
@@ -167,7 +184,7 @@ const samePlacement = (a: Placement, b: Placement) =>
   a.step === b.step && a.element === b.element && a.visible === b.visible && a.railRight === b.railRight && sameBox(a.rect, b.rect) && sameBox(a.box, b.box) && sameBox(a.railBox, b.railBox);
 
 /** The tutorial for the bound project: step machine, observation, progress writes and the presentation. */
-export function TutorialRunner({ initial, context, onViewAction, desktop, entered, chapters = CHAPTERS, deps: given }: TutorialRunnerProps) {
+export function TutorialRunner({ initial, projectDisplay, context, onViewAction, desktop, entered, chapters = CHAPTERS, deps: given }: TutorialRunnerProps) {
   const { t } = useTranslation();
   const deps = useMemo(() => ({ ...DEFAULT_DEPS, ...given }), [given]);
   const [open, setOpen] = useState(entered);
@@ -280,7 +297,7 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
     const dom = domQuery(document, activePaneId);
     return {
       page: context,
-      modalOpen: dom.present({ ui: "dialog-overlay" }),
+      modalOpen: MODAL_OVERLAYS.some((ui) => dom.present({ ui })),
       paletteOpen: dom.present({ ui: "command-palette" }),
       dom,
       data,
@@ -511,7 +528,7 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
         hidden={railHidden}
       />
       {onFinishPage ? (
-        <FinishCard desktop={desktop} onReview={review} onClose={closeFinish} onLeave={() => setLeaveAsk(true)} />
+        <FinishCard desktop={desktop} yielded={modalOpen} onReview={review} onClose={closeFinish} onLeave={() => setLeaveAsk(true)} />
       ) : (
       <StepCard
         key={step.id}
@@ -547,7 +564,7 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
       />
       )}
       {restartAsk && initial.project && (
-        <RailRestart path={initial.project.path} desktop={desktop} onClose={() => setRestartAsk(false)} />
+        <RailRestart path={initial.project.path} display={projectDisplay} desktop={desktop} onClose={() => setRestartAsk(false)} />
       )}
       {leaveAsk && (
         <Dialog

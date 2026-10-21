@@ -30,6 +30,7 @@ import type { Context } from "hono";
 import type { ServerLog } from "./log.js";
 import { readLimited } from "./page-errors.js";
 import type { ProtectedRoutes } from "./protected-app.js";
+import { displayPath } from "./settings.js";
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 
@@ -54,12 +55,17 @@ function stateOf(progress: TutorialProgress | null, sampleDir: string | null): T
   const bundled = sampleDir === null ? null : readTutorialMarker(sampleDir);
   const path = progress?.project?.path ?? null;
   if (path === null) return { progress, project: null, sample: { bundled, project: null } };
+  const display = displayPath(path);
   if (!isFolder(path))
-    return { progress, project: { path, state: "missing" }, sample: { bundled, project: null } };
+    return {
+      progress,
+      project: { path, display, state: "missing" },
+      sample: { bundled, project: null },
+    };
   const n = readTutorialMarker(path);
   return {
     progress,
-    project: { path, state: n === null ? "unmarked" : "ready" },
+    project: { path, display, state: n === null ? "unmarked" : "ready" },
     sample: { bundled, project: n },
   };
 }

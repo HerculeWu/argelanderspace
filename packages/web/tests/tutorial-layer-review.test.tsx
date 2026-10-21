@@ -86,6 +86,21 @@ describe("a product modal (review 2)", () => {
     expect(rail().classList.contains("yielded")).toBe(false);
     expect(rail().hasAttribute("inert")).toBe(false);
   });
+  it("a Writer dialog's overlay (writer-dialog-overlay) is a product modal too: the card and the rail yield (review B2)", async () => {
+    document.body.insertAdjacentHTML("beforeend", `<button data-ui="open-tweaks"></button>`);
+    setup({ initial: fakeProgress({ position: "tour.tweaks" }) });
+    await tick(16);
+    const rail = () => ui("tutorial-chapter-rail")!;
+    document.body.insertAdjacentHTML("beforeend", `<div data-ui="writer-dialog-overlay"></div>`);
+    await tick(32);
+    expect(ui("tutorial-step-card")?.getAttribute("data-state")).toBe("modal");
+    expect(rail().hasAttribute("inert")).toBe(true);
+    expect(ui("tutorial-highlight")).toBeNull();
+    ui("writer-dialog-overlay")!.remove();
+    await tick(32);
+    expect(ui("tutorial-step-card")?.getAttribute("data-state")).toBe("anchored");
+    expect(rail().hasAttribute("inert")).toBe(false);
+  });
   it("the stylesheet puts the yielded rail below the overlay (z 250)", () => {
     const css = readFileSync(fileURLToPath(new NodeURL("../src/tutorial/tutorial.css", import.meta.url)), "utf8");
     const rule = /\.tut-rail\.yielded\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
