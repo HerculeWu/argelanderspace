@@ -50,6 +50,7 @@ import { detectSource } from "./detect.js";
 // The app package's version, written into the source at build time (scripts/app-version.mjs; desktop-app ticket 16).
 import { APP_VERSION } from "./generated/app-version.js";
 import { formatPlanRow, formatTexIngestSummary, planSortKey } from "./summary.js";
+import { registerTutorialCommand } from "./tutorial.js";
 
 // re-exported: the resolution chain now lives in ./common.js (shared with the
 // agent subcommands), but the public import path stays stable
@@ -480,6 +481,9 @@ export function buildProgram(): Command {
         fail(e);
       }
     });
+
+  // In-app-tutorial ticket 26: the tutorial for the browser form
+  registerTutorialCommand(program);
 
   program
     .command("desktop-host", { hidden: true })

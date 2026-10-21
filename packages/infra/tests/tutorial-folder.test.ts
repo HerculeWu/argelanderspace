@@ -1,7 +1,7 @@
 /**
- * The tutorial folder on disk (in-app-tutorial ticket 25): where the tutorial goes in a picked folder, the copy of the
- * sample (and what is removed when it fails), and the restart that empties only a marked folder. Only bytes on disk and
- * what the functions return are looked at. Every file is in a temporary directory.
+ * The tutorial folder on disk (in-app-tutorial ticket 26): its state, copying a sample into it, emptying it. Only a
+ * folder with the tutorial marker is ever emptied. Only bytes on disk are looked at; every file is in a temporary
+ * directory, the sample a small synthetic one.
  */
 
 import {
@@ -12,236 +12,121 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
-  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import {
-  fillTutorialFolder,
-  isTutorialFolder,
-  NotATutorialFolder,
-  resetTutorialFolder,
-  stageTutorialSample,
-  swapStagedTutorial,
-  TUTORIAL_FOLDER_NAME,
-  TutorialCopyStopped,
-  tutorialTargetIn,
+  copyTutorialSample,
+  emptyTutorialFolder,
+  tutorialFolderState,
 } from "../src/tutorial-folder.js";
 import { TUTORIAL_MARKER_FILE } from "../src/tutorial-progress.js";
 
 const roots: string[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) {
-    chmodRecursive(root);
+    chmodSync(root, 0o700);
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-function chmodRecursive(dir: string): void {
-  try {
-    chmodSync(dir, 0o755);
-    for (const name of readdirSync(dir, { withFileTypes: true }))
-      if (name.isDirectory()) chmodRecursive(join(dir, name.name));
-  } catch {
-    /* gone */
-  }
-}
-
 function tempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "aspace-tutorial-folder-"));
-  roots.push(dir);
-  return dir;
+  const root = mkdtempSync(join(tmpdir(), "tutorial-folder-"));
+  roots.push(root);
+  return root;
 }
 
-const MARKER = '{"version":1,"sample":3}\n';
-
-/** A small sample: the marker, a notice and a nested file. */
-function sample(): string {
-  const dir = join(tempDir(), "sample");
+function sample(root: string): string {
+  const dir = join(root, "sample");
   mkdirSync(join(dir, "literatures", "library"), { recursive: true });
-  writeFileSync(join(dir, TUTORIAL_MARKER_FILE), MARKER);
-  writeFileSync(join(dir, "NOTICE.md"), "notice\n");
   writeFileSync(join(dir, "literatures", "library", "library.json"), '{"works":[]}\n');
+  writeFileSync(join(dir, "NOTICE.md"), "notice\n");
+  writeFileSync(join(dir, TUTORIAL_MARKER_FILE), '{"version":1,"sample":3}\n');
   return dir;
 }
 
-function tree(dir: string): string[] {
+function tree(dir: string, prefix = ""): string[] {
   const out: string[] = [];
-  const walk = (at: string, rel: string) => {
-    for (const entry of readdirSync(at, { withFileTypes: true })) {
-      const r = rel === "" ? entry.name : `${rel}/${entry.name}`;
-      out.push(r);
-      if (entry.isDirectory()) walk(join(at, entry.name), r);
-    }
-  };
-  walk(dir, "");
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const rel = join(prefix, entry.name);
+    if (entry.isDirectory()) out.push(`${rel}/`, ...tree(join(dir, entry.name), rel));
+    else out.push(`${rel} ${readFileSync(join(dir, entry.name), "utf8")}`);
+  }
   return out.sort();
 }
 
-describe("where the tutorial goes in a picked folder", () => {
-  test("nothing of that name: made there", () => {
-    const parent = tempDir();
-    expect(tutorialTargetIn(parent)).toEqual({
-      kind: "create",
-      path: join(parent, TUTORIAL_FOLDER_NAME),
-    });
-  });
-
-  test("the picked folder is a tutorial folder itself: taken as it is, whatever its name", () => {
-    const own = join(tempDir(), "my tutorial");
-    mkdirSync(own);
-    writeFileSync(join(own, TUTORIAL_MARKER_FILE), MARKER);
-    expect(tutorialTargetIn(own)).toEqual({ kind: "marked", path: own });
-  });
-
-  test("a marked folder of that name in it: taken; an empty one: filled; anything else: a conflict", () => {
-    const parent = tempDir();
-    const child = join(parent, TUTORIAL_FOLDER_NAME);
-    mkdirSync(child);
-    expect(tutorialTargetIn(parent)).toEqual({ kind: "fill", path: child });
-    writeFileSync(join(child, "notes.txt"), "mine");
-    expect(tutorialTargetIn(parent)).toEqual({ kind: "conflict", path: child });
-    writeFileSync(join(child, TUTORIAL_MARKER_FILE), MARKER);
-    expect(tutorialTargetIn(parent)).toEqual({ kind: "marked", path: child });
-    // A broken marker is no marker.
-    writeFileSync(join(child, TUTORIAL_MARKER_FILE), "{");
-    expect(tutorialTargetIn(parent)).toEqual({ kind: "conflict", path: child });
-    const other = tempDir();
-    writeFileSync(join(other, TUTORIAL_FOLDER_NAME), "a file");
-    expect(tutorialTargetIn(other)).toEqual({
-      kind: "conflict",
-      path: join(other, TUTORIAL_FOLDER_NAME),
-    });
-  });
-
-  test("what was picked is not a folder", () => {
-    const file = join(tempDir(), "file.txt");
-    writeFileSync(file, "x");
-    expect(tutorialTargetIn(file)).toEqual({ kind: "not_a_folder", path: file });
-    expect(tutorialTargetIn(join(file, "gone"))).toMatchObject({ kind: "not_a_folder" });
+describe("tutorialFolderState", () => {
+  test("missing, empty, marked (with its number), unmarked", () => {
+    const root = tempDir();
+    expect(tutorialFolderState(join(root, "nothing"))).toEqual({ kind: "missing" });
+    mkdirSync(join(root, "empty"));
+    expect(tutorialFolderState(join(root, "empty"))).toEqual({ kind: "empty" });
+    expect(tutorialFolderState(sample(root))).toEqual({ kind: "marked", sample: 3 });
+    mkdirSync(join(root, "other"));
+    writeFileSync(join(root, "other", "notes.txt"), "mine");
+    expect(tutorialFolderState(join(root, "other"))).toEqual({ kind: "unmarked" });
+    // A broken marker is no marker; a file is not a folder.
+    mkdirSync(join(root, "broken"));
+    writeFileSync(join(root, "broken", TUTORIAL_MARKER_FILE), '{"version":2,"sample":3}');
+    expect(tutorialFolderState(join(root, "broken"))).toEqual({ kind: "unmarked" });
+    writeFileSync(join(root, "file"), "x");
+    expect(tutorialFolderState(join(root, "file"))).toEqual({ kind: "unmarked" });
   });
 });
 
-describe("filling the folder", () => {
-  test("made and filled: the sample's bytes, nothing else", async () => {
-    const from = sample();
-    const parent = tempDir();
-    const target = tutorialTargetIn(parent);
-    if (target.kind !== "create") throw new Error("expected create");
-    await fillTutorialFolder(from, target);
-    expect(tree(target.path)).toEqual(tree(from));
-    expect(readFileSync(join(target.path, TUTORIAL_MARKER_FILE), "utf8")).toBe(MARKER);
-    expect(isTutorialFolder(target.path)).toBe(true);
+describe("copyTutorialSample", () => {
+  test("into a missing folder (made, parents too) and into an empty one: the sample, byte for byte", () => {
+    const root = tempDir();
+    const from = sample(root);
+    copyTutorialSample(from, join(root, "a", "b"));
+    expect(tree(join(root, "a", "b"))).toEqual(tree(from));
+    mkdirSync(join(root, "empty"));
+    copyTutorialSample(from, join(root, "empty"));
+    expect(tree(join(root, "empty"))).toEqual(tree(from));
   });
 
-  test("a failure in the middle removes the folder it made, and only it", async () => {
-    const from = sample();
-    writeFileSync(join(from, "secret.bin"), "x");
-    chmodSync(join(from, "secret.bin"), 0o000);
-    const parent = tempDir();
-    writeFileSync(join(parent, "mine.txt"), "the user's");
-    const target = tutorialTargetIn(parent);
-    if (target.kind !== "create") throw new Error("expected create");
-    await expect(fillTutorialFolder(from, target)).rejects.toMatchObject({ code: "EACCES" });
-    expect(readdirSync(parent)).toEqual(["mine.txt"]);
-    expect(readFileSync(join(parent, "mine.txt"), "utf8")).toBe("the user's");
+  test("refuses a folder that is not missing or empty, writing nothing", () => {
+    const root = tempDir();
+    const from = sample(root);
+    mkdirSync(join(root, "other"));
+    writeFileSync(join(root, "other", "notes.txt"), "mine");
+    expect(() => copyTutorialSample(from, join(root, "other"))).toThrow(/not missing or empty/);
+    expect(tree(join(root, "other"))).toEqual(["notes.txt mine"]);
+    expect(() => copyTutorialSample(from, from)).toThrow(/not missing or empty/);
   });
 
-  test("an empty folder that was there: emptied again on failure, not removed", async () => {
-    const from = sample();
-    writeFileSync(join(from, "zz-unreadable"), "x");
-    chmodSync(join(from, "zz-unreadable"), 0o000);
-    const parent = tempDir();
-    mkdirSync(join(parent, TUTORIAL_FOLDER_NAME));
-    const target = tutorialTargetIn(parent);
-    if (target.kind !== "fill") throw new Error("expected fill");
-    await expect(fillTutorialFolder(from, target)).rejects.toThrow();
-    expect(readdirSync(target.path)).toEqual([]);
-  });
-
-  test("a read-only parent: nothing is made", async () => {
-    const from = sample();
-    const parent = tempDir();
-    chmodSync(parent, 0o555);
-    const target = tutorialTargetIn(parent);
-    if (target.kind !== "create") throw new Error("expected create");
-    await expect(fillTutorialFolder(from, target)).rejects.toMatchObject({ code: "EACCES" });
-    expect(existsSync(target.path)).toBe(false);
-  });
-
-  test("told to stop: stops and removes what it wrote", async () => {
-    const from = sample();
-    const parent = tempDir();
-    const target = tutorialTargetIn(parent);
-    if (target.kind !== "create") throw new Error("expected create");
-    let asked = 0;
-    await expect(
-      fillTutorialFolder(from, target, { shouldStop: () => ++asked > 1 })
-    ).rejects.toBeInstanceOf(TutorialCopyStopped);
-    expect(readdirSync(parent)).toEqual([]);
-  });
-
-  test("a link in the sample fails the copy (only files and folders are copied)", async () => {
-    const from = sample();
-    symlinkSync("/etc/hostname", join(from, "link"));
-    const parent = tempDir();
-    const target = tutorialTargetIn(parent);
-    if (target.kind !== "create") throw new Error("expected create");
-    await expect(fillTutorialFolder(from, target)).rejects.toMatchObject({ code: "EUNSUPPORTED" });
-    expect(readdirSync(parent)).toEqual([]);
+  test("a copy that fails leaves nothing behind: the folder it made is gone, an empty one is empty again", () => {
+    const root = tempDir();
+    const from = sample(root);
+    // The marker cannot be read: everything else was copied first, then removed.
+    chmodSync(join(from, TUTORIAL_MARKER_FILE), 0o000);
+    expect(() => copyTutorialSample(from, join(root, "made"))).toThrow();
+    expect(existsSync(join(root, "made"))).toBe(false);
+    mkdirSync(join(root, "empty"));
+    expect(() => copyTutorialSample(from, join(root, "empty"))).toThrow();
+    expect(readdirSync(join(root, "empty"))).toEqual([]);
+    chmodSync(join(from, TUTORIAL_MARKER_FILE), 0o600);
   });
 });
 
-describe("restarting a tutorial folder", () => {
-  function tutorial(): string {
-    const dir = join(tempDir(), TUTORIAL_FOLDER_NAME);
-    mkdirSync(join(dir, "literatures", "annotations"), { recursive: true });
-    writeFileSync(join(dir, TUTORIAL_MARKER_FILE), '{"version":1,"sample":1}\n');
-    writeFileSync(join(dir, "literatures", "annotations", "mine.json"), "what I wrote");
-    return dir;
-  }
-
-  test("a marked folder: emptied and filled with the sample again; nothing is left beside it", async () => {
-    const from = sample();
-    const target = tutorial();
-    await resetTutorialFolder(from, target);
-    expect(tree(target)).toEqual(tree(from));
-    expect(readFileSync(join(target, TUTORIAL_MARKER_FILE), "utf8")).toBe(MARKER);
-    expect(readdirSync(join(target, ".."))).toEqual([TUTORIAL_FOLDER_NAME]);
+describe("emptyTutorialFolder", () => {
+  test("empties a marked folder and keeps the folder", () => {
+    const root = tempDir();
+    const dir = join(root, "tutorial");
+    copyTutorialSample(sample(root), dir);
+    writeFileSync(join(dir, "mine.txt"), "written in the tutorial");
+    emptyTutorialFolder(dir);
+    expect(readdirSync(dir)).toEqual([]);
   });
 
-  test("a folder without the marker is never touched, empty or not", async () => {
-    const from = sample();
-    const target = tutorial();
-    rmSync(join(target, TUTORIAL_MARKER_FILE));
-    const before = tree(target);
-    await expect(resetTutorialFolder(from, target)).rejects.toBeInstanceOf(NotATutorialFolder);
-    expect(tree(target)).toEqual(before);
-    expect(readdirSync(join(target, ".."))).toEqual([TUTORIAL_FOLDER_NAME]);
-  });
-
-  test("a copy that fails leaves the folder as it was and nothing beside it", async () => {
-    const from = sample();
-    writeFileSync(join(from, "zz"), "x");
-    chmodSync(join(from, "zz"), 0o000);
-    const target = tutorial();
-    const before = tree(target);
-    await expect(resetTutorialFolder(from, target)).rejects.toThrow();
-    expect(tree(target)).toEqual(before);
-    expect(readFileSync(join(target, "literatures", "annotations", "mine.json"), "utf8")).toBe(
-      "what I wrote"
-    );
-    expect(readdirSync(join(target, ".."))).toEqual([TUTORIAL_FOLDER_NAME]);
-  });
-
-  test("staged first, swapped later: the marker is checked again at the swap", async () => {
-    const from = sample();
-    const target = tutorial();
-    const staged = await stageTutorialSample(from, target);
-    rmSync(join(target, TUTORIAL_MARKER_FILE));
-    expect(() => swapStagedTutorial(staged)).toThrow(NotATutorialFolder);
-    expect(existsSync(join(target, "literatures", "annotations", "mine.json"))).toBe(true);
+  test("refuses a folder without the marker, touching nothing", () => {
+    const root = tempDir();
+    mkdirSync(join(root, "other"));
+    writeFileSync(join(root, "other", "notes.txt"), "mine");
+    expect(() => emptyTutorialFolder(join(root, "other"))).toThrow(/not a tutorial folder/);
+    expect(tree(join(root, "other"))).toEqual(["notes.txt mine"]);
+    expect(() => emptyTutorialFolder(join(root, "nothing"))).toThrow(/not a tutorial folder/);
   });
 });
