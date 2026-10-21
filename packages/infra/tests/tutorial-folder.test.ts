@@ -20,6 +20,10 @@ import { afterEach, describe, expect, test } from "vitest";
 import {
   copyTutorialSample,
   emptyTutorialFolder,
+  replaceTutorialFolder,
+  stageTutorialCopy,
+  swapInTutorialCopy,
+  TUTORIAL_FOLDER_NAME,
   tutorialFolderState,
 } from "../src/tutorial-folder.js";
 import { TUTORIAL_MARKER_FILE } from "../src/tutorial-progress.js";
@@ -128,5 +132,73 @@ describe("emptyTutorialFolder", () => {
     expect(() => emptyTutorialFolder(join(root, "other"))).toThrow(/not a tutorial folder/);
     expect(tree(join(root, "other"))).toEqual(["notes.txt mine"]);
     expect(() => emptyTutorialFolder(join(root, "nothing"))).toThrow(/not a tutorial folder/);
+  });
+});
+
+describe("replaceTutorialFolder (in-app-tutorial ticket 25)", () => {
+  function tutorial(root: string): string {
+    const dir = join(root, TUTORIAL_FOLDER_NAME);
+    mkdirSync(join(dir, "literatures"), { recursive: true });
+    writeFileSync(join(dir, TUTORIAL_MARKER_FILE), '{"version":1,"sample":1}\n');
+    writeFileSync(join(dir, "literatures", "mine.json"), "written in the tutorial");
+    return dir;
+  }
+
+  test("a marked folder becomes a fresh copy of the sample; nothing is left beside it", () => {
+    const root = tempDir();
+    const from = sample(root);
+    const dir = tutorial(root);
+    expect(replaceTutorialFolder(from, dir)).toBeNull();
+    expect(tree(dir)).toEqual(tree(from));
+    expect(readdirSync(root).sort()).toEqual([TUTORIAL_FOLDER_NAME, "sample"]);
+  });
+
+  test("a copy that fails leaves the folder byte for byte as it was, and no staging folder", () => {
+    const root = tempDir();
+    const from = sample(root);
+    writeFileSync(join(from, "zz-unreadable"), "x");
+    chmodSync(join(from, "zz-unreadable"), 0o000);
+    const dir = tutorial(root);
+    const before = tree(dir);
+    expect(() => replaceTutorialFolder(from, dir)).toThrow();
+    expect(tree(dir)).toEqual(before);
+    expect(readdirSync(root).sort()).toEqual([TUTORIAL_FOLDER_NAME, "sample"]);
+    chmodSync(join(from, "zz-unreadable"), 0o600);
+  });
+
+  test("a parent that cannot be written: nothing changes", () => {
+    const root = tempDir();
+    const from = sample(root);
+    const parent = join(root, "parent");
+    mkdirSync(parent);
+    const dir = tutorial(parent);
+    const before = tree(dir);
+    chmodSync(parent, 0o555);
+    expect(() => replaceTutorialFolder(from, dir)).toThrow();
+    chmodSync(parent, 0o700);
+    expect(tree(dir)).toEqual(before);
+    expect(readdirSync(parent)).toEqual([TUTORIAL_FOLDER_NAME]);
+  });
+
+  test("a folder without the marker is refused, touching nothing", () => {
+    const root = tempDir();
+    const from = sample(root);
+    const dir = tutorial(root);
+    rmSync(join(dir, TUTORIAL_MARKER_FILE));
+    const before = tree(dir);
+    expect(() => replaceTutorialFolder(from, dir)).toThrow(/not a tutorial folder/);
+    expect(tree(dir)).toEqual(before);
+    expect(readdirSync(root).sort()).toEqual([TUTORIAL_FOLDER_NAME, "sample"]);
+  });
+
+  test("staged first, swapped later: the marker is checked again at the swap, the folder untouched", () => {
+    const root = tempDir();
+    const from = sample(root);
+    const dir = tutorial(root);
+    const staging = stageTutorialCopy(from, dir);
+    rmSync(join(dir, TUTORIAL_MARKER_FILE));
+    const before = tree(dir);
+    expect(() => swapInTutorialCopy(dir, staging)).toThrow(/not a tutorial folder/);
+    expect(tree(dir)).toEqual(before);
   });
 });

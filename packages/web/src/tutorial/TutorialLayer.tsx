@@ -29,6 +29,7 @@ import { createProgressWriter, samePath } from "./progress";
 import { Spotlight } from "./Spotlight";
 import { CARD_MARGIN, type Dock, StepCard } from "./StepCard";
 import type { AnchorLadder, ChapterDefinition, GateRun, WorkbenchSnapshot } from "./types";
+import { TutorialRestartDialog, useTutorialEntry } from "./TutorialEntry";
 import "./tutorial.css";
 
 export interface TutorialLayerProps {
@@ -56,6 +57,12 @@ export function TutorialLayer({ context, onViewAction }: TutorialLayerProps) {
   const progress = state?.progress ?? null;
   if (host === undefined || !progress || !samePath(progress.project?.path, root)) return null;
   return <TutorialRunner initial={progress} context={context} onViewAction={onViewAction} desktop={host?.mode === "desktop"} entered={takeTutorialEntryOnce()} />;
+}
+
+/** The restart dialog the chapter rail opens: the entry's own, on the open tutorial project. */
+function RailRestart({ path, desktop, onClose }: { path: string; desktop: boolean; onClose: () => void }) {
+  const entry = useTutorialEntry(path);
+  return <TutorialRestartDialog entry={entry} path={path} desktop={desktop} onClose={onClose} />;
 }
 
 export interface RunnerDeps {
@@ -166,6 +173,8 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
   /** The step during which the user opened the rail again: it is not folded away by itself while that step lasts. */
   const [railOpenedAt, setRailOpenedAt] = useState<string | null>(null);
   const [leaveAsk, setLeaveAsk] = useState(false);
+  /** The rail's "Restart…" was chosen (in-app-tutorial ticket 25). */
+  const [restartAsk, setRestartAsk] = useState(false);
   /** A progress write failed (the leave dialog says so), and whether its one notice is still shown. */
   const [saveFailed, setSaveFailed] = useState(false);
   const [notSaved, setNotSaved] = useState(false);
@@ -466,6 +475,7 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
         onGoStep={go}
         onLeave={() => setLeaveAsk(true)}
         onRecheck={recheck}
+        onRestart={() => setRestartAsk(true)}
         yielded={modalOpen}
       />
       <StepCard
@@ -497,6 +507,9 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
         onScrollTo={() => placement.element?.scrollIntoView({ block: "center", behavior: "smooth" })}
         onRecheck={recheck}
       />
+      {restartAsk && initial.project && (
+        <RailRestart path={initial.project.path} desktop={desktop} onClose={() => setRestartAsk(false)} />
+      )}
       {leaveAsk && (
         <Dialog
           title={t("tutorial.ui.leaveDialog.title")}

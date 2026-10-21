@@ -2840,7 +2840,21 @@
       }
     },
     "entry": {
-      "restart": "Restart…"
+      "start": "Start tutorial",
+      "resume": "Resume tutorial",
+      "restart": "Restart…",
+      "rowLabel": "Tutorial",
+      "rowHelp": "Walk through the workbench’s main features, chapter by chapter, in a separate sample project. Your own projects are not changed.",
+      "rowBrowser": "Run this command in a terminal to start the tutorial:",
+      "sampleMissing": "This installation does not include the tutorial sample",
+      "starting": "Preparing the tutorial folder…",
+      "failed": {
+        "target_conflict": "The tutorial did not start: {{path}} already exists and is not a tutorial folder. Pick another parent folder, or rename it.",
+        "copy_failed": "The tutorial did not start: the sample was not copied to {{path}}. Check the free disk space and the write permission, then try again; what had been written was removed.",
+        "not_a_folder": "The tutorial did not start: {{path}} is not a folder.",
+        "shutting_down": "The tutorial did not start: the workbench is closing. Try again later."
+      },
+      "outdatedSample": "This tutorial project was made from an older sample and may not load correctly. Restarting is recommended — it deletes the annotations, arguments, tasks and manuscripts you wrote in the tutorial."
     },
     "chapters": {
       "prepare": {

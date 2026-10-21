@@ -7,6 +7,9 @@ import {
   type HostSwitchAcknowledged,
   type HostSwitchImpact,
   type HostSwitchTarget,
+  type HostTutorialAction,
+  HOST_TUTORIAL_REFUSALS,
+  type HostTutorialRefusal,
   isHostCliStatus,
   isHostCliUnavailableReason,
   isHostInfo,
@@ -101,6 +104,20 @@ export async function confirmSwitch(id: string, acknowledged: HostSwitchAcknowle
     if (confirm !== null) return confirm;
     const code = error instanceof HttpError ? error.code : "";
     return code === "unknown_switch" || code === "folder_missing" ? code : "failed";
+  }
+}
+
+/** What became of a tutorial entry (in-app-tutorial ticket 25): taken (a failure after it is announced), or why not. */
+export type TutorialEntryResult = "accepted" | HostTutorialRefusal | "failed";
+
+/** Asks the desktop host to start, continue or restart the tutorial. No body: the folder is never the page's. */
+export async function askTutorial(action: HostTutorialAction): Promise<TutorialEntryResult> {
+  try {
+    await apiRequest<unknown>(`/api/host/tutorial/${action}`, { method: "POST" });
+    return "accepted";
+  } catch (error) {
+    const code = error instanceof HttpError ? error.code : "";
+    return (HOST_TUTORIAL_REFUSALS as readonly string[]).includes(code) ? (code as HostTutorialRefusal) : "failed";
   }
 }
 

@@ -107,6 +107,8 @@ export function createNoProjectServer(opts: NoProjectServerOptions): NoProjectSe
     },
   });
   mountHostRoutes(app, opts.host);
+  // The tutorial's entry announces its failures to the welcome page too (in-app-tutorial ticket 25).
+  opts.host.usePages((message) => broadcast(message));
   // The tutorial progress is the person's, not a project's.
   mountTutorialRoutes(app, {
     file: () => join(opts.globalDirs.dataDir, TUTORIAL_PROGRESS_FILE),

@@ -57,6 +57,23 @@
  *   `GET` answers 500 `{code: "unreadable", detail}` when what is at the launcher's path cannot be looked at. A 500's
  *   `detail` is the error's code only (`EACCES`), never a path or a message.
  *
+ * The tutorial's entry (in-app-tutorial ticket 25), desktop form only (404 `not_desktop` in the browser). None reads a
+ * body: the folder comes from the shell's dialog or from `tutorial.json`, never from the page.
+ * - `POST /api/host/tutorial/pick`      → 202 `{ ok: true }`: the host writes the existing `pick_folder` request line and
+ *                                       takes the answer as the parent folder of the tutorial (or a tutorial folder
+ *                                       itself): it makes `ArgelanderSpace-Tutorial` there and copies the bundled
+ *                                       sample into it (or takes the marked folder that is there), binds the tutorial
+ *                                       progress to it, records it among the recent projects and leaves for it.
+ * - `POST /api/host/tutorial/continue`  → 202: leaves for the folder `tutorial.json` is bound to.
+ * - `POST /api/host/tutorial/restart`   → 202: empties the bound folder (only a marked one), copies the sample again,
+ *                                       clears the progress and leaves for it.
+ *   409 {@link HOST_TUTORIAL_REFUSALS}: `no_sample` (this installation has no sample), `tutorial_missing` (`continue` /
+ *   `restart`: no bound folder, or it is gone or has no marker), `current_project` (`continue`: the tutorial is the
+ *   project open now), `shutting_down`. With a project open whose
+ *   switch would interrupt work, the folder is made first and the switch is then held and announced as any picked
+ *   folder (`host.switch-confirmation`). What fails after the 202 — the copy, the folder the shell answered — is
+ *   announced to every page as {@link WsHostTutorialResult}; nothing is left for then.
+ *
  * All are `no-store` and behind the same cross-origin guard as every other endpoint. `serve` (the browser form) has
  * no host: its answer is `mode: "browser"` with no requests, and the page hides the desktop-only controls.
  *
@@ -347,6 +364,50 @@ export type WsHostSwitchConfirmation = z.infer<typeof WsHostSwitchConfirmationSc
 /** The page's check of a `host.switch-confirmation` message before it shows anything of it. */
 export function isWsHostSwitchConfirmation(value: unknown): value is WsHostSwitchConfirmation {
   return WsHostSwitchConfirmationSchema.safeParse(value).success;
+}
+
+// ---- the tutorial's entry (in-app-tutorial ticket 25) ------------------------------------------------------------ //
+
+/**
+ * Why the tutorial did not start, announced to the pages after the request was taken: `target_conflict` — the parent
+ * folder already holds an `ArgelanderSpace-Tutorial` that is not empty and is not a tutorial folder; `copy_failed` —
+ * the sample could not be copied (permissions, a full disk; what was written is removed again); `not_a_folder` — what
+ * the dialog answered is not a folder; `shutting_down` — the dialog's answer came while the workbench was closing.
+ */
+export const HOST_TUTORIAL_FAILURES = [
+  "target_conflict",
+  "copy_failed",
+  "not_a_folder",
+  "shutting_down",
+] as const;
+export type HostTutorialFailure = (typeof HOST_TUTORIAL_FAILURES)[number];
+
+/** The 409 codes of the tutorial's endpoints (the request was not taken). */
+export const HOST_TUTORIAL_REFUSALS = [
+  "no_sample",
+  "tutorial_missing",
+  "current_project",
+  "shutting_down",
+] as const;
+export type HostTutorialRefusal = (typeof HOST_TUTORIAL_REFUSALS)[number];
+
+/** The tutorial's three entries. */
+export const HOST_TUTORIAL_ACTIONS = ["pick", "continue", "restart"] as const;
+export type HostTutorialAction = (typeof HOST_TUTORIAL_ACTIONS)[number];
+
+const ShownPathSchema = z.object({ path: z.string(), display: z.string() });
+
+/** Sent to every page when a tutorial entry the host took failed: why, and the folder it was about. */
+export const WsHostTutorialResultSchema = z.object({
+  type: z.literal("host.tutorial-result"),
+  reason: z.enum(HOST_TUTORIAL_FAILURES),
+  path: ShownPathSchema,
+});
+export type WsHostTutorialResult = z.infer<typeof WsHostTutorialResultSchema>;
+
+/** The page's check of a `host.tutorial-result` message before it shows anything of it. */
+export function isWsHostTutorialResult(value: unknown): value is WsHostTutorialResult {
+  return WsHostTutorialResultSchema.safeParse(value).success;
 }
 
 // ---- the command-line tool (desktop-app ticket 24) ------------------------------------------------------------- //

@@ -31,6 +31,7 @@ import {
   emptyTutorialFolder,
   readTutorialMarker,
   readTutorialProgress,
+  TUTORIAL_FOLDER_NAME,
   TUTORIAL_PROGRESS_FILE,
   tutorialFolderState,
   writeTutorialProgress,
@@ -41,7 +42,7 @@ import { fail } from "./common.js";
 import { APP_VERSION } from "./generated/app-version.js";
 
 /** The folder used when nothing else names one: in the home directory, so every working directory finds it. */
-export const DEFAULT_TUTORIAL_FOLDER = "ArgelanderSpace-Tutorial";
+export const DEFAULT_TUTORIAL_FOLDER = TUTORIAL_FOLDER_NAME;
 
 export const TUTORIAL_MESSAGES = {
   noSample: "this installation does not include the tutorial sample",

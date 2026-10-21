@@ -264,6 +264,10 @@ const HOST_GUARDED: Array<[string, string]> = [
   ["GET", "/api/host/recent-projects"],
   ["POST", "/api/host/recent-projects/open"],
   ["POST", "/api/host/recent-projects/remove"],
+  // In-app-tutorial ticket 25: the tutorial's entry.
+  ["POST", "/api/host/tutorial/pick"],
+  ["POST", "/api/host/tutorial/continue"],
+  ["POST", "/api/host/tutorial/restart"],
   ["POST", "/api/host/switch/confirm"],
   ["POST", "/api/host/switch/cancel"],
 ];
@@ -343,7 +347,7 @@ afterEach(async () => {
 
 async function noProjectApp(): Promise<Hono> {
   const srv = createNoProjectServer({
-    host: {} as HostBridge,
+    host: { usePages: () => {} } as unknown as HostBridge,
     globalDirs: isolatedGlobalDirs(),
     heartbeatMs: 0,
     webDist: null,

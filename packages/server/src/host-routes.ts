@@ -27,6 +27,7 @@ import {
   type HostSwitchImpact,
   type HostSwitchJob,
   type HostSwitchTarget,
+  type HostTutorialRefusal,
   isHostRequestKind,
   isJobFormat,
   type Job,
@@ -35,6 +36,7 @@ import {
   SWITCH_ACK_MAX_IDS,
   SWITCH_CONFIRMATION_CODE,
   type WsHostSwitchConfirmation,
+  type WsHostTutorialResult,
 } from "@argelanderspace/contracts";
 import type { Context } from "hono";
 import { readLimited } from "./page-errors.js";
@@ -47,8 +49,11 @@ export interface HostWorkbench {
   /** What switching away now would interrupt: the runner's queued and running jobs, live Copilot runs, mail in its undo window. */
   impact(): HostSwitchImpact;
   /** Tells every page of this server. */
-  broadcast(message: WsHostSwitchConfirmation): void;
+  broadcast(message: WsHostSwitchConfirmation | WsHostTutorialResult): void;
 }
+
+/** What became of a tutorial entry (in-app-tutorial ticket 25): taken (what follows is announced), or why not. */
+export type TutorialRequestOutcome = "accepted" | HostTutorialRefusal;
 
 /** A switch the user has not confirmed: where to, and what it would interrupt now. */
 export interface SwitchConfirmation {
@@ -114,6 +119,17 @@ export interface HostBridge {
   };
   /** The server of an open project hands its host what a switch would interrupt and its way to the pages. */
   useWorkbench(workbench: HostWorkbench): void;
+  /** The server of the welcome state hands its host its way to the pages (in-app-tutorial ticket 25). */
+  usePages(broadcast: (message: WsHostSwitchConfirmation | WsHostTutorialResult) => void): void;
+  /**
+   * The tutorial's entry (in-app-tutorial ticket 25; server `desktop-tutorial.ts`): start in a folder the shell picks,
+   * continue in the bound folder, restart it. None takes a path from the page.
+   */
+  tutorial: {
+    pick(): TutorialRequestOutcome;
+    continue(): TutorialRequestOutcome;
+    restart(): TutorialRequestOutcome;
+  };
 }
 
 /** What became of a request to open a recent project. */
@@ -341,6 +357,17 @@ export function mountHostRoutes(routes: ProtectedRoutes, bridge: HostBridge | un
     }
   });
 
+  // The tutorial's entry (in-app-tutorial ticket 25). No body is read: the folder is the shell's answer or the bound one.
+  for (const action of ["pick", "continue", "restart"] as const) {
+    app.post(`/api/host/tutorial/${action}`, (c) => {
+      if (bridge === undefined)
+        return c.json({ code: "not_desktop", detail: "no desktop host" }, 404, NO_STORE);
+      const outcome = bridge.tutorial[action]();
+      if (outcome === "accepted") return c.json({ ok: true }, 202, NO_STORE);
+      return c.json({ code: outcome, detail: TUTORIAL_REFUSAL_DETAIL[outcome] }, 409, NO_STORE);
+    });
+  }
+
   // Switching to a folder the shell picked, held until the user confirms (desktop-app ticket 19).
   app.post("/api/host/switch/confirm", async (c) => {
     if (bridge === undefined)
@@ -378,6 +405,13 @@ export function mountHostRoutes(routes: ProtectedRoutes, bridge: HostBridge | un
     return c.json({ ok: true }, 200, NO_STORE);
   });
 }
+
+const TUTORIAL_REFUSAL_DETAIL: Record<HostTutorialRefusal, string> = {
+  no_sample: "this installation has no tutorial sample",
+  tutorial_missing: "there is no tutorial folder to use",
+  current_project: "the tutorial project is open",
+  shutting_down: "the host is stopping",
+};
 
 function tooLarge(c: Context) {
   return c.json({ code: "too_large", detail: "the request is too large" }, 413, NO_STORE);
