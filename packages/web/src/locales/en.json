@@ -2942,6 +2942,45 @@
           "title": "Quick appearance",
           "body": "“Quick appearance” on the right of the title bar changes the theme, accent color, density and language. The Copilot switch beside it comes in chapter 8."
         }
+      },
+      "library": {
+        "list": {
+          "title": "The sample library",
+          "body": "Here are five papers on the Hyades tidal tails. The list is on the left, the citation graph in the middle; click an entry to open its details on the right."
+        },
+        "work-vs-doc": {
+          "title": "Open Röser 2019",
+          "body": "Click Röser et al. 2019. It has its bibliographic data, but its “Full text” tab has no text: a library entry (Work) can exist without a full-text document (Doc).",
+          "waiting": "Moves on once Röser 2019’s “Full text” tab is open"
+        },
+        "add-bibtex": {
+          "title": "Add a paper with BibTeX",
+          "body": "Copy the BibTeX below first, then click “Import literature” → “Import BibTeX / RIS”, paste it and click “Import entries”. This step runs entirely on your machine.",
+          "waiting": "Moves on once Evans & Oh 2022 is in the library",
+          "prepared": {
+            "label": "BibTeX of Evans & Oh 2022"
+          }
+        },
+        "acquisition": {
+          "title": "Four ways to a full text",
+          "body": "In the new entry's “Full text” tab, click “Get full text…”. Getting the source or the PDF from arXiv needs the network; uploading a local source archive or PDF does not. The tutorial uploads."
+        },
+        "upload-source": {
+          "title": "Upload and ingest the source",
+          "body": "Choose “Upload LaTeX source”, pick evans-oh-2022-source.zip in tutorial-assets, and click “Upload and process”. Ingest turns the source into the full text; the metadata is then completed online, no ADS token needed.",
+          "waiting": "Moves on once ingested and the document appears",
+          "alt": "Without TeX it cannot be ingested. Look at the full text already ingested in the “Full text” tab of Jerabkova 2021 instead."
+        },
+        "cite-key": {
+          "title": "Citation key and BibTeX",
+          "body": "“Copy citation key” in the details gives you the cite key for writing; the “BibTeX” tab copies the whole entry. Each paper has exactly one citation key."
+        },
+        "agent": {
+          "title": "An agent can add it too",
+          "intro": "An agent with the command-line tool can add and ingest an arXiv paper directly. Send it this:",
+          "prompt": "Use argelander-paper-ingest to add arXiv:2202.06973 to the library and ingest its full text",
+          "skill": "argelander-paper-ingest (command line: `argelanderspace ingest arXiv:2202.06973`)"
+        }
       }
     }
   }

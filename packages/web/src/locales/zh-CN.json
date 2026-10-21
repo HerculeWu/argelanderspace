@@ -2942,6 +2942,45 @@
           "title": "外观速调",
           "body": "标题栏右侧的「外观速调」能改主题、强调色、密度和语言。旁边的 Copilot 开关第 8 章再讲。"
         }
+      },
+      "library": {
+        "list": {
+          "title": "示例文献库",
+          "body": "这里是五篇关于 Hyades 潮汐尾的论文。左边是列表，中间是引用图，点一条会在右边打开详情。"
+        },
+        "work-vs-doc": {
+          "title": "点开 Röser 2019",
+          "body": "点 Röser 等 2019。它有书目信息，「全文」标签里却没有正文：一条文献条目（Work）可以没有正文文档（Doc）。",
+          "waiting": "打开 Röser 2019 的「全文」标签后自动前进"
+        },
+        "add-bibtex": {
+          "title": "用 BibTeX 添加一篇",
+          "body": "先复制下面的 BibTeX，再点「导入文献」→「导入 BibTeX / RIS」，粘进去，点「导入条目」。这一步完全在本机完成。",
+          "waiting": "库中出现 Evans & Oh 2022 后自动前进",
+          "prepared": {
+            "label": "Evans & Oh 2022 的 BibTeX"
+          }
+        },
+        "acquisition": {
+          "title": "四种取正文的方式",
+          "body": "新条目的「全文」标签里点「获取全文…」。从 arXiv 取源码或 PDF 要联网；上传本地源码包或 PDF 不用。教程走上传。"
+        },
+        "upload-source": {
+          "title": "上传源码包摄入",
+          "body": "选「上传 LaTeX 源码包」，选 tutorial-assets 里的 evans-oh-2022-source.zip，点「上传并处理」。摄入（Ingest）把源码变成正文，随后联网补全元数据，不用 ADS token。",
+          "waiting": "摄入完成、正文出现后自动前进",
+          "alt": "没有 TeX 不能摄入。改看 Jerabkova 2021 的「全文」标签里已摄入的正文。"
+        },
+        "cite-key": {
+          "title": "引用键与 BibTeX",
+          "body": "详情里的「复制引用键」给你写作时用的 cite key；「BibTeX」标签能复制整条。每篇文献只有一个引用键。"
+        },
+        "agent": {
+          "title": "也可以让 agent 添加",
+          "intro": "装了命令行工具的 agent 能直接添加并摄入一篇 arXiv 论文。把这句话发给它：",
+          "prompt": "用 argelander-paper-ingest 把 arXiv:2202.06973 加进文献库并摄入正文",
+          "skill": "argelander-paper-ingest（命令行：`argelanderspace ingest arXiv:2202.06973`）"
+        }
       }
     }
   }
