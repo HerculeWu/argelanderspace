@@ -102,7 +102,12 @@ export interface Measured {
   visible: boolean;
 }
 
-/** Whether an element is on screen: more than half of it cut off by a scroll container or the window is not. */
+/**
+ * Whether an element is on screen: more than half of it cut off by a scroll container or the window is not. The
+ * containers are its ancestors up to the first fixed-position element (itself included): a fixed element is placed
+ * against the window, so the containers above it do not cut it off (a popover or editor whose DOM sits inside the
+ * reader's scroll container; ticket 21, F2). That fixed element's own overflow still clips what is inside it.
+ */
 export function measure(el: Element, win: Window = window): Measured {
   const r = el.getBoundingClientRect();
   if (r.width === 0 && r.height === 0) return { rect: null, box: null, visible: false };
@@ -110,7 +115,8 @@ export function measure(el: Element, win: Window = window): Measured {
   let left = r.left;
   let right = r.right;
   let bottom = r.bottom;
-  for (let p = el.parentElement; p && p !== win.document.body; p = p.parentElement) {
+  const fixed = (node: Element) => win.getComputedStyle(node).position === "fixed";
+  for (let p = fixed(el) ? null : el.parentElement; p && p !== win.document.body; p = fixed(p) ? null : p.parentElement) {
     const cs = win.getComputedStyle(p);
     if (/(auto|scroll|hidden)/.test(cs.overflowY + cs.overflowX)) {
       const pr = p.getBoundingClientRect();

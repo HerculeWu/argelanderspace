@@ -43,4 +43,36 @@ describe("StepCard placement", () => {
     const el = document.querySelector<HTMLElement>('[data-ui="tutorial-step-card"]')!;
     expect(el.style.transform).toBe("translate(200px, 100px)");
   });
+  it("no room on any side of the anchor (a whole pane): the card sits at the bottom right, as a docked card, not over the page's top left", async () => {
+    const pane = document.createElement("div");
+    pane.setAttribute("data-ui", "latex-reader");
+    document.body.append(pane);
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    const rects = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this === pane) return new DOMRect(106, 32, W - 106, H - 32);
+      if (this.getAttribute("data-ui") === "tutorial-step-card") return new DOMRect(0, 0, 340, 300);
+      return new DOMRect(0, 0, 0, 0);
+    });
+    try {
+      const chapter = CHAPTERS.find((c) => c.id === "tour")!;
+      const noop = () => {};
+      render(
+        <StepCard
+          chapter={chapter} step={chapter.steps[0]!} index={1} count={chapter.steps.length} anchor={pane} dock={null} avoidLeft={118} browserCopy={false}
+          gated={false} passed={false} skipped={false} texBlocked={false} texBusy={false} firstStep={false} nextLabel="next" notSaved={false}
+          onBack={noop} onNext={noop} onSkip={noop} onLeave={noop} onTakeMeThere={noop} onScrollTo={noop} onRecheck={noop}
+        />,
+      );
+      await act(async () => {});
+      const el = document.querySelector<HTMLElement>('[data-ui="tutorial-step-card"]')!;
+      expect(el.style.transform).toBe(`translate(${W - 340 - 16}px, ${H - 300 - 16}px)`);
+      expect(el.dataset.placement).toBe("fallback");
+      expect(el.style.visibility).toBe("");
+      // No placement was asked of floating-ui for it.
+      expect(h.pending.some((p) => p.anchor === pane)).toBe(false);
+    } finally {
+      rects.mockRestore();
+    }
+  });
 });

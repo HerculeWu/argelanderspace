@@ -75,6 +75,7 @@ import {
   parseStrictArgs,
   sidecarRequiredFiles,
   TUTORIAL_RESOURCE_DIR,
+  tutorialCacheEntries,
 } from "./desktop-package-lib.mjs";
 import { checkTutorialLoadable, tutorialSize } from "./tutorial-smoke-lib.mjs";
 
@@ -237,6 +238,8 @@ for (const rel of removeList) {
 // ---- static: required files, licenses, budget --------------------------------------------------------------------- //
 const missing = sidecarRequiredFiles(target).filter((f) => !existsSync(join(resources, f)));
 check(missing.length === 0, "every required resource file is in the package", missing.join(", "));
+const cached = tutorialCacheEntries(resources, (dir) => readdirSync(dir, { recursive: true }));
+check(cached.length === 0, "the package's tutorial/ carries no library cache", cached.join(", "));
 const sidecar = join(resources, "sidecar");
 const sidecarManifestPath = join(sidecar, "sidecar-manifest.json");
 let sidecarManifest = null;

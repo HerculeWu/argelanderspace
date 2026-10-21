@@ -1,6 +1,6 @@
 import { fetchAnnotations } from "../../api/annotations";
 import { onAnnotationChanged } from "../../api/ws";
-import { SAMPLE_ANNOTATION_IDS, SAMPLE_DOC_ID, SAMPLE_WORK_IDS } from "../sample-ids";
+import { SAMPLE_ANNOTATION_IDS, SAMPLE_DOC_ID, SAMPLE_TEXT_ANNOTATION_BLOCK, SAMPLE_WORK_IDS } from "../sample-ids";
 import type { ChapterDefinition, L2Source, Requirement, WorkbenchSnapshot } from "../types";
 
 /** The anchors of chapter 3, constants checked by the static anchor test. */
@@ -21,6 +21,17 @@ const SHOW_ANNOTATIONS = { ui: "show-annotations" } as const;
 const ANNOTATIONS_LIST = { ui: "latex-annotations-list" } as const;
 /** The preset annotation on a sentence of section 3.1: clicking it jumps into the text and opens its popover. */
 const PRESET_TEXT_ANNOTATION = { ui: "latex-annotation", key: SAMPLE_ANNOTATION_IDS.text } as const;
+/**
+ * The preset text annotation in the text (user ruling F1): clicking its list entry only jumps there and marks it; its
+ * popover opens from the highlighted words or from the count in the block's gutter. The highlight is painted with the
+ * CSS Highlight API (no element, no `data-ui`), so the rung is the gutter's count, which opens the same popover. It
+ * applies once the annotated block is in view (after the jump), so it never pulls the card to a block scrolled away.
+ */
+const PRESET_TEXT_IN_TEXT = {
+  ui: "latex-text-annotation-count",
+  within: { ui: "latex-annotation-gutter", key: SAMPLE_TEXT_ANNOTATION_BLOCK },
+  when: (s: WorkbenchSnapshot) => readingJerabkova(s) && Boolean(s.page.reader?.position?.visibleBlockIds.includes(SAMPLE_TEXT_ANNOTATION_BLOCK)),
+} as const;
 const ANNOTATION_POPOVER = { ui: "latex-annotation-popover" } as const;
 const SELECTION_TOOLS = { ui: "latex-selection-tools" } as const;
 const ANNOTATE_SELECTION = { ui: "annotate-selected-text" } as const;
@@ -123,8 +134,9 @@ export const READING: ChapterDefinition = {
     {
       id: "reading.open-annotation",
       kind: "do",
-      // The panel toggle and the annotations tab first: the list is only drawn while the panel is open on that tab.
-      anchors: [TOGGLE_RIGHT_PANEL, SHOW_ANNOTATIONS, PRESET_TEXT_ANNOTATION, ANNOTATION_POPOVER],
+      // The panel toggle and the annotations tab first: the list is only drawn while the panel is open on that tab. Then
+      // the entry (a jump), the annotation in the text (opens it), its popover.
+      anchors: [TOGGLE_RIGHT_PANEL, SHOW_ANNOTATIONS, PRESET_TEXT_ANNOTATION, PRESET_TEXT_IN_TEXT, ANNOTATION_POPOVER],
       gate: (s) => readingJerabkova(s) && Boolean(s.page.reader?.openAnnotationId),
       requires: IN_READER,
     },

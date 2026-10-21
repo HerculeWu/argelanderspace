@@ -101,14 +101,16 @@ export interface TutorialRunnerProps extends TutorialLayerProps {
 }
 
 interface Placement {
+  /** The step this was measured for (a measurement of the step before is not looked at by the rail rule). */
+  step: string | null;
   element: Element | null;
   rect: DOMRect | null;
   /** The highlighted element's whole box. */
   box: DOMRect | null;
   visible: boolean;
-  /** The chapter rail's right edge, the card's left limit. */
+  /** The chapter rail's right edge, the card's left limit (0 while the rail is hidden). */
   railRight: number;
-  /** The open chapter rail's box (null when collapsed or absent). */
+  /** The chapter rail's box as drawn now, open or folded (null when absent). */
   railBox: DOMRect | null;
 }
 const sameBox = (a: DOMRect | null, b: DOMRect | null) => a === b || (!!a && !!b && a.top === b.top && a.left === b.left && a.width === b.width && a.height === b.height);
@@ -160,9 +162,9 @@ function escapeBelongsElsewhere(event: KeyboardEvent, layer: Element | null): bo
   for (const el of document.querySelectorAll(PRODUCT_ESCAPE_OWNERS)) if (!layer?.contains(el)) return true;
   return false;
 }
-const NO_PLACEMENT: Placement = { element: null, rect: null, box: null, visible: false, railRight: 0, railBox: null };
+const NO_PLACEMENT: Placement = { step: null, element: null, rect: null, box: null, visible: false, railRight: 0, railBox: null };
 const samePlacement = (a: Placement, b: Placement) =>
-  a.element === b.element && a.visible === b.visible && a.railRight === b.railRight && sameBox(a.rect, b.rect) && sameBox(a.box, b.box) && sameBox(a.railBox, b.railBox);
+  a.step === b.step && a.element === b.element && a.visible === b.visible && a.railRight === b.railRight && sameBox(a.rect, b.rect) && sameBox(a.box, b.box) && sameBox(a.railBox, b.railBox);
 
 /** The tutorial for the bound project: step machine, observation, progress writes and the presentation. */
 export function TutorialRunner({ initial, context, onViewAction, desktop, entered, chapters = CHAPTERS, deps: given }: TutorialRunnerProps) {
@@ -174,6 +176,8 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
   const [railCollapsed, setRailCollapsed] = useState(false);
   /** The step during which the user opened the rail again: it is not folded away by itself while that step lasts. */
   const [railOpenedAt, setRailOpenedAt] = useState<string | null>(null);
+  /** The step during which the folded rail is hidden (its highlighted element is under it); shown again on the next. */
+  const [railHiddenAt, setRailHiddenAt] = useState<string | null>(null);
   const [leaveAsk, setLeaveAsk] = useState(false);
   /** The rail's "Restart…" was chosen (in-app-tutorial ticket 25). */
   const [restartAsk, setRestartAsk] = useState(false);
@@ -259,6 +263,7 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
   // L2: the step's sources, only while it is shown. What was read is tagged with its step, so a step never sees the
   // data of the step before (not even for the render before this effect runs).
   const stepId = step?.id ?? null;
+  const railHidden = railHiddenAt !== null && railHiddenAt === stepId;
   useEffect(() => {
     if (!open || !stepId || !step?.sources?.length) return;
     const from = stepId;
@@ -343,12 +348,13 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
       const rail = document.querySelector('[data-ui="tutorial-chapter-rail"]');
       const railBox = rail ? deps.railBox(rail) : null;
       const next: Placement = {
+        step: stepId,
         element: found?.element ?? null,
         rect: m.rect,
         box: m.box ?? m.rect,
         visible: m.visible,
-        railRight: railBox ? Math.round(railBox.right) : 0,
-        railBox: rail && !rail.classList.contains("collapsed") ? railBox : null,
+        railRight: railBox && !railHidden ? Math.round(railBox.right) : 0,
+        railBox,
       };
       setPlacement((prev) => (samePlacement(prev, next) ? prev : next));
       if (found) frame = requestAnimationFrame(tick);
@@ -356,14 +362,20 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
     tick();
     return () => cancelAnimationFrame(frame);
     // snapshot: an anchor that appeared or changed is looked for again (the loop does not run while none is found).
-  }, [open, rungs, snapshot, activePaneId, deps, modalOpen, railCollapsed]);
+  }, [open, rungs, snapshot, activePaneId, deps, modalOpen, railCollapsed, railHidden, stepId]);
 
-  // The open rail covers the highlighted element (the settings groups, the library's left column): fold it to 44 px,
-  // unless the user opened it again during this step (user ruling 2026-10-21; otherwise as the prototype).
-  useEffect(() => {
-    if (!open || railCollapsed || !stepId || railOpenedAt === stepId) return;
-    if (placement.box && placement.railBox && overlaps(placement.box, placement.railBox)) setRailCollapsed(true);
-  }, [open, railCollapsed, stepId, railOpenedAt, placement]);
+  // The rail covers the highlighted element. Open (the settings groups, the library's left column): it folds to 44 px,
+  // unless the user opened it again during this step (user ruling 2026-10-21). Folded (a control on the page's left
+  // edge, a whole pane): the whole rail is hidden for the rest of the step — not drawn, no room kept, no input — and
+  // looked at again on the next step (user ruling F3, ticket 21). Otherwise as the prototype. A layout effect, so the
+  // folded rail is not painted for a frame over an element it is about to leave.
+  useLayoutEffect(() => {
+    if (!open || !stepId || railHidden || placement.step !== stepId) return;
+    if (!placement.box || !placement.railBox || !overlaps(placement.box, placement.railBox)) return;
+    if (!railCollapsed) {
+      if (railOpenedAt !== stepId) setRailCollapsed(true);
+    } else setRailHiddenAt(stepId);
+  }, [open, railCollapsed, railHidden, stepId, railOpenedAt, placement]);
 
   const requiresOk = !step?.requires || step.requires.test(snapshot);
   const lookingForAnchor = open && ladder.length > 0 && requiresOk && !modalOpen && !placement.element;
@@ -469,6 +481,7 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
   };
   // The finish page's "Review any chapter": the rail opens (and stays open for this step), its first chapter focused.
   const review = () => {
+    setRailHiddenAt(null);
     setRailCollapsed(false);
     setRailOpenedAt(step.id);
     window.requestAnimationFrame(() => layerRef.current?.querySelector<HTMLElement>('[data-ui="tutorial-chapter"]')?.focus());
@@ -495,6 +508,7 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
         onRecheck={recheck}
         onRestart={() => setRestartAsk(true)}
         yielded={modalOpen}
+        hidden={railHidden}
       />
       {onFinishPage ? (
         <FinishCard desktop={desktop} onReview={review} onClose={closeFinish} onLeave={() => setLeaveAsk(true)} />
