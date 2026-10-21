@@ -22,8 +22,8 @@ describe("chapter 0 gates and requirements against fake snapshots", () => {
     expect(holds("prepare.environment", fakeSnapshot({ view: "settings" }))).toBe(false);
     expect(step("prepare.environment").onPass).toBe("recheckEnvironment");
   });
-  it("0.2 and 0.3 require the settings page; there is no registered action to it, so no take-me-there", () => {
-    for (const id of ["prepare.environment", "prepare.ads"]) {
+  it("0.2, 0.3 and 0.A require the settings page; there is no registered action to it, so no take-me-there", () => {
+    for (const id of ["prepare.environment", "prepare.ads", "prepare.agent"]) {
       const r = step(id).requires!;
       expect(r.test(fakeSnapshot({ view: "settings" }))).toBe(true);
       expect(r.test(fakeSnapshot({ view: "library" }))).toBe(false);

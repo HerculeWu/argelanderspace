@@ -52,8 +52,9 @@ export interface GateRun {
 
 export type Gate = (snapshot: WorkbenchSnapshot, run: GateRun) => boolean;
 
-/** Where a requirement sends the user back to (`tutorial.ui.where.*`). */
-export type WhereKey = "library" | "workDetail" | "reader" | "plan" | "writer" | "settings" | "argumentGraph";
+/** Where a requirement sends the user back to (`tutorial.ui.where.*`; the copy test checks every one). */
+export const WHERE_KEYS = ["library", "workDetail", "reader", "plan", "writer", "settings", "argumentGraph"] as const;
+export type WhereKey = (typeof WHERE_KEYS)[number];
 
 /** The interface state a step needs before its anchor can be shown. */
 export interface Requirement {

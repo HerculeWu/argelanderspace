@@ -52,12 +52,30 @@ export function resolveAnchor(doc: Document, anchor: TutorialAnchor, activePaneI
   return all[0] ?? null;
 }
 
-/** The ladder level to highlight: the last one present now; null when none is. */
-export function resolveLadder(doc: Document, ladder: AnchorLadder, activePaneId: number | null): { anchor: TutorialAnchor; element: Element } | null {
+/**
+ * Whether an element is drawn at all: it has a box of some size and is not invisible. A zero-size element (inside a
+ * `display: none` parent, an empty placeholder) or a `visibility: hidden` one is not there for the ladder — it is
+ * neither highlighted nor said to be out of view, and does not hide a lower rung.
+ */
+export function isRendered(el: Element): boolean {
+  const r = el.getBoundingClientRect();
+  if (r.width <= 0 || r.height <= 0) return false;
+  const view = el.ownerDocument.defaultView;
+  const visibility = view ? view.getComputedStyle(el).visibility : "visible";
+  return visibility !== "hidden" && visibility !== "collapse";
+}
+
+/** The ladder level to highlight: the last one present and drawn now; null when none is. */
+export function resolveLadder(
+  doc: Document,
+  ladder: AnchorLadder,
+  activePaneId: number | null,
+  rendered: (el: Element) => boolean = () => true,
+): { anchor: TutorialAnchor; element: Element } | null {
   for (let i = ladder.length - 1; i >= 0; i--) {
     const anchor = ladder[i]!;
     const element = resolveAnchor(doc, anchor, activePaneId);
-    if (element) return { anchor, element };
+    if (element && rendered(element)) return { anchor, element };
   }
   return null;
 }

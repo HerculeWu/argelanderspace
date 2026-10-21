@@ -46,7 +46,11 @@ export const PREPARE: ChapterDefinition = {
       id: "prepare.agent",
       kind: "agent",
       anchors: [GROUP_CLI, CLI_INSTALL, SHOW_SKILLS_FOLDER],
-      // The browser form has no "command line & agents" group: no anchor, the card docks, the browser copy.
+      // Its group is on the settings page: away from it, "first go back to Settings" rather than a missing anchor
+      // (parent ruling in the ticket-19 review round, after user story 24 and spec addendum 5).
+      requires: ON_SETTINGS,
+      // The browser form has no "command line & agents" group: no anchor, the card docks (the requirement does not
+      // apply to a card without an anchor), the browser copy.
       browser: { anchors: [], copy: "browser" },
     },
   ],

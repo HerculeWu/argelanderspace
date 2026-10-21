@@ -2756,7 +2756,7 @@
   "tutorial": {
     "ui": {
       "title": "Tutorial",
-      "cardHeader": "Chapter {{chapter}} · {{index}}/{{count}}",
+      "cardHeader": "Chapter {{chapter}} · {{index}}/{{count}} · {{title}}",
       "back": "Back",
       "next": "Next",
       "nextChapter": "Next chapter",
@@ -2772,14 +2772,19 @@
       "agentSkill": "skill: {{name}}",
       "needsTex": "Needs TeX",
       "noTexTitle": "No TeX found on this machine",
-      "noTexBody": "You can skip this step and look at the prepared result instead; after installing TeX, click “Check again”.",
+      "noTexBody": "You can skip this step and look at the prepared result instead; after installing TeX, click “Check again”. {{alt}}",
       "recheck": "Check again",
       "recheckBusy": "Checking…",
       "rail": {
+        "heading": "Tutorial · Chapters",
         "title": "Chapters",
         "collapse": "Collapse the chapter rail",
         "expand": "Expand the chapter rail",
         "more": "More",
+        "chapterLabel": "{{n}} {{title}} · {{state}}",
+        "chapterLabelNeedsTex": "{{n}} {{title}} · {{state}} · Needs TeX",
+        "stepRow": "{{number}} {{title}}",
+        "stepRowSkipped": "{{number}} {{title}} · Skipped",
         "status": {
           "notStarted": "Not started",
           "inProgress": "In progress",
@@ -2801,9 +2806,11 @@
       "requiresBodyNoAction": "This step happens there.",
       "modalYield": "Continue after closing the dialog",
       "progressNotSaved": "Progress was not saved. The tutorial goes on; next time it may start from the last saved place.",
+      "dismissNotice": "Dismiss",
       "leaveDialog": {
         "title": "Leave the tutorial?",
         "body": "Your progress is saved. Next time, click “Resume tutorial” on the welcome page or in Settings to pick it up.",
+        "bodyNotSaved": "Some progress was not saved just now; next time it may start from the last saved place. Click “Resume tutorial” on the welcome page or in Settings to pick it up.",
         "confirm": "Leave",
         "cancel": "Stay in the tutorial"
       },
