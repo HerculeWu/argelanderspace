@@ -23,6 +23,7 @@ import {
   linkedCrates,
   listInstalledPackages,
   lockfileVersions,
+  missingRequiredFiles,
   NODE_RELEASE_KEYS,
   nodeDist,
   nodeExtractCommand,
@@ -36,7 +37,9 @@ import {
   rustTargetTriple,
   shaFromShasums,
   shellNotices,
+  sidecarAppDistFilter,
   sidecarRequiredFiles,
+  TUTORIAL_RESOURCE_DIR,
   vendoredLicense,
   verifyNodeSignature,
 } from "./desktop-package-lib.mjs";
@@ -99,6 +102,62 @@ test("the sidecar's required files name what the four resource classes need", ()
     keyringNativeFile("win32-x64"),
     "@napi-rs/keyring-win32-x64-msvc/keyring.win32-x64-msvc.node"
   );
+});
+
+test("the tutorial sample is a required resource: its marker and its notice (in-app-tutorial ticket 27)", () => {
+  assert.equal(TUTORIAL_RESOURCE_DIR, "tutorial");
+  for (const target of ["linux-x64", "darwin-arm64", "darwin-x64", "win32-x64"]) {
+    const files = sidecarRequiredFiles(target);
+    assert.ok(files.includes("tutorial/argelanderspace-tutorial.json"), target);
+    assert.ok(files.includes("tutorial/NOTICE.md"), target);
+  }
+});
+
+test("the assembly fails when either tutorial file is missing: missingRequiredFiles names it", () => {
+  const all = new Set(sidecarRequiredFiles("linux-x64"));
+  const root = "/res";
+  const exists = (present) => (p) => present.has(p.slice(root.length + 1));
+  assert.deepEqual(missingRequiredFiles(root, "linux-x64", exists(all)), []);
+  for (const f of ["tutorial/argelanderspace-tutorial.json", "tutorial/NOTICE.md"]) {
+    const without = new Set([...all].filter((g) => g !== f));
+    assert.deepEqual(missingRequiredFiles(root, "linux-x64", exists(without)), [f]);
+  }
+});
+
+test("tauri.package.conf.json maps every top-level part the required files live in, tutorial/ included", () => {
+  const conf = JSON.parse(
+    readFileSync(new URL("../../desktop/tauri.package.conf.json", import.meta.url), "utf8")
+  );
+  const mapped = Object.entries(conf.bundle.resources);
+  for (const top of new Set(sidecarRequiredFiles("linux-x64").map((f) => f.split("/")[0]))) {
+    const isDir = sidecarRequiredFiles("linux-x64").some((f) => f.startsWith(`${top}/`));
+    const want = isDir
+      ? [`target/package-resources/${top}/`, `${top}/`]
+      : [`target/package-resources/${top}`, top];
+    assert.ok(
+      mapped.some(([from, to]) => from === want[0] && to === want[1]),
+      `${want[0]} -> ${want[1]}`
+    );
+  }
+});
+
+test("the sidecar's app dist leaves out dist/tutorial: the package carries the sample once, at tutorial/", () => {
+  const dist = "/repo/packages/app/dist";
+  const keep = sidecarAppDistFilter(dist);
+  for (const p of [
+    dist,
+    `${dist}/bin.js`,
+    `${dist}/web`,
+    `${dist}/web/index.html`,
+    `${dist}/tutorials.txt`,
+  ])
+    assert.equal(keep(p), true, p);
+  for (const p of [
+    `${dist}/tutorial`,
+    `${dist}/tutorial/NOTICE.md`,
+    `${dist}/tutorial/literatures/x.json`,
+  ])
+    assert.equal(keep(p), false, p);
 });
 
 test("SPDX expressions: OR takes an allowed branch, AND needs both, WITH and unknown ids are not allowed", () => {
