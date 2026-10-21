@@ -46,13 +46,17 @@
 /* chapter rail: covers the workbench beside the navigation, never pushes its layout */
 .tut-rail { position: fixed; z-index: 310; top: 0; bottom: 0; left: 62px; width: 232px; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--border); box-shadow: var(--shadow-2); animation: viewIn .18s ease; }
 .tut-rail.collapsed { width: 44px; }
+/* a product modal is open: the rail steps below the modal's overlay (z 250) and takes no input, as the card does */
+.tut-rail.yielded { z-index: 240; pointer-events: none; }
+.tut-rail-list > div > .ui-tooltip-anchor { display: flex; width: 100%; }
 .tut-rail-head { flex: none; display: flex; align-items: center; gap: 6px; height: 31px; padding: 0 4px 0 12px; border-bottom: 1px solid var(--border-soft); background: var(--bg-deep); position: relative; }
 .tut-rail.collapsed .tut-rail-head { padding: 0 4px; justify-content: center; }
 .tut-rail-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase; color: var(--text-faint); white-space: nowrap; overflow: hidden; }
 .tut-rail-menu { position: absolute; top: 30px; right: 4px; z-index: 2; min-width: 156px; padding: 5px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-2); }
 .tut-rail-menu button { display: flex; width: 100%; align-items: center; gap: 8px; padding: 6px 8px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--text-dim); font-size: var(--fs-sm); text-align: left; cursor: pointer; }
-.tut-rail-menu button:hover:not(:disabled) { background: var(--hover); color: var(--text); }
-.tut-rail-menu button:disabled { color: var(--text-faint); cursor: default; }
+.tut-rail-menu button:hover:not([aria-disabled="true"]) { background: var(--hover); color: var(--text); }
+.tut-rail-menu button[aria-disabled="true"] { color: var(--text-faint); cursor: default; }
+.tut-rail-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .tut-rail-list { flex: 1; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 1px; }
 .tut-rail.collapsed .tut-rail-list { padding: 6px 4px; }
 .tut-ch { display: flex; align-items: center; gap: 8px; width: 100%; min-height: var(--row-h); padding: 4px 8px; border-radius: var(--radius-sm); color: var(--text-dim); font-size: var(--fs-sm); text-align: left; border: 0; background: none; cursor: pointer; }
@@ -69,6 +73,7 @@
 .tut-ch-state { font-size: 10px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tut-ch.active .tut-ch-state { color: var(--accent); }
 .tut-ch-state .warn { color: var(--warn); }
+.tut-ch-state .warn::before { content: " · "; color: var(--text-faint); }
 .tut-steps { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 6px 20px; padding-left: 14px; border-left: 1px solid var(--border-soft); }
 .tut-step-row { display: flex; align-items: center; gap: 6px; min-height: 24px; padding: 0 6px; border-radius: 4px; font-size: var(--fs-xs); color: var(--text-faint); background: none; border: 0; text-align: left; cursor: pointer; }
 .tut-step-row:hover { background: var(--hover); color: var(--text); }
@@ -81,9 +86,19 @@
 .tut-rail-tex { margin-left: 4px; font-size: 10px; color: var(--accent); background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; }
 
 /* capsule: what the rail folds into after leaving */
-.tut-capsule { position: fixed; z-index: 310; left: 70px; bottom: 12px; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--accent-line); background: var(--surface); color: var(--text); font-size: var(--fs-xs); box-shadow: var(--shadow-2); cursor: pointer; animation: popIn .14s ease; }
+.tut-capsule-dock { position: fixed; z-index: 310; left: 70px; bottom: 12px; }
+.tut-capsule { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--accent-line); background: var(--surface); color: var(--text); font-size: var(--fs-xs); box-shadow: var(--shadow-2); cursor: pointer; animation: popIn .14s ease; }
 .tut-capsule:hover { background: var(--accent-soft); }
 .tut-capsule svg { width: 14px; height: 14px; color: var(--accent); }
 
-/* the one-time "progress not saved" notice */
-.tut-notice { position: fixed; z-index: 321; left: 50%; bottom: 16px; transform: translateX(-50%); max-width: min(460px, calc(100vw - 32px)); }
+/* the one-time "progress not saved" notice in the card, with its dismiss button */
+.tut-not-saved { display: flex; align-items: flex-start; gap: 4px; }
+.tut-not-saved > .ui-inline-message { flex: 1; min-width: 0; }
+
+/* the user asked for less motion: no endless pulse or spin (the ring and the waiting icon still show the state) */
+@media (prefers-reduced-motion: reduce) {
+  .tut-ring.pulse { animation: none; box-shadow: 0 0 0 2px var(--accent), 0 0 0 8px color-mix(in oklch, var(--accent) 28%, transparent); }
+  .tut-wait svg { animation: none; }
+  .tut-card, .tut-rail, .tut-capsule { animation: none; }
+  .tut-shade, .tut-ring { transition: none; }
+}

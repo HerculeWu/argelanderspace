@@ -5,7 +5,9 @@ import type { ChapterDefinition, StepDefinition } from "./types";
 export const AUTO_ADVANCE_MS = 900;
 
 export type StepRecords = Readonly<Record<string, TutorialStepRecord>>;
-export type ChapterStatus = "notStarted" | "inProgress" | "done" | "skipped";
+/** A chapter's state in the rail (`tutorial.ui.rail.status.*`; the copy test checks every one). */
+export const CHAPTER_STATUSES = ["notStarted", "inProgress", "done", "skipped"] as const;
+export type ChapterStatus = (typeof CHAPTER_STATUSES)[number];
 
 export interface StepPlace {
   chapter: ChapterDefinition;
