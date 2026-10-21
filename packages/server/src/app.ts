@@ -108,6 +108,7 @@ import {
   readConfigLeniently,
   resolveGlobalDirsLeniently,
   type TexCompileFailure,
+  TUTORIAL_PROGRESS_FILE,
   zipEntries,
 } from "@argelanderspace/infra";
 import type { Context, Hono } from "hono";
@@ -180,6 +181,7 @@ import {
   type TextDocDeps,
   TextDocService,
 } from "./text-docs.js";
+import { mountTutorialRoutes } from "./tutorial-routes.js";
 import {
   createManuscriptOp,
   deleteManuscriptOp,
@@ -301,6 +303,11 @@ export interface AppDeps {
    * it, and the start record and the diagnostics say `desktop`. Absent: the browser form (`serve`).
    */
   host?: HostBridge | undefined;
+  /**
+   * The tutorial progress (in-app-tutorial ticket 18, tutorial-routes.ts): its file and the bundled sample's folder.
+   * Absent: the file in the global data directory as pinned (or as config.toml gives it now), and no bundled sample.
+   */
+  tutorial?: { file: string; sampleDir: string | null } | undefined;
 }
 
 // --------------------------------------------------------------------------- //
@@ -631,6 +638,21 @@ export function createApp(deps: AppDeps): Hono {
 
   // The host interface (host-routes.ts): which form the page runs in, and the desktop app's native requests.
   mountHostRoutes(app, deps.host);
+
+  // The tutorial progress (tutorial-routes.ts): global data, the same route in both forms.
+  mountTutorialRoutes(app, {
+    file: () =>
+      deps.tutorial?.file ??
+      join(
+        (
+          pinnedGlobalDirs() ??
+          resolveGlobalDirsLeniently(readConfigLeniently(deps.configPath ?? configFilePath())).dirs
+        ).dataDir,
+        TUTORIAL_PROGRESS_FILE
+      ),
+    sampleDir: deps.tutorial?.sampleDir ?? null,
+    log,
+  });
 
   // Diagnostics (diagnostics.ts): the log directory, and a bundle made only when the user asks for one.
   mountDiagnosticsRoutes(app, {

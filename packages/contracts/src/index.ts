@@ -46,6 +46,7 @@ export * from "./settings-schema.js";
 export * from "./tex-ir.js";
 export * from "./text-doc.js";
 export * from "./text-ops.js";
+export * from "./tutorial.js";
 export * from "./workspace-ops.js";
 export * from "./writer.js";
 export * from "./writer-bib.js";
