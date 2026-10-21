@@ -46,3 +46,6 @@ export const SAMPLE_ARGUMENT_IDS = {
 export const SAMPLE_CITE_KEYS = {
   kroupa2022: "2022MNRAS.517.3613K",
 } as const;
+
+/** The bibcode of Röser 2019 (library.json), the seed of chapter 4's exploration. */
+export const SAMPLE_SEED_BIBCODE = "2019A&A...621L...2R";
