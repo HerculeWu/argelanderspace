@@ -2836,7 +2836,8 @@
         "plan": "the Plan page",
         "writer": "the manuscript editor",
         "settings": "Settings",
-        "argumentGraph": "the argument graph of {{work}}"
+        "argumentGraph": "the argument graph of {{work}}",
+        "copilot": "the Copilot panel"
       }
     },
     "entry": {
@@ -2979,7 +2980,7 @@
           "title": "An agent can add it too",
           "intro": "An agent with the command-line tool can add and ingest an arXiv paper directly. Send it this:",
           "prompt": "Use argelander-paper-ingest to add arXiv:2202.06973 to the library and ingest its full text",
-          "skill": "argelander-paper-ingest (command line: `argelanderspace ingest arXiv:2202.06973`)"
+          "skill": "argelander-paper-ingest (command line: `argelanderspace ingest arXiv:2202.06973`, then `argelanderspace library build`)"
         }
       },
       "argument": {
@@ -3103,6 +3104,35 @@
           "skill": "Copilot (chapter 8)"
         }
       },
+      "copilot": {
+        "open": {
+          "title": "Open the Copilot",
+          "body": "Click the Copilot switch on the right of the title bar. A preset conversation is already selected in the panel. Note: sending a message here really calls a model and spends tokens; that is not part of the tutorial.",
+          "waiting": "Moves on once the Copilot panel is open"
+        },
+        "context": {
+          "title": "It sees your page",
+          "body": "Expand the fold under the first message that starts with the paper's title to see what page context the Copilot received. When it was sent, the user was in the reader of Jerabkova 2021; the Copilot got the structured content of that same page."
+        },
+        "operations": {
+          "title": "Operation cards",
+          "body": "The last two exchanges each have an operation card: one created a task, one added a paragraph to the manuscript, both “Applied”. That task is in the plan of chapter 6, that paragraph in the manuscript of chapter 7. (“Take me there” on the card switches to the Plan page.)"
+        },
+        "conversations": {
+          "title": "Conversations are saved",
+          "body": "Click “Conversations” at the top to open the list, then close it. Each conversation is saved on its own and survives switching pages; you can start a new one or switch back at any time."
+        },
+        "provider": {
+          "title": "Model keys go here",
+          "body": "Click the panel's settings icon to open the model settings: later you choose a provider and enter an API key there. The tutorial does not."
+        },
+        "agent": {
+          "title": "The Copilot and external agents",
+          "intro": "The Copilot has two read-only skills built in: reading one paper and searching across the library. Adding literature, curating argument graphs and finding papers go to an external agent with the bundled skills. “File and command permission” in the “Copilot” group of Settings decides whether the Copilot may read and write files and run commands.",
+          "prompt": "Read the current paper and summarize its End arguments",
+          "skill": "argelander-read-paper · argelander-query-paper-library"
+        }
+      },
       "finish": {
         "page": {
           "title": "You have finished the tutorial",
@@ -3191,7 +3221,7 @@
           "title": "An agent can search too",
           "intro": "Finding papers needs the network and an ADS token; try it outside the tutorial. Send this to your agent:",
           "prompt": "Use argelander-find-papers to find 10 related papers starting from Röser 2019",
-          "skill": "argelander-find-papers"
+          "skill": "argelander-find-papers (reads the ADS key from `~/.ads/dev_key`, not the token saved in the workbench)"
         }
       }
     }

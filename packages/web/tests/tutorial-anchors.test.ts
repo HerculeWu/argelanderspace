@@ -14,8 +14,11 @@ const TUTORIAL_DIR = join(SRC, "tutorial");
 /** The signals the observation layer reads from the DOM itself (not from a step's ladder). */
 const L3_SIGNALS: TutorialAnchor[] = [{ ui: "dialog-overlay" }, { ui: "command-palette" }];
 
-/** Identifiers of repeated instances: an anchor on one of them must say which (a key, or the active-pane scope). */
-const REPEATED = new Set(["work-item", "doc-item", "argument-node", "pane-header", "copilot-message", "workspace-pane", "navigate-view", "settings-group", "pane-view-option", "outline-item", "import-option", "task-doc-choice"]);
+/**
+ * Identifiers of repeated instances: an anchor on one of them must say which (a key, the active-pane scope, or a keyed
+ * element it is looked for within: the page context of one Copilot message, the operation card of one reply).
+ */
+const REPEATED = new Set(["work-item", "doc-item", "argument-node", "pane-header", "copilot-message", "workspace-pane", "navigate-view", "settings-group", "pane-view-option", "outline-item", "import-option", "task-doc-choice", "copilot-message-context", "copilot-operation", "copilot-conversation", "provider-card"]);
 
 /** Enumerated keys and where their values come from; object-id keys are not checked here. */
 const ENUM_KEYS: Record<string, readonly string[]> = {
@@ -73,7 +76,7 @@ function anchorProblems(anchors: { where: string; anchor: TutorialAnchor }[], id
   const problems: string[] = [];
   for (const { where, anchor } of anchors) {
     if (!identifiers.has(anchor.ui)) problems.push(`${where}: data-ui "${anchor.ui}" is not in the product source`);
-    if (REPEATED.has(anchor.ui) && anchor.key === undefined && anchor.scope === undefined) problems.push(`${where}: "${anchor.ui}" names repeated instances and needs a key`);
+    if (REPEATED.has(anchor.ui) && anchor.key === undefined && anchor.scope === undefined && anchor.within?.key === undefined) problems.push(`${where}: "${anchor.ui}" names repeated instances and needs a key`);
     const values = ENUM_KEYS[anchor.ui];
     if (values && anchor.key !== undefined && !values.includes(anchor.key)) problems.push(`${where}: "${anchor.ui}" has no instance "${anchor.key}"`);
   }
@@ -92,8 +95,10 @@ describe("tutorial anchors stay in the product source", () => {
       { where: "x", anchor: { ui: "no-such-control" } },
       { where: "y", anchor: { ui: "pane-header" } },
       { where: "z", anchor: { ui: "settings-group", key: "nope" } },
+      { where: "w", anchor: { ui: "copilot-operation", within: { ui: "copilot-messages" } } },
     ];
-    expect(anchorProblems(bad, identifiers)).toHaveLength(3);
+    expect(anchorProblems(bad, identifiers)).toHaveLength(4);
+    expect(anchorProblems([{ where: "v", anchor: { ui: "copilot-operation", within: { ui: "copilot-message", key: "m1" } } }], identifiers)).toEqual([]);
   });
   it("step ids are unique, prefixed by their chapter id, and every chapter has steps", () => {
     const ids = CHAPTERS.flatMap((c) => c.steps.map((s) => s.id));

@@ -539,6 +539,9 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
         onTakeMeThere={() => {
           if (take) void onViewAction(take);
         }}
+        onStepTakeMeThere={() => {
+          if (step.takeMeThere) void onViewAction(step.takeMeThere);
+        }}
         onScrollTo={() => placement.element?.scrollIntoView({ block: "center", behavior: "smooth" })}
         onRecheck={recheck}
       />

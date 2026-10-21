@@ -1,5 +1,6 @@
 import type { ChapterDefinition } from "../types";
 import { ARGUMENT } from "./argument";
+import { COPILOT_CHAPTER } from "./copilot";
 import { DISCOVERY } from "./discovery";
 import { FINISH } from "./finish";
 import { LIBRARY } from "./library";
@@ -10,8 +11,7 @@ import { TOUR } from "./tour";
 import { WRITER } from "./writer";
 
 /**
- * The registered chapters, in order: the chapter rail shows exactly these. The finish page stays last; chapter 8 is
- * registered by its own ticket, just before it.
+ * The registered chapters, in order: the chapter rail shows exactly these. The finish page stays last.
  */
 export const CHAPTERS: readonly ChapterDefinition[] = [
   PREPARE,
@@ -22,5 +22,6 @@ export const CHAPTERS: readonly ChapterDefinition[] = [
   ARGUMENT,
   PLAN_CHAPTER,
   WRITER,
+  COPILOT_CHAPTER,
   FINISH,
 ];

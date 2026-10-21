@@ -159,6 +159,41 @@ describe("docked cards", () => {
     fireEvent.click(ui("tutorial-take-me-there")!);
     expect(onViewAction).toHaveBeenCalledWith({ action: "switch_view", view: "library" });
   });
+  it("a step's own 'take me there' (no requirement): shown on the anchored card, runs only the registered action, no write", async () => {
+    document.body.insertAdjacentHTML("beforeend", `<button data-ui="open-tweaks"></button>`);
+    const chapters: ChapterDefinition[] = [
+      { id: "tour", n: 1, steps: [{ id: "tour.library", kind: "look", anchors: [{ ui: "open-tweaks" }], takeMeThere: { action: "switch_view", view: "plan" } }, { id: "tour.next", kind: "look", anchors: [{ ui: "open-tweaks" }] }] },
+    ];
+    const { onViewAction, put } = setup({ chapters, initial: fakeProgress({ position: "tour.library" }) });
+    await tick(16);
+    expect(card()?.getAttribute("data-state")).toBe("anchored");
+    const button = ui("tutorial-take-me-there", "step")!;
+    expect(button.textContent).toBe("带我去");
+    const writes = put.mock.calls.length;
+    fireEvent.click(button);
+    expect(onViewAction).toHaveBeenCalledTimes(1);
+    expect(onViewAction).toHaveBeenCalledWith({ action: "switch_view", view: "plan" });
+    // Navigation only: the step stays, nothing is recorded.
+    await tick(16);
+    expect(card()?.getAttribute("data-ui-key")).toBe("tour.library");
+    expect(put.mock.calls.length).toBe(writes);
+    // A step without its own action has no such button.
+    fireEvent.click(ui("tutorial-next")!);
+    await tick(16);
+    expect(card()?.getAttribute("data-ui-key")).toBe("tour.next");
+    expect(ui("tutorial-take-me-there", "step")).toBeNull();
+  });
+  it("a step's own 'take me there' is not offered on a docked card (a requirement's hint or a product modal)", async () => {
+    document.body.insertAdjacentHTML("beforeend", `<button data-ui="open-tweaks"></button>`);
+    const chapters: ChapterDefinition[] = [
+      { id: "tour", n: 1, steps: [{ id: "tour.library", kind: "look", anchors: [{ ui: "open-tweaks" }], takeMeThere: { action: "switch_view", view: "plan" }, requires: { test: (s) => s.page.view === "library", where: "library", takeMeThere: { action: "switch_view", view: "library" } } }] },
+    ];
+    setup({ chapters, initial: fakeProgress({ position: "tour.library" }) });
+    await tick(16);
+    expect(card()?.getAttribute("data-state")).toBe("requires");
+    expect(ui("tutorial-take-me-there", "step")).toBeNull();
+    expect(ui("tutorial-take-me-there")).not.toBeNull();
+  });
   it("a product modal: the card yields and the spotlight hides; it comes back when the modal closes", async () => {
     document.body.insertAdjacentHTML("beforeend", `<button data-ui="open-tweaks"></button>`);
     setup({ initial: fakeProgress({ position: "tour.tweaks" }) });

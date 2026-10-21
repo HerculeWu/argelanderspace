@@ -53,7 +53,7 @@ export interface GateRun {
 export type Gate = (snapshot: WorkbenchSnapshot, run: GateRun) => boolean;
 
 /** Where a requirement sends the user back to (`tutorial.ui.where.*`; the copy test checks every one). */
-export const WHERE_KEYS = ["library", "workDetail", "reader", "plan", "writer", "settings", "argumentGraph"] as const;
+export const WHERE_KEYS = ["library", "workDetail", "reader", "plan", "writer", "settings", "argumentGraph", "copilot"] as const;
 export type WhereKey = (typeof WHERE_KEYS)[number];
 
 /** The interface state a step needs before its anchor can be shown. */
@@ -93,6 +93,11 @@ export interface StepDefinition {
   readonly gate?: Gate;
   readonly sources?: readonly L2Source[];
   readonly requires?: Requirement;
+  /**
+   * A registered view action the anchored card offers as "take me there" (step 8.3: the plan page the operation card
+   * wrote to). Navigation only, like a requirement's: it records nothing and is never a gate.
+   */
+  readonly takeMeThere?: CopilotViewAction;
   readonly needsTex?: boolean;
   /** Language-neutral prepared text (the BibTeX constant); a translated one is `tutorial.steps.<id>.prepared.text`. */
   readonly preparedText?: string;
