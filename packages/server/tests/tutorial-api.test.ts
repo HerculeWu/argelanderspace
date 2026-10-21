@@ -118,7 +118,7 @@ async function browserServer(opts: { sample?: string } = {}): Promise<Client> {
 async function welcomeServer(opts: { sample?: string } = {}): Promise<Client> {
   const sink = createMemorySink();
   const srv = createNoProjectServer({
-    host: {} as HostBridge,
+    host: { usePages: () => {} } as unknown as HostBridge,
     globalDirs: isolatedGlobalDirs(),
     heartbeatMs: 0,
     webDist: null,

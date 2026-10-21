@@ -114,6 +114,8 @@ function createRouter(send: (frame: object) => void) {
     "settings.changed": emit,
     // A folder the shell picked waits for the user's confirmation (desktop-app ticket 19): only an explicit `on`.
     "host.switch-confirmation": emit,
+    // A tutorial entry the host took failed (in-app-tutorial ticket 25): only an explicit `on`.
+    "host.tutorial-result": emit,
     // Position notifications never navigate another tab; its reader remains
     // user-controlled. No built-in routing: only an explicit `on` sees it.
     "pdf-reading-position.changed": emit,

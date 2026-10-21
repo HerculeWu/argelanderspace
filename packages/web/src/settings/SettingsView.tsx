@@ -41,6 +41,7 @@ import { RecentProjectList } from "../welcome/RecentProjectList";
 import { openFromList, useProjectSwitch } from "../welcome/ProjectSwitch";
 import { DiagnosticsExportDialog } from "./DiagnosticsExport";
 import { EnvironmentCheck, useEnvironment } from "./EnvironmentCheck";
+import { TUTORIAL_COMMAND, TutorialCommand, TutorialEntryButtons, TutorialEntryMessages, TutorialRestartDialog, useTutorialEntry } from "../tutorial";
 import "./settings.css";
 
 /**
@@ -491,6 +492,7 @@ function Project({ state }: { state: RowState }) {
         </div>
       </div>
       {desktop && <RecentProjects P={state.P} />}
+      <TutorialRow root={root?.path ?? null} />
       <Row state={state} k="data_dir" label={t("settings.project.dataDir")}
         hint={settings.restartPending.includes("data_dir") || settings.running.data_dir === null ? undefined : (
           <span data-ui="data-dir-in-use">{t("settings.row.inUse")}<code className="st-path" title={settings.running.data_dir.path}>{settings.running.data_dir.display}</code></span>
@@ -554,6 +556,47 @@ function RecentProjects({ P }: { P: Preferences }) {
           <RecentProjectList ui="settings-recent-list" projects={others} disabled={leaving} onOpen={(project) => void open(project)} onRemove={(project) => void remove(project)} />
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The tutorial (in-app-tutorial ticket 25): in the desktop app "Start / Resume tutorial" and "Restart…", the same as on
+ * the welcome page, with what goes wrong said in this row; in the browser form the command that starts it. Not stored
+ * in the file.
+ */
+function TutorialRow({ root }: { root: string | null }) {
+  const { t } = useTranslation();
+  const entry = useTutorialEntry(root);
+  const [restartAsk, setRestartAsk] = useState(false);
+  if (entry.desktop === undefined) return null;
+  return (
+    <div className="st-row" data-ui="setting-row" data-ui-key="tutorial">
+      <div className="st-row-main">
+        <div className="st-label"><span>{t("tutorial.entry.rowLabel")}</span></div>
+        <div className="st-hint">{t("tutorial.entry.rowHelp")}</div>
+        <div className="st-badges"><Badge>{t("settings.row.notInFile")}</Badge></div>
+      </div>
+      {entry.desktop ? (
+        <>
+          <div className="st-control">
+            <TutorialEntryButtons entry={entry} ui="settings" onRestart={() => setRestartAsk(true)} />
+          </div>
+          {(entry.outdated || (entry.failure && !restartAsk)) && (
+            <div className="st-row-wide">
+              <TutorialEntryMessages entry={entry} hideFailure={restartAsk} />
+            </div>
+          )}
+          {restartAsk && entry.state?.project && (
+            <TutorialRestartDialog entry={entry} path={entry.state.project.path} desktop onClose={() => setRestartAsk(false)} />
+          )}
+        </>
+      ) : (
+        <div className="st-row-wide">
+          <div className="st-hint">{t("tutorial.entry.rowBrowser")}</div>
+          <TutorialCommand command={TUTORIAL_COMMAND} ui="tutorial-command" />
+        </div>
+      )}
     </div>
   );
 }

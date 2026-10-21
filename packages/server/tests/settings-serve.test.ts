@@ -305,6 +305,8 @@ describe("a start reading handed in (the desktop host's, architecture-deepening 
     },
     switching: { confirm: () => "unknown_switch", cancel: () => {} },
     useWorkbench: () => {},
+    usePages: () => {},
+    tutorial: { pick: () => "no_sample", continue: () => "no_sample", restart: () => "no_sample" },
   });
 
   /**
