@@ -56,6 +56,12 @@ const ALLOWED_ROOT = /^(?:package\.json|README\.md|LICENSE|dist\/.+|licenses\/[^
  * data is what the package must carry. Every other rule holds there too.
  */
 const TUTORIAL_SAMPLE = /^dist\/tutorial\//;
+/**
+ * The sample's one preset Copilot conversation (in-app-tutorial ticket 17): its record and its Pi session file, at
+ * exactly the places the server reads them. Only these two shapes are exempt from the Copilot and `.jsonl` rules.
+ */
+const TUTORIAL_CONVERSATION =
+  /^dist\/tutorial\/literatures\/copilot\/(?:conversations\/[^/]+\.json|sessions\/[^/]+\.jsonl)$/;
 
 const FORBIDDEN = [
   [/(^|\/)\.scratch(\/|$)/, "a private scratch/ticket file"],
@@ -64,11 +70,12 @@ const FORBIDDEN = [
     /(^|\/)(?:\.pi|\.git|\.codegraph|\.serena|node_modules|svglib)(\/|$)/,
     "a repository/tooling directory",
   ],
-  [/(^|\/)copilot(\/|$)/, "Copilot conversation data"],
+  [/(^|\/)copilot(\/|$)/, "Copilot conversation data", "conversation"],
   [/(^|\/)(?:auth|models|settings)\.json$/, "a provider credential/config file"],
   [/(^|\/)\.env(?:\.|$)|\.(?:pem|key)$|(^|\/)id_rsa/, "a secret-looking file"],
   [/\.tgz$/, "a nested tarball"],
-  [/\.(?:pdf|jsonl)$/i, "a document or conversation/session file"],
+  [/\.pdf$/i, "a document"],
+  [/\.jsonl$/i, "a conversation/session file", "conversation"],
   [/(^|\/)(?:\.npmrc|preferences\.json)$/, "a user config file"],
   [/\.map$/, "a source map (it would embed sources)"],
   [/\.test\.|(^|\/)tests?\//, "a test file"],
@@ -87,8 +94,13 @@ export function checkPackContents(paths) {
     if (!ALLOWED_ROOT.test(file))
       problems.push(`unexpected file outside the package contract: ${file}`);
     const inSample = TUTORIAL_SAMPLE.test(file);
+    const isConversation = TUTORIAL_CONVERSATION.test(file);
     for (const [pattern, why, exempt] of FORBIDDEN)
-      if (pattern.test(file) && !(inSample && exempt === "sample"))
+      if (
+        pattern.test(file) &&
+        !(inSample && exempt === "sample") &&
+        !(isConversation && exempt === "conversation")
+      )
         problems.push(`forbidden file ${file}: ${why}`);
   }
   return problems;

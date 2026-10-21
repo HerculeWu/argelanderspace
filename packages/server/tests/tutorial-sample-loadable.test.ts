@@ -3,18 +3,26 @@
 // the sample itself. ① the Doc's IR, ⑥ the bundled discovery cache answers the Röser discovery offline, ⑦ the library
 // graph heals to exactly the citations among the five Works the spec lists (Röser↔Meingast, Jerabkova→Röser/Meingast,
 // Kroupa→Röser/Meingast/Jerabkova, Pflamm-Altenburg→Jerabkova/Kroupa: nine directed edges; the spec's count "7" does
-// not match its own list, see ticket 16's comments). ②–⑤ (annotations, argument graph, plan,
-// manuscript, Copilot session) come with ticket 17. A red test here means the sample has to be regenerated with
-// packages/app/scripts/tutorial-sample.mjs (or the product changed a format the sample relies on).
+// not match its own list, see ticket 16's comments). Ticket 17 adds ② the preset annotations survive an `ensure` (no
+// archive) and target blocks the IR has, ③ the argument graph reads and its audit has exactly the one deliberate
+// noPathToEnd finding, ④ the Plan and the manuscript read, ⑤ the preset Copilot conversation reads back through
+// `readCopilotHistory` and the host's snapshot with three questions, two operation cards and no confirmation.
+// A red test here means the sample has to be regenerated with packages/app/scripts/tutorial-sample.mjs (or the
+// product changed a format the sample relies on; for ⑤ the conversation is re-run by hand, spec §7).
 import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { auditArgumentGraph, irIndex } from "@argelanderspace/contracts";
 import {
   discoverLiterature,
+  ensureCurrentAnnotations,
   healGraph,
   LibraryStore,
   libraryPaths,
+  loadArgumentGraph,
+  loadManuscript,
+  loadPlans,
   loadStoredDocIr,
 } from "@argelanderspace/core";
 import { AdsDiscoveryClient } from "@argelanderspace/infra";
@@ -144,4 +152,67 @@ describe("the tutorial sample loads", () => {
         .sort()
     );
   });
+
+  it("② the preset annotations survive an ensure: no archive, every target in the IR", () => {
+    const annotationsDir = join(dataDir, "annotations", DOC);
+    const before = readFileSync(join(annotationsDir, "current.json"));
+    const result = ensureCurrentAnnotations(dataDir, DOC);
+    expect(result.invalidated).toBe(false);
+    expect(readdirSync(annotationsDir)).toEqual(["current.json"]);
+    expect(readFileSync(join(annotationsDir, "current.json"))).toEqual(before);
+    expect(result.file.rev).toBe(0);
+    expect(result.file.annotations.map((a) => a.target.type).sort()).toEqual([
+      "document",
+      "structure",
+      "text",
+    ]);
+    const { blocks, sections } = irIndex(loadStoredDocIr(dataDir, DOC));
+    for (const a of result.file.annotations) {
+      if (a.target.type === "structure")
+        expect(blocks.has(a.target.id) || sections.has(a.target.id), a.id).toBe(true);
+      if (a.target.type === "text") expect(blocks.has(a.target.block), a.id).toBe(true);
+    }
+  });
+
+  it("③ the argument graph reads and its audit has exactly one finding: the deliberate unlinked Native", () => {
+    const graph = loadArgumentGraph(dataDir, W.jerabkova);
+    expect(graph.arguments.length).toBeGreaterThanOrEqual(6);
+    expect(graph.arguments.length).toBeLessThanOrEqual(8);
+    expect(graph.arguments.filter((a) => a.kind === "end")).toHaveLength(1);
+    const audit = auditArgumentGraph(graph);
+    expect(audit.noPathToEnd).toHaveLength(1);
+    const orphan = graph.arguments.find((a) => a.id === audit.noPathToEnd[0]);
+    expect(orphan?.kind).toBe("native");
+    expect(audit).toEqual({
+      cycles: [],
+      noPathToEnd: [orphan?.id],
+      noEnd: false,
+      endWithOutEdge: [],
+      nativeWithInEdge: [],
+      incomplete: [],
+    });
+  });
+
+  it("④ the Plan and the manuscript read", () => {
+    const plans = loadPlans(join(root, "sample", "status"));
+    expect(plans.plans).toHaveLength(1);
+    expect(plans.plans[0]?.tasks.length).toBeGreaterThanOrEqual(2);
+    const manuscripts = readdirSync(join(dataDir, "manuscripts"));
+    expect(manuscripts).toHaveLength(1);
+    const manuscript = loadManuscript(dataDir, manuscripts[0] as string);
+    expect(manuscript?.cells.length).toBeGreaterThanOrEqual(3);
+    // the review manuscript cites all five Works of the library
+    const sources = manuscript?.cells.map((c) => JSON.stringify(c.data)).join("\n") ?? "";
+    const store = LibraryStore.load(libraryPaths(dataDir));
+    for (const work of store.works) expect(sources, work.id).toContain(work.cite_key);
+  });
+
+  // ⑤ waits for the preset Copilot conversation (the user's ruling, ticket 17: recorded later, from a neutral path).
+  // Once tutorial-sample/literatures/copilot/{conversations/<id>.json, sessions/<sid>.jsonl} exist, this becomes a
+  // real test: both files read back through `readCopilotHistory` and `CopilotHost.snapshot` with three user
+  // questions (the first carrying the Jerabkova reader context), two operation cards that are not file-tool cards, and
+  // `confirmations` empty. The full assertions are in commit 9c55c8a of tut/17-content.
+  it.todo(
+    "⑤ 待预置 Copilot 会话录入: the preset conversation reads back with three questions, two operation cards, no confirmation"
+  );
 });

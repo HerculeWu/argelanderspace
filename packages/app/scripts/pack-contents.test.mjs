@@ -101,6 +101,14 @@ test("the tutorial sample ships under dist/tutorial: its marker and notice are r
   assert.deepEqual(checkPackContents([...good, ...sample]), []);
 });
 
+test("the tutorial sample's preset Copilot conversation is allowed, only at its own place (in-app-tutorial ticket 17)", () => {
+  const conversation = [
+    "dist/tutorial/literatures/copilot/conversations/a2cd3c11-c2c5-45fc-96b2-aa5db1637d5a.json",
+    "dist/tutorial/literatures/copilot/sessions/e4c084f5-c49f-4d6d-856e-0e225d6c3910.jsonl",
+  ];
+  assert.deepEqual(checkPackContents([...good, ...conversation]), []);
+});
+
 for (const forbidden of [
   // literature data is allowed only inside the sample
   "dist/literatures/library/library.json",
@@ -111,6 +119,15 @@ for (const forbidden of [
   "dist/tutorial/literatures/output/x/x.pdf",
   "dist/tutorial/.scratch/notes.md",
   "dist/tutorial/node_modules/x/index.js",
+  // the Copilot exemption covers the sample's conversation record and session file and nothing else
+  "dist/copilot/conversations/x.json",
+  "dist/tutorial/copilot/sessions/x.jsonl",
+  "dist/tutorial/literatures/copilot/runtime/x.json",
+  "dist/tutorial/literatures/copilot/agent/auth.json",
+  "dist/tutorial/literatures/copilot/sessions/x.json",
+  "dist/tutorial/literatures/copilot/conversations/x.jsonl",
+  "dist/tutorial/literatures/copilot/sessions/nested/x.jsonl",
+  "dist/tutorial/literatures/jobs/x.jsonl",
 ]) {
   test(`forbidden ${forbidden} is reported even next to the tutorial sample`, () => {
     const problems = checkPackContents([...good, forbidden]);
