@@ -15,7 +15,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TutorialProgress, TutorialState } from "@argelanderspace/contracts";
 import { createLogger, TUTORIAL_MARKER_FILE, TUTORIAL_PROGRESS_FILE } from "@argelanderspace/infra";
@@ -156,9 +156,28 @@ describe("GET /api/tutorial", () => {
     const h = await browserServer({ sample: marked("sample", 3) });
     expect((await h.get()).body).toEqual({
       progress: progress(project),
-      project: { path: project, state: "ready" },
+      project: { path: project, display: project, state: "ready" },
       sample: { bundled: 3, project: 2 },
     });
+  });
+
+  test("the bound folder as the page shows it: `display`, with the server's home directory written as `~`", async () => {
+    const project = join(homedir(), "ArgelanderSpace-Tutorial");
+    mkdirSync(project, { recursive: true });
+    writeFileSync(join(project, TUTORIAL_MARKER_FILE), JSON.stringify({ version: 1, sample: 2 }));
+    try {
+      writeProgressBytes(JSON.stringify(progress(project)));
+      const h = await browserServer({ sample: marked("sample", 3) });
+      expect((await h.get()).body).toMatchObject({
+        project: { path: project, display: "~/ArgelanderSpace-Tutorial", state: "ready" },
+      });
+      rmSync(project, { recursive: true });
+      expect((await h.get()).body).toMatchObject({
+        project: { path: project, display: "~/ArgelanderSpace-Tutorial", state: "missing" },
+      });
+    } finally {
+      rmSync(project, { recursive: true, force: true });
+    }
   });
 
   test("the bound folder is gone: `missing`; there without a marker: `unmarked` — looked at for each answer", async () => {
@@ -243,7 +262,7 @@ describe("PUT /api/tutorial", () => {
     expect(put.status).toBe(200);
     expect(put.body).toEqual({
       progress: next,
-      project: { path: project, state: "ready" },
+      project: { path: project, display: project, state: "ready" },
       sample: { bundled: 4, project: 4 },
     });
     expect(JSON.parse(readFileSync(progressFile(), "utf8"))).toEqual(next);
@@ -352,7 +371,7 @@ describe("the desktop app's welcome state", () => {
       status: 200,
       body: {
         progress: progress(project),
-        project: { path: project, state: "ready" },
+        project: { path: project, display: project, state: "ready" },
         sample: { bundled: 2, project: 1 },
       },
     });

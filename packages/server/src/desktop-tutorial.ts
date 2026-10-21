@@ -42,6 +42,7 @@ import {
   discardTutorialCopy,
   emptyTutorialFolder,
   f,
+  newTutorialProgress,
   readTutorialProgress,
   stageTutorialCopy,
   swapInTutorialCopy,
@@ -137,18 +138,7 @@ export function createTutorialEntry(deps: TutorialHostDeps): TutorialEntry {
   };
   const marked = (path: string) => tutorialFolderState(path).kind === "marked";
 
-  const fresh = (path: string): TutorialProgress => {
-    const now = new Date().toISOString();
-    return {
-      version: 1,
-      project: { path },
-      startedAt: now,
-      updatedAt: now,
-      position: null,
-      steps: {},
-      appVersion: deps.appVersion.slice(0, 64),
-    };
-  };
+  const fresh = (path: string): TutorialProgress => newTutorialProgress(path, deps.appVersion);
 
   const entered = (action: HostTutorialAction, outcome: (typeof TUTORIAL_ENTRY_OUTCOMES)[number]) =>
     deps.log()?.info("desktop.tutorial_entered", {

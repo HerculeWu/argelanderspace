@@ -31,9 +31,11 @@ vi.mock("../src/mail/MailView", async () => (await import("./shell-stubs")).page
 const DESKTOP: HostInfo = { version: 1, app: "argelanderspace", mode: "desktop", requests: [...HOST_REQUEST_KINDS], portFallback: null, project: "open" };
 const BROWSER: HostInfo = { version: 1, app: "argelanderspace", mode: "browser", requests: [], portFallback: null, project: "open" };
 const FOLDER = "/home/someone/ArgelanderSpace-Tutorial";
+/** FOLDER as the server shows it (its home directory written as `~`). */
+const SHOWN = "~/ArgelanderSpace-Tutorial";
 const READY: TutorialState = {
   progress: fakeProgress({ project: { path: FOLDER } }),
-  project: { path: FOLDER, state: "ready" },
+  project: { path: FOLDER, display: SHOWN, state: "ready" },
   sample: { bundled: 3, project: 3 },
 };
 
@@ -151,11 +153,12 @@ describe("in the tutorial project itself", () => {
 });
 
 describe("the chapter rail's “Restart…”", () => {
-  function rail(desktop: boolean) {
+  function rail(desktop: boolean, projectDisplay?: string) {
     tutorial = READY;
     render(withPreferences(
       <TutorialRunner
         initial={fakeProgress({ project: { path: FOLDER }, position: "tour.library" })}
+        projectDisplay={projectDisplay}
         context={fakePage("plan")}
         onViewAction={async () => ({ ok: true })}
         desktop={desktop}
@@ -165,6 +168,14 @@ describe("the chapter rail's “Restart…”", () => {
     ));
   }
 
+  it("the confirmation names the folder in its display form from its first frame (the layer's own state), not the raw path", async () => {
+    rail(true, SHOWN);
+    fireEvent.click(q('[data-ui="tutorial-rail-more"]')!);
+    fireEvent.click(q('[data-ui="tutorial-restart"]')!);
+    const dialog = q('[data-ui="restart-tutorial"]');
+    expect(dialog?.textContent).toContain(SHOWN);
+    expect(dialog?.textContent).not.toContain(FOLDER);
+  });
   it("desktop: the overflow menu's item opens the same confirmation; confirmed, the host restarts the open tutorial", async () => {
     rail(true);
     fireEvent.click(q('[data-ui="tutorial-rail-more"]')!);
@@ -172,7 +183,8 @@ describe("the chapter rail's “Restart…”", () => {
     expect(item.disabled).toBe(false);
     fireEvent.click(item);
     await waitFor(() => expect(q('[data-ui="restart-tutorial"]')).not.toBeNull());
-    expect(q('[data-ui="restart-tutorial"]')?.textContent).toContain(FOLDER);
+    await waitFor(() => expect(q('[data-ui="restart-tutorial"]')?.textContent).toContain(SHOWN));
+    expect(q('[data-ui="restart-tutorial"]')?.textContent).not.toContain(FOLDER);
     // The card yields to the dialog (the modal signal).
     await waitFor(() => expect(q('[data-ui="tutorial-step-card"]')?.getAttribute("data-state")).toBe("modal"));
     fireEvent.click(q('[data-ui="restart-tutorial-confirm"]')!);

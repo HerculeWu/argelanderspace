@@ -103,7 +103,8 @@ export interface Measured {
 }
 
 /**
- * Whether an element is on screen: more than half of it cut off by a scroll container or the window is not. The
+ * Whether an element is on screen: more than half of it cut off by a scroll container or the window is not; an element
+ * larger than that view along a side is on screen when it fills more than half of the view along that side. The
  * containers are its ancestors up to the first fixed-position element (itself included): a fixed element is placed
  * against the window, so the containers above it do not cut it off (a popover or editor whose DOM sits inside the
  * reader's scroll container; ticket 21, F2). That fixed element's own overflow still clips what is inside it.
@@ -111,10 +112,11 @@ export interface Measured {
 export function measure(el: Element, win: Window = window): Measured {
   const r = el.getBoundingClientRect();
   if (r.width === 0 && r.height === 0) return { rect: null, box: null, visible: false };
-  let top = r.top;
-  let left = r.left;
-  let right = r.right;
-  let bottom = r.bottom;
+  // The view: the window cut down by every clipping container (as above).
+  let top = 0;
+  let left = 0;
+  let right = win.innerWidth;
+  let bottom = win.innerHeight;
   const fixed = (node: Element) => win.getComputedStyle(node).position === "fixed";
   for (let p = fixed(el) ? null : el.parentElement; p && p !== win.document.body; p = fixed(p) ? null : p.parentElement) {
     const cs = win.getComputedStyle(p);
@@ -126,12 +128,15 @@ export function measure(el: Element, win: Window = window): Measured {
       bottom = Math.min(bottom, pr.bottom);
     }
   }
-  top = Math.max(top, 0);
-  left = Math.max(left, 0);
-  right = Math.min(right, win.innerWidth);
-  bottom = Math.min(bottom, win.innerHeight);
-  const w = right - left;
-  const h = bottom - top;
-  const visible = w > 0 && h > 0 && (w * h) / (r.width * r.height) >= 0.5;
-  return { rect: visible ? new DOMRect(left, top, w, h) : null, box: r, visible };
+  const viewW = right - left;
+  const viewH = bottom - top;
+  const w = Math.min(right, r.right) - Math.max(left, r.left);
+  const h = Math.min(bottom, r.bottom) - Math.max(top, r.top);
+  // More than half of itself is in view; or, for an anchor larger than the view along a side (a whole manuscript paper),
+  // more than half of the view along that side is filled by it (each side measured against the smaller of the two).
+  const fits = w > 0 && h > 0 && (w * h) / (r.width * r.height) >= 0.5;
+  const larger = r.width > viewW || r.height > viewH;
+  const fills = w > 0 && h > 0 && larger && (w / Math.min(r.width, viewW)) * (h / Math.min(r.height, viewH)) > 0.5;
+  const visible = fits || fills;
+  return { rect: visible ? new DOMRect(Math.max(left, r.left), Math.max(top, r.top), w, h) : null, box: r, visible };
 }

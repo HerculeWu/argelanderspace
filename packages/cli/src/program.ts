@@ -12,7 +12,7 @@
  * (Python's `data/output`).
  */
 
-import { realpathSync, statSync, writeFileSync } from "node:fs";
+import { statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DEFAULT_PORT } from "@argelanderspace/contracts";
 import {
@@ -45,7 +45,7 @@ import {
 import { Command } from "commander";
 import { registerAgentCommands } from "./agent.js";
 import { registerArgumentCommands } from "./argument.js";
-import { DATA_DIR_HELP, fail, resolveDataDir, withDataDir } from "./common.js";
+import { DATA_DIR_HELP, fail, realpathOr, resolveDataDir, withDataDir } from "./common.js";
 import { detectSource } from "./detect.js";
 // The app package's version, written into the source at build time (scripts/app-version.mjs; desktop-app ticket 16).
 import { APP_VERSION } from "./generated/app-version.js";
@@ -363,15 +363,6 @@ function cliOffer(
 ): { cliLauncher: CliLauncherTarget } | { cliUnavailable: "appimage" } {
   const reason = cliLauncherUnavailable(target, process.env);
   return reason === null ? { cliLauncher: target } : { cliUnavailable: reason };
-}
-
-/** The path with its symbolic links resolved; the path itself when that fails. */
-function realpathOr(path: string): string {
-  try {
-    return realpathSync(path);
-  } catch {
-    return path;
-  }
 }
 
 /**

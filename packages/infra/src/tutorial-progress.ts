@@ -94,6 +94,31 @@ export function readTutorialProgress(file: string): TutorialProgressReading {
     : { progress: null, problem: checked.problem };
 }
 
+/** The longest `appVersion` a progress takes (contracts `TutorialProgressSchema`). */
+const APP_VERSION_MAX = 64;
+
+/**
+ * A new progress bound to the tutorial folder `path`: nothing done yet, started and updated `now`, with the app's
+ * version (cut to what the shape takes). The one the desktop host writes when it starts a tutorial and the one the
+ * `tutorial` command writes.
+ */
+export function newTutorialProgress(
+  path: string,
+  appVersion: string,
+  now: Date = new Date()
+): TutorialProgress {
+  const at = now.toISOString();
+  return {
+    version: TUTORIAL_PROGRESS_VERSION,
+    project: { path },
+    startedAt: at,
+    updatedAt: at,
+    position: null,
+    steps: {},
+    appVersion: appVersion.slice(0, APP_VERSION_MAX),
+  };
+}
+
 /**
  * Replaces the file with `progress` (already checked by {@link tutorialProgressOf}): written next to it and renamed
  * over it, the directory made when missing (0700), the file 0600. Throws when it cannot be written; the old bytes then

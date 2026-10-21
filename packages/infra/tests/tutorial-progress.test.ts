@@ -23,6 +23,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { bundledTutorialDir } from "../src/cli-launcher.js";
 import { resolveGlobalDirs } from "../src/global-dirs.js";
 import {
+  newTutorialProgress,
   readTutorialMarker,
   readTutorialProgress,
   resolveTutorialProgressPath,
@@ -229,4 +230,29 @@ test("the default file is in the global data directory", () => {
   expect(resolveTutorialProgressPath()).toBe(
     join(resolveGlobalDirs().dataDir, TUTORIAL_PROGRESS_FILE)
   );
+});
+
+describe("a new progress (the desktop host's and the CLI's, one shape)", () => {
+  test("bound to the folder, nothing done yet, started and updated now, with the app's version", () => {
+    const progress = newTutorialProgress(
+      "/t/ArgelanderSpace-Tutorial",
+      "0.4.2",
+      new Date("2026-10-21T08:00:00.000Z")
+    );
+    expect(progress).toEqual({
+      version: 1,
+      project: { path: "/t/ArgelanderSpace-Tutorial" },
+      startedAt: "2026-10-21T08:00:00.000Z",
+      updatedAt: "2026-10-21T08:00:00.000Z",
+      position: null,
+      steps: {},
+      appVersion: "0.4.2",
+    });
+    expect(tutorialProgressOf(progress)).toEqual({ ok: true, progress });
+  });
+  test("an app version longer than the progress takes is cut to 64 characters", () => {
+    const progress = newTutorialProgress("/t", "9".repeat(80));
+    expect(progress.appVersion).toBe("9".repeat(64));
+    expect(tutorialProgressOf(progress).ok).toBe(true);
+  });
 });

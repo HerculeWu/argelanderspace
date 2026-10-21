@@ -35,9 +35,16 @@ import {
   libraryPaths,
   normArxiv,
 } from "../../core/dist/index.js";
-import { extractTar, extractZip, fetchStreamedBytes, zipEntries } from "../../infra/dist/index.js";
+import {
+  extractTar,
+  extractZip,
+  fetchStreamedBytes,
+  TUTORIAL_MARKER_FILE,
+  zipEntries,
+} from "../../infra/dist/index.js";
 
-export const MARKER_FILE = "argelanderspace-tutorial.json";
+/** The tutorial marker's file name: infra's, the one the server, the desktop host and the CLI read. */
+export const MARKER_FILE = TUTORIAL_MARKER_FILE;
 /** The one Doc of the sample (CC BY 4.0) and its pinned arXiv version. */
 export const JERABKOVA_EPRINT = "2103.12080v1";
 export const JERABKOVA_DOC_ID = "arxiv-2103.12080";

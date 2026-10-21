@@ -84,7 +84,7 @@ describe("chapter 7 is registered after the earlier chapters and before the fini
   it("7.3 starts at the add button under the last preset cell (the button has no key of its own)", () => {
     const first = step("writer.add-cell").anchors[0]!;
     expect(first).toMatchObject({ ui: "add-cell-after", within: { ui: "manuscript-cell", key: SAMPLE_LAST_CELL_ID } });
-    expect(step("writer.add-cell").anchors.map((a) => a.ui)).toEqual(["add-cell-after", "add-cell-menu", "add-cell-type", "cell-field", "commit-cell"]);
+    expect(step("writer.add-cell").anchors.map((a) => a.ui)).toEqual(["add-cell-after", "add-cell-menu", "add-cell-type", "commit-cell"]);
     expect(step("writer.add-cell").anchors[2]).toMatchObject({ key: "latex" });
     expect(step("writer.add-cell").preparedCopy).toBe(true);
   });

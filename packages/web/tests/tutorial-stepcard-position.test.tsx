@@ -76,3 +76,19 @@ describe("StepCard placement", () => {
     }
   });
 });
+
+describe("the card's entry animation leaves its placement alone (final check, probe 25's rail menu)", () => {
+  it("the step card's keyframes do not animate `transform` (the placement is an inline transform the animation would override, leaving the card at the top left over the rail while it plays)", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
+    const css = read("../src/tutorial/tutorial.css");
+    const rule = /\.tut-card\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+    const name = /animation:\s*([\w-]+)/.exec(rule)?.[1];
+    expect(name).toBeTruthy();
+    const all = css + read("../src/argelander.css");
+    const frames = new RegExp(`@keyframes\\s+${name}\\s*\\{((?:[^{}]*\\{[^}]*\\})*)[^}]*\\}`).exec(all)?.[1];
+    expect(frames).toBeTruthy();
+    expect(frames).not.toMatch(/(^|[\s;{])transform\s*:/);
+  });
+});

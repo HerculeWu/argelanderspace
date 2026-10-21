@@ -152,6 +152,10 @@ export const SHELL_NOTICES_FILE = "THIRD-PARTY-SHELL-NOTICES.txt";
  * The tutorial sample in the resource directory (in-app-tutorial ticket 27): desktop-sidecar.mjs copies the repository's
  * tutorial-sample/ here, unpacked, and tauri.package.conf.json maps it; infra `bundledTutorialDir` finds it from the
  * packaged CLI entry (`<resources>/sidecar/app/dist/bin.js` → `<resources>/tutorial`).
+ *
+ * Kept here, not imported from infra: this module holds pure rules and imports no build output, and infra does not
+ * export the name (it is a literal inside `bundledTutorialDir`). desktop-package.test.mjs checks that infra's
+ * `bundledTutorialDir` finds the sample at exactly this resource directory.
  */
 export const TUTORIAL_RESOURCE_DIR = "tutorial";
 

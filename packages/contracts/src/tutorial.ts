@@ -78,8 +78,11 @@ export type TutorialProjectState = (typeof TUTORIAL_PROJECT_STATES)[number];
 /** `GET /api/tutorial` (and the answer to a `PUT`). */
 export interface TutorialState {
   progress: TutorialProgress | null;
-  /** The project the progress is bound to; null when there is no progress or it is bound to none. */
-  project: { path: string; state: TutorialProjectState } | null;
+  /**
+   * The project the progress is bound to; null when there is no progress or it is bound to none. `display` is `path`
+   * as the page shows it (the server's home directory written as `~`, as settings `ShownPath`).
+   */
+  project: { path: string; display: string; state: TutorialProjectState } | null;
   sample: {
     /** The `sample` number of the sample that ships with this installation; null: it has none. */
     bundled: number | null;

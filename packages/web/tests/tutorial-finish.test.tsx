@@ -161,3 +161,39 @@ describe("the three ways out", () => {
     expect(ui("tutorial-finish")).not.toBeNull();
   });
 });
+
+describe("a product modal on the finish page (review B1)", () => {
+  it("the finish card yields below the dialog's overlay like a step card and takes no input; it comes back when the dialog closes", async () => {
+    setup();
+    await tick(16);
+    expect(card()?.className).not.toContain("yielded");
+    expect(card()?.hasAttribute("inert")).toBe(false);
+    document.body.insertAdjacentHTML("beforeend", `<div data-ui="dialog-overlay"></div>`);
+    await tick(32);
+    expect(card()?.className).toContain("yielded");
+    expect(card()?.getAttribute("data-state")).toBe("modal");
+    expect(card()?.hasAttribute("inert")).toBe(true);
+    expect(ui("tutorial-modal-yield")?.textContent).toBe("关掉对话框后继续");
+    ui("dialog-overlay")!.remove();
+    await tick(32);
+    expect(card()?.className).not.toContain("yielded");
+    expect(card()?.hasAttribute("inert")).toBe(false);
+    expect(card()?.getAttribute("data-state")).toBe("none");
+  });
+  it("the tutorial's own leave dialog, opened from the finish card, puts the card below its overlay", async () => {
+    setup();
+    await tick(16);
+    fireEvent.click(ui("exit-tutorial", "card")!);
+    await tick(32);
+    expect(ui("exit-tutorial-dialog")).not.toBeNull();
+    expect(card()?.className).toContain("yielded");
+    expect(card()?.hasAttribute("inert")).toBe(true);
+  });
+  it("a Writer dialog's overlay counts as a product modal too (review B2)", async () => {
+    setup();
+    await tick(16);
+    document.body.insertAdjacentHTML("beforeend", `<div data-ui="writer-dialog-overlay"></div>`);
+    await tick(32);
+    expect(card()?.className).toContain("yielded");
+  });
+});

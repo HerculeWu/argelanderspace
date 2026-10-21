@@ -23,6 +23,8 @@ vi.mock("../src/argelander/Shell", () => ({ Shell: () => <div data-ui="stub-work
 
 const WELCOME: HostInfo = { version: 1, app: "argelanderspace", mode: "desktop", requests: [...HOST_REQUEST_KINDS], portFallback: null, project: "none" };
 const FOLDER = "/home/someone/ArgelanderSpace-Tutorial";
+/** FOLDER as the server shows it (its home directory written as `~`). */
+const SHOWN = "~/ArgelanderSpace-Tutorial";
 
 const NONE: TutorialState = { progress: null, project: null, sample: { bundled: 3, project: null } };
 const READY: TutorialState = {
@@ -35,7 +37,7 @@ const READY: TutorialState = {
     steps: {},
     appVersion: "0.1.1",
   },
-  project: { path: FOLDER, state: "ready" },
+  project: { path: FOLDER, display: SHOWN, state: "ready" },
   sample: { bundled: 3, project: 3 },
 };
 
@@ -122,7 +124,7 @@ describe("the button's three states", () => {
   });
 
   it("a bound folder that is gone or unmarked: “Start tutorial” again", async () => {
-    tutorial = { ...READY, project: { path: FOLDER, state: "missing" }, sample: { bundled: 3, project: null } };
+    tutorial = { ...READY, project: { path: FOLDER, display: SHOWN, state: "missing" }, sample: { bundled: 3, project: null } };
     await welcome();
     expect(button("welcome-start-tutorial")?.textContent).toBe("Start tutorial");
     expect(q('[data-ui="welcome-restart-tutorial"]')).toBeNull();
@@ -143,7 +145,7 @@ describe("the button's three states", () => {
     tutorial = READY;
     await welcome();
     reply = { status: 409, body: { code: "tutorial_missing" } };
-    tutorial = { ...READY, project: { path: FOLDER, state: "missing" } };
+    tutorial = { ...READY, project: { path: FOLDER, display: SHOWN, state: "missing" } };
     fireEvent.click(button("welcome-start-tutorial")!);
     await waitFor(() => expect(button("welcome-start-tutorial")?.textContent).toBe("Start tutorial"));
     expect(q('[data-ui="tutorial-entry-starting"]')).toBeNull();
@@ -204,7 +206,9 @@ describe("“Restart…”", () => {
   it("the confirmation names the folder and what is deleted, the safe action has the focus; cancel sends nothing", async () => {
     const dialog = await ask();
     expect(dialog.textContent).toContain("Restart the tutorial?");
-    expect(dialog.textContent).toContain(`${FOLDER} will be emptied and the sample copied again`);
+    // The folder as everywhere else on the page: the server's display form, not the raw path.
+    expect(dialog.textContent).toContain(`${SHOWN} will be emptied and the sample copied again`);
+    expect(dialog.textContent).not.toContain(FOLDER);
     expect(dialog.textContent).toContain("annotations, arguments, tasks and manuscripts");
     expect(document.activeElement).toBe(button("restart-tutorial-cancel"));
     expect(button("restart-tutorial-confirm")?.className).toContain("danger");
@@ -248,7 +252,7 @@ describe("“Restart…”", () => {
   it("refused (the folder lost its marker meanwhile): the dialog closes and the state is read again", async () => {
     await ask();
     reply = { status: 409, body: { code: "tutorial_missing" } };
-    tutorial = { ...READY, project: { path: FOLDER, state: "unmarked" } };
+    tutorial = { ...READY, project: { path: FOLDER, display: SHOWN, state: "unmarked" } };
     fireEvent.click(button("restart-tutorial-confirm")!);
     await waitFor(() => expect(q('[data-ui="restart-tutorial"]')).toBeNull());
     await waitFor(() => expect(button("welcome-start-tutorial")?.textContent).toBe("Start tutorial"));

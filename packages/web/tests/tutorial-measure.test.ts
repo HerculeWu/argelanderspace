@@ -64,6 +64,37 @@ describe("measure and fixed positioning", () => {
   });
 });
 
+describe("measure: an anchor larger than the view (review: 7.2's whole manuscript paper, final check)", () => {
+  it("taller than its scroll container and filling it: in view, the visible part highlighted", () => {
+    const { el, win } = chain([
+      { box: [300, 80, 900, 800], style: { overflowY: "auto" } },
+      { box: [320, -400, 860, 2600] },
+    ]);
+    const m = measure(el, win);
+    expect(m.visible).toBe(true);
+    expect(m.rect).toEqual(new DOMRect(320, 80, 860, 800));
+  });
+  it("taller than the window and filling most of it: in view", () => {
+    const { el, win } = chain([{ box: [300, 120, 800, 3000] }]);
+    expect(measure(el, win).visible).toBe(true);
+  });
+  it("taller than its container but showing only a strip at its edge: out of view", () => {
+    const { el, win } = chain([
+      { box: [300, 80, 900, 800], style: { overflowY: "auto" } },
+      { box: [320, 800, 860, 2600] },
+    ]);
+    expect(measure(el, win).visible).toBe(false);
+  });
+  it("wider than the window and showing only a strip: out of view; a small anchor keeps the half-of-itself rule", () => {
+    expect(measure(chain([{ box: [1300, 100, 3000, 200] }]).el, chain([{ box: [1300, 100, 3000, 200] }]).win).visible).toBe(false);
+    const small = chain([{ box: [100, 800, 200, 160] }]);
+    // 100 of its 160 px are in the window: more than half of itself.
+    expect(measure(small.el, small.win).visible).toBe(true);
+    const cut = chain([{ box: [100, 850, 200, 160] }]);
+    expect(measure(cut.el, cut.win).visible).toBe(false);
+  });
+});
+
 describe("fitsBeside: is there room for the card on any side of its anchor", () => {
   const view = { width: 1440, height: 900 };
   const card = { width: 340, height: 300 };
