@@ -25,6 +25,9 @@ describe("closed Plan operation union", () => {
     for (const ok of [
       { action: "read" },
       { action: "create_task", expectedRev: 1, planId: "p_00000001", title: "x" },
+      // Same optional note as update_task (copilot ticket 62).
+      { action: "create_task", expectedRev: 1, planId: "p_00000001", title: "x", note: "n $x$" },
+      { action: "create_task", expectedRev: 1, planId: "p_00000001", title: "x", note: "" },
       {
         action: "move_task",
         expectedRev: 1,
@@ -66,6 +69,9 @@ describe("closed Plan operation union", () => {
         title: "no expected rev",
       },
       { action: "create_task", expectedRev: 1, planId: "p_00000001", title: "   " },
+      { action: "create_task", expectedRev: 1, planId: "p_00000001", title: "x", note: 1 },
+      { action: "create_task", expectedRev: 1, planId: "p_00000001", title: "x", focused: true },
+      { action: "create_task", expectedRev: 1, planId: "p_00000001", title: "x", links: [] },
     ])
       expect(PlanOperationSchema.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
     expect(PLAN_ICONS).toHaveLength(8);

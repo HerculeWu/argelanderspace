@@ -385,6 +385,41 @@ describe("create, links, due warning", () => {
     expect(t2.warnings).toEqual(["task_due_after_plan_due"]);
   });
 
+  test("create_task takes the same optional note as update_task: trimmed and stored, blank leaves none (copilot ticket 62)", async () => {
+    const withNote = ok(
+      await run({
+        action: "create_task",
+        expectedRev: 4,
+        planId: "p_bbbbbbbb",
+        title: "Noted",
+        note: "  Read $x_1$ first  ",
+      })
+    );
+    expect(withNote.status).toBe("ok");
+    const blank = ok(
+      await run({
+        action: "create_task",
+        expectedRev: withNote.rev,
+        planId: "p_bbbbbbbb",
+        title: "Blank",
+        note: "   ",
+      })
+    );
+    const plain = ok(
+      await run({
+        action: "create_task",
+        expectedRev: blank.rev,
+        planId: "p_bbbbbbbb",
+        title: "Plain",
+      })
+    );
+    expect(plain.rev).toBe(7);
+    const tasks = parsed().plans[1].tasks;
+    expect(tasks[1]).toMatchObject({ title: "Noted", note: "Read $x_1$ first", status: "todo" });
+    expect("note" in tasks[2]).toBe(false);
+    expect("note" in tasks[3]).toBe(false);
+  });
+
   test("links: only library Docs can be added, duplicates are noops, a vanished Doc can still be removed", async () => {
     expect(
       await run({
