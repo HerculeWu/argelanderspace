@@ -10,6 +10,8 @@ import { Button, Dialog, Tooltip } from "../ui";
 import { ANCHOR_MISSING_MS, activeRungs, domQuery, isRendered, measure as measureElement, resolveLadder } from "./anchors";
 import { ChapterRail } from "./ChapterRail";
 import { CHAPTERS } from "./chapters";
+import { FINISH_CHAPTER_ID } from "./chapters/finish";
+import { FinishCard } from "./FinishCard";
 import { takeTutorialEntryOnce } from "./entry";
 import { watchSources } from "./l2";
 import {
@@ -405,7 +407,7 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
           <Tooltip content={t("tutorial.ui.capsuleResume")}>
             <button type="button" className="tut-capsule" data-ui="tutorial-capsule" onClick={() => setOpen(true)}>
               <Icon name="graduation-cap" />
-              {t("tutorial.ui.capsule", { chapter: capsuleChapter })}
+              {place?.chapter.id === FINISH_CHAPTER_ID ? t("tutorial.ui.title") : t("tutorial.ui.capsule", { chapter: capsuleChapter })}
             </button>
           </Tooltip>
         </div>
@@ -454,7 +456,23 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
     }
   };
   const last = isLastOfChapter(chapters, step.id);
-  const nextLabel = !last ? "next" : nextStepId(chapters, step.id) ? "nextChapter" : "finish";
+  const following = last ? nextStepId(chapters, step.id) : null;
+  // The last chapter's last step leads to the finish page: its button says "Finish tutorial".
+  const nextLabel = !last ? "next" : following && findStep(chapters, following)?.chapter.id !== FINISH_CHAPTER_ID ? "nextChapter" : "finish";
+  const onFinishPage = place.chapter.id === FINISH_CHAPTER_ID;
+  // The finish page's "Close the tutorial": recorded done with the position in one write; the capsule stays.
+  const closeFinish = () => {
+    const nextRecords = withRecord(latest.current.records, step.id, "done", deps.now());
+    setRecords(nextRecords);
+    write(latest.current.position, nextRecords);
+    finish();
+  };
+  // The finish page's "Review any chapter": the rail opens (and stays open for this step), its first chapter focused.
+  const review = () => {
+    setRailCollapsed(false);
+    setRailOpenedAt(step.id);
+    window.requestAnimationFrame(() => layerRef.current?.querySelector<HTMLElement>('[data-ui="tutorial-chapter"]')?.focus());
+  };
   const rect = dock === null ? placement.rect : null;
 
   return (
@@ -478,6 +496,9 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
         onRestart={() => setRestartAsk(true)}
         yielded={modalOpen}
       />
+      {onFinishPage ? (
+        <FinishCard desktop={desktop} onReview={review} onClose={closeFinish} onLeave={() => setLeaveAsk(true)} />
+      ) : (
       <StepCard
         key={step.id}
         chapter={place.chapter}
@@ -507,6 +528,7 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
         onScrollTo={() => placement.element?.scrollIntoView({ block: "center", behavior: "smooth" })}
         onRecheck={recheck}
       />
+      )}
       {restartAsk && initial.project && (
         <RailRestart path={initial.project.path} desktop={desktop} onClose={() => setRestartAsk(false)} />
       )}
