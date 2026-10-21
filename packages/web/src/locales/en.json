@@ -2942,6 +2942,85 @@
           "title": "Quick appearance",
           "body": "“Quick appearance” on the right of the title bar changes the theme, accent color, density and language. The Copilot switch beside it comes in chapter 8."
         }
+      },
+      "reading": {
+        "open": {
+          "title": "Open a full text",
+          "body": "Go back to the library, click Jerabkova et al. 2021, then “Read full text”. The text opens in the document pane.",
+          "waiting": "Moves on once the reader is open"
+        },
+        "outline": {
+          "title": "Jump by the outline",
+          "body": "Click “Expand outline” in the toolbar, then click any section: the text jumps there.",
+          "waiting": "Moves on once you jump to a section"
+        },
+        "annotations": {
+          "title": "Three preset annotations",
+          "body": "Click “Expand references and annotations” and switch to “Annotations”. Three annotations were written in advance: one on the whole paper, one on a figure, one on a passage of text."
+        },
+        "open-annotation": {
+          "title": "Open an annotation",
+          "body": "Click any one in the list. The text jumps to the place it points at and shows the annotation. An annotation belongs to this full text, not to the Work.",
+          "waiting": "Moves on once the annotation opens"
+        },
+        "annotate": {
+          "title": "Annotate a passage",
+          "body": "Select a sentence in the text, click “Add annotation” when it pops up, paste the text below, then press ⌘↵ or click Save.",
+          "waiting": "Moves on once the list has one more",
+          "prepared": {
+            "label": "Prepared text",
+            "text": "The 800 pc tail length estimate depends on how members are selected; recompute it with Gaia EDR3."
+          }
+        },
+        "manage": {
+          "title": "Edit, delete, whole-text notes",
+          "body": "Hover over an annotation to edit or delete it. “Add document annotation” covers the whole text, good for an overall comment."
+        },
+        "switch-doc": {
+          "title": "Several texts, and going back",
+          "body": "A Work can hold several full texts; switch between them at the top of the reader. After a jump, click “Undo document navigation” to go back."
+        },
+        "agent": {
+          "title": "An agent can read it too",
+          "intro": "An agent can read the same text, and the annotations you leave. Send it this:",
+          "prompt": "Use argelander-read-paper to read Jerabkova 2021 and tell me how the 800 pc tail length was derived",
+          "skill": "argelander-read-paper (`read` / `show`; `annot <doc_id>` reads your annotations)"
+        }
+      },
+      "discovery": {
+        "library-graph": {
+          "title": "The library graph",
+          "body": "The graph in the middle of the library is the library graph: citations between the papers in your library, A→B meaning A cites B. The links among the five papers are all here."
+        },
+        "start": {
+          "title": "Explore from Röser 2019",
+          "body": "Open Röser et al. 2019 and click “Explore related papers”. Discovery asks ADS online for related literature and needs your ADS token in Settings; without one it shows an error: click “Skip this step”.",
+          "waiting": "Moves on once the results appear"
+        },
+        "roles": {
+          "title": "Related and useful papers",
+          "body": "“Related” are papers ADS finds close in topic; “Useful” are the papers they keep citing. The results come live from ADS and may differ each time."
+        },
+        "graph": {
+          "title": "Switch to the citation graph",
+          "body": "Click “Citation graph view”. The exploration graph links the starting paper with the related and useful ones; the links are still only citations.",
+          "waiting": "Moves on once the graph view shows"
+        },
+        "detail": {
+          "title": "Look at a candidate",
+          "body": "Click any candidate: the right side shows its abstract, record and citations within this graph. “Add to library” adds it to the library; the tutorial leaves it.",
+          "waiting": "Moves on once the candidate's details show"
+        },
+        "back": {
+          "title": "Back to the library",
+          "body": "Click “Back to library”. Exploring never adds anything to the library by itself; click “Resume exploration” later to pick it up again."
+        },
+        "agent": {
+          "title": "An agent can search too",
+          "intro": "Finding papers needs the network and an ADS token; try it outside the tutorial. Send this to your agent:",
+          "prompt": "Use argelander-find-papers to find 10 related papers starting from Röser 2019",
+          "skill": "argelander-find-papers"
+        }
       }
     }
   }

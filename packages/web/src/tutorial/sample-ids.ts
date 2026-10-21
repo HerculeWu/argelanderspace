@@ -41,3 +41,6 @@ export const SAMPLE_ARGUMENT_IDS = {
   end: "ak4e7r",
   orphanNative: "an2r5m",
 } as const;
+
+/** The bibcode of Röser 2019 (library.json), the seed of chapter 4's exploration. */
+export const SAMPLE_SEED_BIBCODE = "2019A&A...621L...2R";

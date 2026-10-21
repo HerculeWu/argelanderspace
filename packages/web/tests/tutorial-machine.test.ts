@@ -51,7 +51,9 @@ describe("moving between steps", () => {
     expect(nextStepId(CHAPTERS, "prepare.agent")).toBe("tour.library");
     expect(previousStepId(CHAPTERS, "tour.library")).toBe("prepare.agent");
     expect(previousStepId(CHAPTERS, "prepare.settings")).toBeNull();
-    expect(nextStepId(CHAPTERS, "tour.tweaks")).toBeNull();
+    // The last step of the last registered chapter (chapters are registered ticket by ticket).
+    const lastSteps = CHAPTERS[CHAPTERS.length - 1]!.steps;
+    expect(nextStepId(CHAPTERS, lastSteps[lastSteps.length - 1]!.id)).toBeNull();
     expect(isLastOfChapter(CHAPTERS, "prepare.agent")).toBe(true);
     expect(isLastOfChapter(CHAPTERS, "tour.split")).toBe(false);
   });
