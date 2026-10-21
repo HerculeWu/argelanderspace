@@ -12,6 +12,7 @@
     "resources": {
       "target/package-resources/sidecar/": "sidecar/",
       "target/package-resources/skills/": "skills/",
+      "target/package-resources/tutorial/": "tutorial/",
       "target/package-resources/THIRD-PARTY-SHELL-NOTICES.txt": "THIRD-PARTY-SHELL-NOTICES.txt"
     },
     "linux": {

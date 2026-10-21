@@ -35,6 +35,10 @@
 //      opens, loads the pdf-transcription instruction, runs real tools (plan write, PDF read, PDFium page render to a PNG
 //      the model receives), is answered after a server restart (the native session history resumes), the model only ever
 //      sees the six application tools, no decoy resource reaches it, and read_svg_image answers cleanly without resvg.
+//   5. the installed package's dist/tutorial (the tutorial sample, in-app-tutorial ticket 27) is loadable: a temp copy
+//      is the data dir of the installed server (`--data-dir <copy>/literatures`, own temp HOME/XDG), which lists the
+//      five Works and gives Jerabkova's three annotations without archiving them; NOTICE.md and the upload zip are
+//      there; its size is reported, not gated (tutorial-smoke-lib.mjs).
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -54,6 +58,7 @@ import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { lockfileClosure, pnpmVersion } from "./dep-dir-lib.mjs";
 import { checkPackContents } from "./pack-contents.mjs";
+import { checkTutorialLoadable, tutorialSize } from "./tutorial-smoke-lib.mjs";
 
 const appRoot = fileURLToPath(new URL("..", import.meta.url));
 const argv = process.argv.slice(2);
@@ -1049,6 +1054,44 @@ try {
 } finally {
   for (const child of children) child.kill("SIGKILL");
   fake.close();
+}
+
+// ---- 5. the tutorial sample in the installed package (in-app-tutorial ticket 27) ---------------------------------- //
+{
+  const tutorialDir = join(pkgDir, "dist/tutorial");
+  if (!existsSync(tutorialDir)) check(false, "the installed package has dist/tutorial");
+  else {
+    const size = tutorialSize(tutorialDir);
+    log(
+      `size: the installed dist/tutorial holds ${size.files} files, ${size.bytes} bytes (${(size.bytes / 1e6).toFixed(1)} MB; reported, not gated)`
+    );
+    const tHome = join(work, "tutorial-home");
+    mkdirSync(join(tHome, "runtime"), { recursive: true, mode: 0o700 });
+    const loaded = await checkTutorialLoadable({
+      tutorialDir,
+      node: join(bin, "node"),
+      binJs: join(pkgDir, "dist/bin.js"),
+      env: {
+        PATH: bin,
+        HOME: tHome,
+        XDG_CONFIG_HOME: join(tHome, ".config"),
+        XDG_DATA_HOME: join(tHome, ".local/share"),
+        XDG_CACHE_HOME: join(tHome, ".cache"),
+        XDG_STATE_HOME: join(tHome, ".local/state"),
+        XDG_RUNTIME_DIR: join(tHome, "runtime"),
+        DBUS_SESSION_BUS_ADDRESS: `unix:path=${join(tHome, "no-session-bus")}`,
+        NO_COLOR: "1",
+      },
+      work: join(work, "tutorial-check"),
+    });
+    check(
+      loaded.problems.length === 0,
+      "the installed dist/tutorial is loadable: the installed server on a temp copy lists 5 Works and gives Jerabkova's 3 annotations, no archive; NOTICE.md and the upload zip are there",
+      loaded.problems.length
+        ? loaded.problems.join("; ")
+        : `${loaded.works} Works, ${loaded.annotations} annotations`
+    );
+  }
 }
 writeFileSync(
   join(evidenceDir, mutateLoader ? "smoke-control-default-loader.txt" : "smoke-result.txt"),
