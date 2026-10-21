@@ -2942,6 +2942,86 @@
           "title": "Quick appearance",
           "body": "“Quick appearance” on the right of the title bar changes the theme, accent color, density and language. The Copilot switch beside it comes in chapter 8."
         }
+      },
+      "argument": {
+        "open": {
+          "title": "Open the argument graph",
+          "body": "In the details of Jerabkova 2021, click “Argument graph”. An argument graph is the argument structure of this paper, written out by its curator after the Toulmin model.",
+          "waiting": "Moves on once the argument graph is open"
+        },
+        "read": {
+          "title": "Arguments, edges and marks",
+          "body": "Each node is an argument; A→B means that B uses A's Claim. The Native arguments at the bottom rest on sources outside this paper; the End argument at the top is its conclusion."
+        },
+        "detail": {
+          "title": "The six fields of an argument",
+          "body": "Click the End argument at the top. The panel on the right lists Claim, Grounds, Warrant and the optional Backing, Qualifier and Rebuttal. Clicking one of its “Sources” takes you back to the text.",
+          "waiting": "Moves on once an argument's details open"
+        },
+        "audit": {
+          "title": "Audit findings",
+          "body": "The audit at the top shows 1 finding: one Native argument has no path to the End. It was left on purpose; you fix it next."
+        },
+        "create": {
+          "title": "Create an argument",
+          "body": "Click “New argument”, paste the short title and the three fields below, and save. The audit becomes 2 findings: the new argument is not linked to the End yet either.",
+          "waiting": "Moves on once the new argument is saved",
+          "prepared": {
+            "label": "Short title and three fields",
+            "text": "Short title: The tails reach hundreds of pc out\nClaim: Members of the Hyades tidal tails can be found hundreds of pc away from the cluster.\nGrounds: Röser and Meingast found the tails near the cluster with Gaia DR2; with a wider search the tails keep going.\nWarrant: The members still agree with the cluster in velocity space; being far away in position is no reason to exclude them."
+          }
+        },
+        "link-end": {
+          "title": "Link it to the End argument",
+          "body": "In the new argument's details, click “Let another argument use it…”, choose the End argument, and set “As” to Grounds. The audit goes back to 1 finding.",
+          "waiting": "Moves on once a new edge is added"
+        },
+        "link-native": {
+          "title": "Link the orphan Native",
+          "body": "Click the orphan Native argument and, the same way, let the new argument use it, as Grounds. The audit says “Audit passed”.",
+          "waiting": "Moves on once the audit passes"
+        },
+        "agent": {
+          "title": "An agent can curate it too",
+          "intro": "Curating the argument graph of a whole paper is what an agent does well. Send it this:",
+          "prompt": "Use argelander-argument-graph to curate the argument graph of Jerabkova 2021 and mark the Native and End arguments",
+          "skill": "argelander-argument-graph (`argument get` / `argument put`)"
+        }
+      },
+      "plan": {
+        "open": {
+          "title": "Open the Plan page",
+          "body": "Click “Plan” in the navigation and choose the preset plan on the left. A plan is a set of research tasks; each task has its own deadline and status.",
+          "waiting": "Moves on once the Plan page is open"
+        },
+        "tasks": {
+          "title": "Tasks grouped by status",
+          "body": "Tasks are grouped into To do, In progress, Blocked and Done. One of them was created by the Copilot in chapter 8."
+        },
+        "create-task": {
+          "title": "Create a task",
+          "body": "Click “New task”, paste the title below, pick a due date, and click “Add task”.",
+          "waiting": "Moves on once there is one more task",
+          "prepared": {
+            "label": "Task title",
+            "text": "Read the asymmetry measure of Pflamm-Altenburg 2023"
+          }
+        },
+        "link-doc": {
+          "title": "Link literature to the task",
+          "body": "Click the task you just created to open its drawer, click “Add linked document”, search for Jerabkova and choose it. The task can then open that text directly.",
+          "waiting": "Moves on once the task links the document"
+        },
+        "views": {
+          "title": "Three views",
+          "body": "Under “Views” on the left are list, board, today's focus and timeline. Today's focus shows only tasks due today or overdue."
+        },
+        "agent": {
+          "title": "The Copilot can do this too",
+          "intro": "Plans have no command-line side, but the Copilot can create tasks (you see it in chapter 8). Later you can say:",
+          "prompt": "Add “Read the asymmetry measure of Pflamm-Altenburg 2023” to the plan, due next week",
+          "skill": "Copilot (chapter 8)"
+        }
       }
     }
   }

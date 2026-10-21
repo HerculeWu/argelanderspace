@@ -2942,6 +2942,86 @@
           "title": "外观速调",
           "body": "标题栏右侧的「外观速调」能改主题、强调色、密度和语言。旁边的 Copilot 开关第 8 章再讲。"
         }
+      },
+      "argument": {
+        "open": {
+          "title": "打开论证图",
+          "body": "在 Jerabkova 2021 的详情里点「论证图」。论证图（Argument graph）是这篇文献的论证结构，由整理者按 Toulmin 模型写出。",
+          "waiting": "论证图打开后自动前进"
+        },
+        "read": {
+          "title": "论证、边与标记",
+          "body": "每个节点是一个论证（Argument），A→B 表示 A 的 Claim 被 B 使用。底部的 Native 论证依据来自本文之外，顶部的 End 论证是本文结论。"
+        },
+        "detail": {
+          "title": "看一个论证的六个字段",
+          "body": "点顶部的 End 论证。右侧列出 Claim、Grounds、Warrant 和可选的 Backing、Qualifier、Rebuttal。点一条「出处」会跳回正文。",
+          "waiting": "论证详情打开后自动前进"
+        },
+        "audit": {
+          "title": "审计发现",
+          "body": "顶部的审计显示 1 项发现：有一个 Native 论证没有通往 End 的路径。它是故意留下的，接下来由你补上。"
+        },
+        "create": {
+          "title": "新建一个论证",
+          "body": "点「新建论证」，把下面的短标题和三个字段粘进去，保存。审计会变成 2 项：新论证也还没连到 End。",
+          "waiting": "新论证保存后自动前进",
+          "prepared": {
+            "label": "短标题与三个字段",
+            "text": "短标题：尾部延伸到几百 pc 外\nClaim：Hyades 潮汐尾的成员星可以在离星团几百 pc 的地方被找到。\nGrounds：Röser 与 Meingast 已用 Gaia DR2 在星团附近找到尾部；扩大搜索范围后尾部仍在延续。\nWarrant：成员星在速度空间仍与星团一致，位置上离得远不是排除它们的理由。"
+          }
+        },
+        "link-end": {
+          "title": "把它接到 End 论证",
+          "body": "在新论证的详情里点「让另一个论证使用它…」，选 End 论证，「作为」选 Grounds。审计回到 1 项。",
+          "waiting": "新增一条边后自动前进"
+        },
+        "link-native": {
+          "title": "补上孤立的 Native",
+          "body": "点那个孤立的 Native 论证，同样让新论证使用它，角色 Grounds。审计显示「审计通过」。",
+          "waiting": "审计通过后自动前进"
+        },
+        "agent": {
+          "title": "也可以让 agent 整理",
+          "intro": "整理一整篇的论证图是 agent 的强项。把这句话发给它：",
+          "prompt": "用 argelander-argument-graph 整理 Jerabkova 2021 的论证图，标出 Native 和 End",
+          "skill": "argelander-argument-graph（`argument get` / `argument put`）"
+        }
+      },
+      "plan": {
+        "open": {
+          "title": "打开计划页",
+          "body": "点导航的「计划」，选左侧的预置计划。计划（Plan）是一组科研任务（Task），每个任务有自己的期限和状态。",
+          "waiting": "打开计划页后自动前进"
+        },
+        "tasks": {
+          "title": "任务按状态分组",
+          "body": "任务分成待办、进行中、受阻、已完成。其中一条是第 8 章里 Copilot 建的。"
+        },
+        "create-task": {
+          "title": "新建一个任务",
+          "body": "点「新建任务」，粘贴下面的标题，选一个截止日期，点「添加任务」。",
+          "waiting": "任务多一条后自动前进",
+          "prepared": {
+            "label": "任务标题",
+            "text": "读 Pflamm-Altenburg 2023 的不对称度量"
+          }
+        },
+        "link-doc": {
+          "title": "给任务挂上文献",
+          "body": "点刚建的任务打开抽屉，点「添加关联文档」，搜 Jerabkova，选它。任务里就能直接打开那份正文。",
+          "waiting": "任务挂上文档后自动前进"
+        },
+        "views": {
+          "title": "三种视图",
+          "body": "左侧「视图」里有列表、看板、今日聚焦和时间线。今日聚焦只看今天和逾期的任务。"
+        },
+        "agent": {
+          "title": "也可以让 Copilot 做",
+          "intro": "计划没有命令行面，但 Copilot 能建任务（第 8 章会看到）。以后可以这样说：",
+          "prompt": "把「读 Pflamm-Altenburg 2023 的不对称度量」加进计划，截止下周",
+          "skill": "Copilot（第 8 章）"
+        }
       }
     }
   }

@@ -31,15 +31,27 @@ function* walk(dir: string): Generator<string> {
   }
 }
 
-/** Every `data-ui` written as a literal in the product source (outside the tutorial module itself). */
+/**
+ * Every `data-ui` written as a literal in the product source (outside the tutorial module itself). A shared component
+ * that builds its identifiers from a `ui` prefix (data-ui={`${ui}-node`}, the layered graph canvas) contributes each
+ * suffix under every literal `ui="<prefix>"` passed in the source (`argument-node` from ui="argument"). A helper that
+ * renders data-ui={uiId} from its argument contributes the literals passed to it in that file (the argument panel's
+ * linkToggle(..., "add-argument-use")).
+ */
 function productIdentifiers(): Set<string> {
   const found = new Set<string>();
+  const suffixes = new Set<string>();
+  const prefixes = new Set<string>();
   for (const file of walk(SRC)) {
     if (file.startsWith(TUTORIAL_DIR)) continue;
     const text = readFileSync(file, "utf8");
     for (const m of text.matchAll(/data-ui=["']([a-z0-9-]+)["']/g)) found.add(m[1]!);
     for (const m of text.matchAll(/\buiId=["']([a-z0-9-]+)["']/g)) found.add(m[1]!);
+    for (const m of text.matchAll(/data-ui=\{`\$\{ui\}(-[a-z0-9-]+)`\}/g)) suffixes.add(m[1]!);
+    for (const m of text.matchAll(/\sui=["']([a-z0-9-]+)["']/g)) prefixes.add(m[1]!);
+    if (/data-ui=\{uiId\}/.test(text)) for (const m of text.matchAll(/,\s*"([a-z][a-z0-9]*(?:-[a-z0-9]+)+)"\s*[,)]/g)) found.add(m[1]!);
   }
+  for (const prefix of prefixes) for (const suffix of suffixes) found.add(prefix + suffix);
   return found;
 }
 
@@ -90,6 +102,12 @@ describe("tutorial anchors stay in the product source", () => {
       expect(c.steps.length).toBeGreaterThan(0);
       for (const s of c.steps) expect(s.id.startsWith(`${c.id}.`)).toBe(true);
     }
+  });
+  it("sees identifiers a shared component builds from its ui prefix (the argument graph's nodes)", () => {
+    expect(identifiers.has("argument-node")).toBe(true);
+    expect(identifiers.has("argument-canvas")).toBe(true);
+    expect(identifiers.has("nonexistent-node")).toBe(false);
+    expect(identifiers.has("add-argument-use")).toBe(true);
   });
   it("reports where it looked (sanity: the scan sees the Shell)", () => {
     expect(identifiers.has("app-shell")).toBe(true);
