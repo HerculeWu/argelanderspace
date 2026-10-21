@@ -15,6 +15,11 @@
  * (query text, fields, rows, sort). Errors and aborted requests are never
  * written. The metadata `AdsClient`'s cache semantics are untouched.
  *
+ * Pinned entries (in-app-tutorial ticket 15): `{fetchedAt, data, pinned: true}` never expire — the read skips the
+ * TTL (and the timestamp) for them; `data` must still be an array. Only a client built with `pin: true` writes them,
+ * which the tutorial sample's generation script does; the product's compositions never pass `pin`, so the entries
+ * they write carry no `pinned` key.
+ *
  * Unlike the metadata chain (which degrades silently), discovery is explicit:
  * failures raise {@link AdsDiscoveryError} with a machine-readable `kind`
  * that the server maps to HTTP status codes.
@@ -133,30 +138,34 @@ function arxivFromIdentifier(ids: unknown): string | null {
 }
 
 // --------------------------------------------------------------------------- //
-// TTL cache ({fetchedAt, data} entries; raw provider docs)
+// TTL cache ({fetchedAt, data, pinned?: true} entries; raw provider docs)
 // --------------------------------------------------------------------------- //
 
 interface DiscoveryCacheEntry {
   fetchedAt: string;
   data: unknown;
+  /** Present only on entries a `pin: true` client wrote: they skip the TTL. */
+  pinned?: true;
 }
 
 class DiscoveryCache {
   constructor(
     public readonly dir: string,
     private readonly ttlMs: number,
-    private readonly now: () => number
+    private readonly now: () => number,
+    private readonly pin: boolean
   ) {
     mkdirSync(dir, { recursive: true });
   }
 
-  /** Cached provider docs when present AND inside the TTL; else undefined. */
+  /** Cached provider docs when present AND (pinned OR inside the TTL); else undefined. */
   read(key: string): Array<Record<string, unknown>> | undefined {
     try {
       const entry = JSON.parse(
         readFileSync(join(this.dir, `${key}.json`), "utf-8")
       ) as DiscoveryCacheEntry;
       if (!Array.isArray(entry?.data)) return undefined;
+      if (entry.pinned === true) return entry.data as Array<Record<string, unknown>>;
       const at = Date.parse(entry.fetchedAt);
       if (Number.isNaN(at) || this.now() - at > this.ttlMs) return undefined;
       return entry.data as Array<Record<string, unknown>>;
@@ -169,6 +178,7 @@ class DiscoveryCache {
     const entry: DiscoveryCacheEntry = {
       fetchedAt: new Date(this.now()).toISOString(),
       data: docs,
+      ...(this.pin ? { pinned: true as const } : {}),
     };
     writeFileSync(join(this.dir, `${key}.json`), JSON.stringify(entry), "utf-8");
   }
@@ -191,6 +201,11 @@ export interface AdsDiscoveryClientOptions {
   /** Clock seam for TTL tests. */
   now?: () => number;
   log?: (msg: string) => void;
+  /**
+   * true = every cache entry this client writes is pinned (never expires). Only the tutorial sample's generation
+   * script passes it; the product's compositions (server and CLI) never do.
+   */
+  pin?: boolean;
 }
 
 export class AdsDiscoveryClient implements AdsDiscoverySource {
@@ -206,7 +221,8 @@ export class AdsDiscoveryClient implements AdsDiscoverySource {
     this.cache = new DiscoveryCache(
       opts.cacheDir,
       opts.ttlMs ?? DEFAULT_TTL_MS,
-      opts.now ?? Date.now
+      opts.now ?? Date.now,
+      opts.pin === true
     );
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.log = opts.log;
