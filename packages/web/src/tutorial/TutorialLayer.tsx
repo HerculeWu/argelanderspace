@@ -6,8 +6,8 @@ import { fetchTutorial, putTutorial } from "../api/tutorial";
 import { usePreferences } from "../argelander/preferences";
 import { useHostAnswer } from "../host";
 import { Icon } from "../lib/icons";
-import { Button, Dialog } from "../ui";
-import { ANCHOR_MISSING_MS, activeRungs, domQuery, measure as measureElement, resolveLadder } from "./anchors";
+import { Button, Dialog, Tooltip } from "../ui";
+import { ANCHOR_MISSING_MS, activeRungs, domQuery, isRendered, measure as measureElement, resolveLadder } from "./anchors";
 import { ChapterRail } from "./ChapterRail";
 import { CHAPTERS } from "./chapters";
 import { takeTutorialEntryOnce } from "./entry";
@@ -67,6 +67,8 @@ export interface RunnerDeps {
   measure: typeof measureElement;
   /** The chapter rail's box (tests without layout replace it). */
   railBox: (rail: Element) => DOMRect;
+  /** Whether an element is drawn (zero-size or invisible ones are not there for the ladder; tests replace it). */
+  rendered: (el: Element) => boolean;
 }
 
 const DEFAULT_DEPS: RunnerDeps = {
@@ -78,6 +80,7 @@ const DEFAULT_DEPS: RunnerDeps = {
   now: () => new Date().toISOString(),
   measure: measureElement,
   railBox: (rail) => rail.getBoundingClientRect(),
+  rendered: isRendered,
 };
 
 export interface TutorialRunnerProps extends TutorialLayerProps {
@@ -103,6 +106,51 @@ const sameBox = (a: DOMRect | null, b: DOMRect | null) => a === b || (!!a && !!b
 /** Two boxes share some area. */
 const overlaps = (a: DOMRect, b: DOMRect) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 const NO_ANCHORS: AnchorLadder = [];
+const NO_DATA: Readonly<Record<string, unknown>> = Object.freeze({});
+
+/**
+ * Layers of the product that own an Escape while they are open (they close on it, mostly without preventing its
+ * default). Generic signals first — a modal dialog, an open menu or popup — then the product's own floating layers.
+ */
+const PRODUCT_ESCAPE_OWNERS = [
+  '[data-ui="dialog-overlay"]',
+  '[data-ui="writer-dialog-overlay"]',
+  '[role="dialog"][aria-modal="true"]',
+  '[data-ui="command-palette"]',
+  '[role="menu"]',
+  '[aria-haspopup][aria-expanded="true"]',
+  'details[open][data-ui="doc-actions"]',
+  '[data-ui="latex-selection-tools"]',
+  '[data-ui="latex-annotation-chooser"]',
+  '[data-ui="latex-annotation-popover"]',
+  '[data-ui="pdf-selection-tools"]',
+  '[data-ui="pdf-annotation-toolbar-frame"]',
+  'html[data-pdf-area-mode="true"]',
+  'html[data-pdf-text-mode="true"]',
+  '[data-ui="argument-detail"][data-placement="overlay"]',
+  '[data-ui="argument-role-chooser"]',
+  '[data-ui="argument-audit-popover"]',
+  '[data-ui="mail-account-menu-list"]',
+  '[data-ui="mail-move-menu"]',
+  '[data-ui="add-cell-menu"]',
+  '[data-ui="cell-type-menu"]',
+  // Open popups of the product without a role (some do not close on Escape; it is still not the tutorial's).
+  '[data-ui="import-menu"]',
+  '[data-ui="work-label-menu"]',
+  '[data-ui="pane-view-menu"]',
+  '[data-ui="tweaks-popover"]',
+  '[data-ui="task-doc-picker"]',
+].join(", ");
+
+/** The Escape is someone else's: typed into a field, or some product layer is open (the tutorial's own do not count). */
+function escapeBelongsElsewhere(event: KeyboardEvent, layer: Element | null): boolean {
+  for (const node of [event.target, document.activeElement]) {
+    if (!(node instanceof Element)) continue;
+    if (node.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])")) return true;
+  }
+  for (const el of document.querySelectorAll(PRODUCT_ESCAPE_OWNERS)) if (!layer?.contains(el)) return true;
+  return false;
+}
 const NO_PLACEMENT: Placement = { element: null, rect: null, box: null, visible: false, railRight: 0, railBox: null };
 const samePlacement = (a: Placement, b: Placement) =>
   a.element === b.element && a.visible === b.visible && a.railRight === b.railRight && sameBox(a.rect, b.rect) && sameBox(a.box, b.box) && sameBox(a.railBox, b.railBox);
@@ -118,12 +166,15 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
   /** The step during which the user opened the rail again: it is not folded away by itself while that step lasts. */
   const [railOpenedAt, setRailOpenedAt] = useState<string | null>(null);
   const [leaveAsk, setLeaveAsk] = useState(false);
+  /** A progress write failed (the leave dialog says so), and whether its one notice is still shown. */
+  const [saveFailed, setSaveFailed] = useState(false);
   const [notSaved, setNotSaved] = useState(false);
   const [tex, setTex] = useState<boolean | null>(null);
   const [texBusy, setTexBusy] = useState(false);
   const [passed, setPassed] = useState<string | null>(null);
   const [domVersion, setDomVersion] = useState(0);
-  const [data, setData] = useState<Record<string, unknown>>({});
+  /** The data read back for the step's L2 sources, tagged with the step it was read for. */
+  const [l2, setL2] = useState<{ step: string | null; data: Readonly<Record<string, unknown>> }>({ step: null, data: NO_DATA });
   const [missing, setMissing] = useState(false);
   const [placement, setPlacement] = useState<Placement>(NO_PLACEMENT);
   const layerRef = useRef<HTMLDivElement>(null);
@@ -131,7 +182,17 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
   // The progress as last written, so every write is the whole file with the newest position and records.
   const latest = useRef({ position, records });
   latest.current = { position, records };
-  const writer = useMemo(() => createProgressWriter((p) => deps.put(p), () => setNotSaved(true)), [deps]);
+  const writer = useMemo(
+    () =>
+      createProgressWriter(
+        (p) => deps.put(p),
+        () => {
+          setSaveFailed(true);
+          setNotSaved(true);
+        },
+      ),
+    [deps],
+  );
   const write = useCallback(
     (nextPosition: string | null, nextRecords: StepRecords) => {
       latest.current = { position: nextPosition, records: nextRecords };
@@ -171,20 +232,32 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
         setDomVersion((v) => v + 1);
       });
     });
-    observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-ui", "data-ui-key", "data-state", "aria-expanded"] });
+    // class / style / hidden too: an anchor shown or hidden by them is found or lost without a frame loop.
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["data-ui", "data-ui-key", "data-state", "aria-expanded", "class", "style", "hidden"],
+    });
     return () => {
       observer.disconnect();
       if (frame) cancelAnimationFrame(frame);
     };
   }, [open]);
 
-  // L2: the step's sources, only while it is shown.
+  // L2: the step's sources, only while it is shown. What was read is tagged with its step, so a step never sees the
+  // data of the step before (not even for the render before this effect runs).
   const stepId = step?.id ?? null;
   useEffect(() => {
-    setData({});
-    if (!open || !step?.sources?.length) return;
-    return watchSources(step.sources, (id, value) => setData((d) => ({ ...d, [id]: value })));
+    if (!open || !stepId || !step?.sources?.length) return;
+    const from = stepId;
+    return watchSources(step.sources, (id, value) =>
+      setL2((prev) => ({ step: from, data: { ...(prev.step === from ? prev.data : NO_DATA), [id]: value } })),
+    );
   }, [open, stepId]);
+  const data = stepId !== null && l2.step === stepId ? l2.data : NO_DATA;
+  // The step's own first read has answered for every source: before that its gate is not looked at (no baseline yet).
+  const sourcesRead = !step?.sources?.length || step.sources.every((source) => Object.getOwnPropertyDescriptor(data, source.id) !== undefined);
 
   const activePaneId = context.workspace?.activePaneId ?? context.paneId ?? null;
   const snapshot = useMemo<WorkbenchSnapshot>(() => {
@@ -196,21 +269,22 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
       dom,
       data,
     };
-    // domVersion: the DOM is looked at again when it changed.
-  }, [context, data, activePaneId, domVersion]);
+    // domVersion: the DOM is looked at again when it changed; open / stepId: and when a step starts (its gate is looked at
+    // against the page as it is then).
+  }, [context, data, activePaneId, domVersion, open, stepId]);
 
-  // One showing of a step: its baseline and the scratch record of a process gate.
+  // One showing of a step: its baseline (taken once the step's own first L2 read is in) and the scratch record of a
+  // process gate.
   const run = useRef<{ key: string; run: GateRun } | null>(null);
   const showKey = open && stepId ? stepId : null;
   if (showKey === null) run.current = null;
-  else if (run.current?.key !== showKey) run.current = { key: showKey, run: { baseline: snapshot, memo: {} } };
+  else if (run.current?.key !== showKey) run.current = sourcesRead ? { key: showKey, run: { baseline: snapshot, memo: {} } } : null;
 
   const go = useCallback(
     (id: string | null) => {
       if (id === null || id === latest.current.position) return;
       setPosition(id);
       setPassed(null);
-      setNotSaved(false);
       write(id, latest.current.records);
     },
     [write],
@@ -219,7 +293,8 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
 
   // The gate: looked at when the step starts and at every change of the snapshot (spec section 5).
   const advanceTimer = useRef<number | undefined>(undefined);
-  useEffect(() => () => window.clearTimeout(advanceTimer.current), []);
+  // The timer belongs to one showing of one step: leaving the tutorial or the step cancels it.
+  useEffect(() => () => window.clearTimeout(advanceTimer.current), [open, stepId]);
   useEffect(() => {
     if (!open || !step?.gate || !run.current || passed === step.id) return;
     const holds = step.gate(snapshot, run.current.run);
@@ -241,7 +316,10 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
 
   // The rungs that apply in this state of the workbench (a rung may carry a condition).
   const rungs = useMemo(() => activeRungs(ladder, snapshot), [ladder, snapshot]);
-  // Where the anchor is: looked at every frame while the card is shown (scrolling, resizing, layout).
+  const modalOpen = snapshot.modalOpen;
+  // Where the anchor is: looked at every frame while it is found and shown beside it (scrolling, resizing, layout).
+  // With no anchor to look for, an anchor not found, or a product modal open, it is looked at once per change of the
+  // snapshot (the DOM observer above) instead of every frame.
   useLayoutEffect(() => {
     if (!open) {
       setPlacement(NO_PLACEMENT);
@@ -249,7 +327,7 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
     }
     let frame = 0;
     const tick = () => {
-      const found = rungs.length ? resolveLadder(document, rungs, activePaneId) : null;
+      const found = rungs.length && !modalOpen ? resolveLadder(document, rungs, activePaneId, deps.rendered) : null;
       const m = found ? deps.measure(found.element) : { rect: null, box: null, visible: false };
       const rail = document.querySelector('[data-ui="tutorial-chapter-rail"]');
       const railBox = rail ? deps.railBox(rail) : null;
@@ -262,11 +340,12 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
         railBox: rail && !rail.classList.contains("collapsed") ? railBox : null,
       };
       setPlacement((prev) => (samePlacement(prev, next) ? prev : next));
-      frame = requestAnimationFrame(tick);
+      if (found) frame = requestAnimationFrame(tick);
     };
     tick();
     return () => cancelAnimationFrame(frame);
-  }, [open, rungs, activePaneId, deps]);
+    // snapshot: an anchor that appeared or changed is looked for again (the loop does not run while none is found).
+  }, [open, rungs, snapshot, activePaneId, deps, modalOpen, railCollapsed]);
 
   // The open rail covers the highlighted element (the settings groups, the library's left column): fold it to 44 px,
   // unless the user opened it again during this step (user ruling 2026-10-21; otherwise as the prototype).
@@ -276,7 +355,7 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
   }, [open, railCollapsed, stepId, railOpenedAt, placement]);
 
   const requiresOk = !step?.requires || step.requires.test(snapshot);
-  const lookingForAnchor = open && ladder.length > 0 && requiresOk && !placement.element;
+  const lookingForAnchor = open && ladder.length > 0 && requiresOk && !modalOpen && !placement.element;
   // A missing anchor is waited for (MutationObserver above), then said to be missing after ANCHOR_MISSING_MS.
   useEffect(() => {
     setMissing(false);
@@ -285,20 +364,25 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
     return () => window.clearTimeout(timer);
   }, [lookingForAnchor, stepId]);
 
-  // Escape asks to leave, unless it belongs to something else (a dialog, the command palette, a field being typed in).
+  // Escape asks to leave, unless it is someone else's: the product handled it (default prevented, or stopped before it
+  // bubbled up to the window), it was typed into a field, or a product layer was open when it was pressed. That last
+  // one is looked at in the capture phase, before the product's own listeners close their layer on the same key.
   useEffect(() => {
     if (!open || leaveAsk) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      if (document.querySelector('[data-ui="dialog-overlay"], [data-ui="command-palette"]')) return;
-      const target = event.target instanceof Node ? event.target : null;
-      const inLayer = Boolean(target && layerRef.current?.contains(target));
-      if (inLayer || document.activeElement === document.body || document.activeElement === null) setLeaveAsk(true);
+    const elsewhere = new WeakSet<Event>();
+    const onCapture = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && escapeBelongsElsewhere(event, layerRef.current)) elsewhere.add(event);
     };
-    // Capture phase: seen before the Shell's own Escape (which closes the command palette and may remove it before a
-    // later listener runs), so the palette or a dialog still tells that this Escape is theirs.
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
+    const onBubble = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || elsewhere.has(event)) return;
+      setLeaveAsk(true);
+    };
+    window.addEventListener("keydown", onCapture, true);
+    window.addEventListener("keydown", onBubble);
+    return () => {
+      window.removeEventListener("keydown", onCapture, true);
+      window.removeEventListener("keydown", onBubble);
+    };
   }, [open, leaveAsk]);
 
   const stayRef = useRef<HTMLButtonElement>(null);
@@ -307,10 +391,15 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
   if (!open || !place || !step) {
     return (
       <div className="tut-layer" data-ui="tutorial-layer" data-state="capsule" ref={layerRef}>
-        <button type="button" className="tut-capsule" data-ui="tutorial-capsule" aria-label={t("tutorial.ui.capsuleResume")} title={t("tutorial.ui.capsuleResume")} onClick={() => setOpen(true)}>
-          <Icon name="graduation-cap" />
-          {t("tutorial.ui.capsule", { chapter: capsuleChapter })}
-        </button>
+        <div className="tut-capsule-dock">
+          {/* Its name is its visible text; what clicking does is the shared tooltip. */}
+          <Tooltip content={t("tutorial.ui.capsuleResume")}>
+            <button type="button" className="tut-capsule" data-ui="tutorial-capsule" onClick={() => setOpen(true)}>
+              <Icon name="graduation-cap" />
+              {t("tutorial.ui.capsule", { chapter: capsuleChapter })}
+            </button>
+          </Tooltip>
+        </div>
       </div>
     );
   }
@@ -327,8 +416,13 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
   else if (!placement.visible) dock = { kind: "offscreen" };
 
   const next = () => {
-    if (!step.gate && record?.state !== "done") {
-      const nextRecords = withRecord(latest.current.records, step.id, "done", deps.now());
+    // Next on a step not yet done: a needs-TeX step without TeX is skipped (it cannot be done here); a step without a
+    // gate, or a gated one whose anchor cannot be found (the user did it by themselves), is done. The record and the
+    // new position go out in one write.
+    const anchorMissing = dock?.kind === "waiting" || dock?.kind === "missing";
+    const state = record?.state === "done" ? null : texBlocked ? "skipped" : !step.gate || anchorMissing ? "done" : null;
+    if (state) {
+      const nextRecords = withRecord(latest.current.records, step.id, state, deps.now());
       setRecords(nextRecords);
       latest.current = { ...latest.current, records: nextRecords };
     }
@@ -372,6 +466,7 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
         onGoStep={go}
         onLeave={() => setLeaveAsk(true)}
         onRecheck={recheck}
+        yielded={modalOpen}
       />
       <StepCard
         key={step.id}
@@ -391,6 +486,7 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
         firstStep={previousStepId(chapters, step.id) === null}
         nextLabel={nextLabel}
         notSaved={notSaved}
+        onDismissNotSaved={() => setNotSaved(false)}
         onBack={() => go(previousStepId(chapters, step.id))}
         onNext={next}
         onSkip={skip}
@@ -427,7 +523,7 @@ export function TutorialRunner({ initial, context, onViewAction, desktop, entere
             </>
           }
         >
-          <p className="tut-text">{t("tutorial.ui.leaveDialog.body")}</p>
+          <p className="tut-text">{saveFailed ? t("tutorial.ui.leaveDialog.bodyNotSaved") : t("tutorial.ui.leaveDialog.body")}</p>
         </Dialog>
       )}
     </div>

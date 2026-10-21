@@ -2756,7 +2756,7 @@
   "tutorial": {
     "ui": {
       "title": "教程",
-      "cardHeader": "第 {{chapter}} 章 · {{index}}/{{count}}",
+      "cardHeader": "第 {{chapter}} 章 · {{index}}/{{count}} · {{title}}",
       "back": "上一步",
       "next": "下一步",
       "nextChapter": "下一章",
@@ -2772,14 +2772,19 @@
       "agentSkill": "skill：{{name}}",
       "needsTex": "需要 TeX",
       "noTexTitle": "本机没有找到 TeX",
-      "noTexBody": "可以跳过这一步，改看预置结果；装好 TeX 后点「重新检查」。",
+      "noTexBody": "可以跳过这一步，改看预置结果；装好 TeX 后点「重新检查」。{{alt}}",
       "recheck": "重新检查",
       "recheckBusy": "正在检查…",
       "rail": {
+        "heading": "教程 · 章节",
         "title": "章节",
         "collapse": "收起章节栏",
         "expand": "展开章节栏",
         "more": "更多",
+        "chapterLabel": "{{n}} {{title}} · {{state}}",
+        "chapterLabelNeedsTex": "{{n}} {{title}} · {{state}} · 需要 TeX",
+        "stepRow": "{{number}} {{title}}",
+        "stepRowSkipped": "{{number}} {{title}} · 已跳过",
         "status": {
           "notStarted": "未开始",
           "inProgress": "进行中",
@@ -2801,9 +2806,11 @@
       "requiresBodyNoAction": "这一步要在那里做。",
       "modalYield": "关掉对话框后继续",
       "progressNotSaved": "进度没有保存。教程照常继续，下次可能要从上次保存的位置开始。",
+      "dismissNotice": "关掉提示",
       "leaveDialog": {
         "title": "退出教程？",
         "body": "进度已经保存。下次在欢迎页或设置页点「继续教程」就能接着做。",
+        "bodyNotSaved": "刚才有一次进度没有保存，下次可能要从上次保存的位置开始。在欢迎页或设置页点「继续教程」就能接着做。",
         "confirm": "退出",
         "cancel": "留在教程"
       },

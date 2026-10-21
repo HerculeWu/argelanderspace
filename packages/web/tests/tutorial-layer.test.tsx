@@ -4,7 +4,7 @@
  */
 import type { PageContext, TutorialProgress } from "@argelanderspace/contracts";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { TutorialRunner, type RunnerDeps } from "../src/tutorial/TutorialLayer";
 import type { ChapterDefinition } from "../src/tutorial/types";
 import { fakePage, fakeProgress } from "./tutorial-fixtures";
@@ -15,7 +15,7 @@ const VISIBLE = () => ({ rect: new DOMRect(10, 10, 40, 20), visible: true });
 function setup(over: Partial<Parameters<typeof TutorialRunner>[0]> & { deps?: Partial<RunnerDeps> } = {}) {
   const put = vi.fn(async (_progress: TutorialProgress) => ({}));
   const onViewAction = vi.fn(async () => ({ ok: true }));
-  const deps: Partial<RunnerDeps> = { put, checkTex: async () => true, now: () => AT, measure: VISIBLE, ...over.deps };
+  const deps: Partial<RunnerDeps> = { put, checkTex: async () => true, now: () => AT, measure: VISIBLE, rendered: () => true, ...over.deps };
   const props = { initial: fakeProgress(), context: fakePage("plan"), onViewAction, desktop: true, entered: true, ...over, deps };
   const view = render(<TutorialRunner {...props} />);
   const rerender = (context: PageContext) => view.rerender(<TutorialRunner {...props} context={context} />);
@@ -188,7 +188,12 @@ describe("docked cards", () => {
 describe("prepared text", () => {
   it("copy reports success, and a refused clipboard as refused", async () => {
     const writeText = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("denied"));
+    const original = Object.getOwnPropertyDescriptor(navigator, "clipboard");
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    onTestFinished(() => {
+      if (original) Object.defineProperty(navigator, "clipboard", original);
+      else delete (navigator as { clipboard?: unknown }).clipboard;
+    });
     setup({ initial: fakeProgress({ position: "prepare.agent" }) });
     await tick(16);
     expect(ui("tutorial-agent-skills")?.textContent).toContain("argelander-read-paper");
@@ -297,7 +302,7 @@ describe("the rail folds away from the highlighted element (user ruling 2026-10-
 });
 
 describe("progress not saved", () => {
-  it("a failed write is reported once; the tutorial goes on", async () => {
+  it("a failed write is reported once; the tutorial goes on (the notice stays until dismissed, see the review tests)", async () => {
     const put = vi.fn(async (_progress: TutorialProgress): Promise<unknown> => {
       throw new Error("write_failed");
     });
@@ -311,7 +316,7 @@ describe("progress not saved", () => {
     await tick(0);
     expect(card()?.getAttribute("data-ui-key")).toBe("tour.palette");
     expect(put).toHaveBeenCalledTimes(2);
-    expect(ui("tutorial-progress-not-saved")).toBeNull();
+    expect(ui("tutorial-progress-not-saved")).not.toBeNull();
   });
 });
 
@@ -332,7 +337,9 @@ describe("the chapter rail", () => {
     expect(state("tour")).toBe("inProgress");
     expect(state("library")).toBe("skipped");
     expect(state("reading")).toBe("notStarted");
-    expect(ui("tutorial-chapter", "library")?.textContent).toContain("已跳过 · 需要 TeX");
+    expect(ui("tutorial-chapter", "library")?.textContent).toContain("已跳过");
+    // the separator before "needs TeX" is drawn by the stylesheet (no copy concatenated in code)
+    expect(ui("tutorial-chapter", "library")?.querySelector('[data-ui="tutorial-chapter-needs-tex"]')?.textContent).toBe("需要 TeX");
     expect(ui("tutorial-chapter", "reading")?.textContent).toContain("未开始");
     expect(ui("tutorial-chapter", "tour")?.getAttribute("aria-current")).toBe("step");
     fireEvent.click(ui("tutorial-recheck-tex", "library")!);

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFakeBus } from "../src/api/ws-bus";
-import { activeRungs, domQuery, resolveAll, resolveAnchor, resolveLadder } from "../src/tutorial/anchors";
+import { activeRungs, domQuery, isRendered, resolveAll, resolveAnchor, resolveLadder } from "../src/tutorial/anchors";
 import { watchSources } from "../src/tutorial/l2";
 import type { L2Source } from "../src/tutorial/types";
 
@@ -58,6 +58,22 @@ describe("L3: the DOM query (happy-dom)", () => {
     expect(resolveAnchor(document, { ui: "close-pane" }, 1, true)?.id).toBe("a");
     resolveAnchor(document, { ui: "close-pane" }, 1, true);
     expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it("rendered: a zero-size or invisible element is not there for the ladder", () => {
+    document.body.innerHTML = `<button data-ui="a" id="a"></button><button data-ui="b" id="b"></button><button data-ui="c" id="c" style="visibility: hidden"></button>`;
+    const box = (w: number, h: number) => () => new DOMRect(0, 0, w, h);
+    const a = document.getElementById("a")!;
+    const b = document.getElementById("b")!;
+    const c = document.getElementById("c")!;
+    a.getBoundingClientRect = box(40, 20);
+    b.getBoundingClientRect = box(0, 0);
+    c.getBoundingClientRect = box(40, 20);
+    expect(isRendered(a)).toBe(true);
+    expect(isRendered(b)).toBe(false);
+    expect(isRendered(c)).toBe(false);
+    const ladder = [{ ui: "a" }, { ui: "b" }, { ui: "c" }];
+    expect(resolveLadder(document, ladder, 1, isRendered)?.anchor.ui).toBe("a");
   });
 
   it("a ladder highlights its last rung present now", () => {

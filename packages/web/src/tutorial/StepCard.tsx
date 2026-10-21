@@ -2,7 +2,7 @@ import { autoUpdate, computePosition, flip, offset, shift } from "@floating-ui/d
 import { type ReactNode, useLayoutEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
-import { Badge, Button, IconButton, InlineMessage } from "../ui";
+import { ActionButton, Badge, Button, InlineMessage } from "../ui";
 import { PreparedText } from "./PreparedText";
 import { tk } from "./text";
 import type { ChapterDefinition, StepDefinition, WhereKey } from "./types";
@@ -21,6 +21,10 @@ export type Dock =
   | { kind: "offscreen" }
   /** No anchor at all (agent cards in the browser form, the finish page): docked without any warning. */
   | { kind: "none" };
+
+/** What the card's main button says (`tutorial.ui.<label>`; the copy test checks every one). */
+export const NEXT_LABELS = ["next", "nextChapter", "finish"] as const;
+export type NextLabel = (typeof NEXT_LABELS)[number];
 
 export interface StepCardProps {
   chapter: ChapterDefinition;
@@ -41,8 +45,10 @@ export interface StepCardProps {
   texBlocked: boolean;
   texBusy: boolean;
   firstStep: boolean;
-  nextLabel: "next" | "nextChapter" | "finish";
+  nextLabel: NextLabel;
+  /** A progress write failed: the notice stays until the user dismisses it. */
   notSaved: boolean;
+  onDismissNotSaved?: () => void;
   onBack: () => void;
   onNext: () => void;
   onSkip: () => void;
@@ -71,23 +77,36 @@ export function StepCard(props: StepCardProps) {
     // over the chapter rail.
     el.style.visibility = "hidden";
     const padding = { top: CARD_MARGIN, right: CARD_MARGIN, bottom: CARD_MARGIN, left: avoidLeft };
-    return autoUpdate(anchor, el, () => {
+    // Each placement is numbered: an answer for an earlier one (another anchor, an earlier scroll position) that
+    // arrives late is dropped, and so is any answer after this anchor was left.
+    let generation = 0;
+    let live = true;
+    const stop = autoUpdate(anchor, el, () => {
+      const mine = ++generation;
       void computePosition(anchor, el, {
         strategy: "fixed",
         placement: "right-start",
         middleware: [offset(CARD_OFFSET), flip({ fallbackPlacements: ["left-start", "bottom-start", "top-start"], padding }), shift({ padding, crossAxis: true })],
       }).then(({ x, y }) => {
+        if (!live || mine !== generation) return;
         el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
         el.style.visibility = "";
       });
     });
+    return () => {
+      live = false;
+      stop();
+    };
   }, [anchor, docked, avoidLeft]);
 
   const key = `tutorial.steps.${step.id}`;
   const agent = step.kind === "agent";
-  const waitingLine = props.gated && !props.texBlocked && !props.skipped;
-  const nextDisabled = props.gated && !props.passed && !props.texBlocked && !props.skipped;
-  const showSkip = (props.gated || props.texBlocked) && !props.skipped && !props.passed;
+  // A step skipped earlier and shown again with its gate still false is shown as usual, and can be skipped again.
+  const waitingLine = props.gated && !props.texBlocked;
+  // The anchor cannot be found (waiting, then "the interface has changed"): the user does the step and clicks Next.
+  const anchorMissing = dock?.kind === "waiting" || dock?.kind === "missing";
+  const nextDisabled = props.gated && !props.passed && !props.texBlocked && !anchorMissing;
+  const showSkip = (props.gated || props.texBlocked) && !props.passed;
   const titleId = `tut-title-${step.id}`;
   let notice: ReactNode = null;
   if (dock?.kind === "modal") notice = <p className="tut-text" data-ui="tutorial-modal-yield">{t("tutorial.ui.modalYield")}</p>;
@@ -140,10 +159,19 @@ export function StepCard(props: StepCardProps) {
       <div className="tut-card-head">
         <div className="tut-crumb">
           <Icon name="graduation-cap" cls="ico-sm" />
-          <span>{t("tutorial.ui.cardHeader", { chapter: chapter.n, index: props.index, count: props.count })}</span>
-          <span>· {tk(t, `tutorial.chapters.${chapter.id}.title`)}</span>
+          <span>{t("tutorial.ui.cardHeader", { chapter: chapter.n, index: props.index, count: props.count, title: tk(t, `tutorial.chapters.${chapter.id}.title`) })}</span>
         </div>
-        <IconButton unstyled className="btn icon ghost" data-ui="exit-tutorial" data-ui-key="card" label={t("tutorial.ui.leave")} icon={<Icon name="x" cls="ico-sm" />} onClick={props.onLeave} />
+        <ActionButton
+          unstyled
+          mode="icon"
+          iconName="x"
+          className="btn icon ghost"
+          data-ui="exit-tutorial"
+          data-ui-key="card"
+          label={t("tutorial.ui.leave")}
+          tooltip={t("tutorial.ui.leave")}
+          onClick={props.onLeave}
+        />
       </div>
       <div className="tut-card-body">
         {agent && (
@@ -160,13 +188,25 @@ export function StepCard(props: StepCardProps) {
           </div>
         )}
         {props.notSaved && (
-          <InlineMessage tone="warning" uiId="tutorial-progress-not-saved">{t("tutorial.ui.progressNotSaved")}</InlineMessage>
+          <div className="tut-not-saved">
+            <InlineMessage tone="warning" uiId="tutorial-progress-not-saved">{t("tutorial.ui.progressNotSaved")}</InlineMessage>
+            <ActionButton
+              unstyled
+              mode="icon"
+              iconName="x"
+              className="btn icon ghost"
+              data-ui="dismiss-tutorial-progress-notice"
+              label={t("tutorial.ui.dismissNotice")}
+              tooltip={t("tutorial.ui.dismissNotice")}
+              onClick={props.onDismissNotSaved}
+            />
+          </div>
         )}
         <p className="tut-text">{intro}</p>
         {notice}
         {props.texBlocked && (
           <InlineMessage tone="warning" uiId="tutorial-needs-tex" title={t("tutorial.ui.noTexTitle")}>
-            {t("tutorial.ui.noTexBody")} {tk(t, `${key}.alt`)}
+            {t("tutorial.ui.noTexBody", { alt: tk(t, `${key}.alt`) })}
             <div>
               <Button data-ui="tutorial-recheck-tex" data-ui-key="card" busy={props.texBusy} disabled={props.texBusy} onClick={props.onRecheck}>
                 {props.texBusy ? t("tutorial.ui.recheckBusy") : t("tutorial.ui.recheck")}

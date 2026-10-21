@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath, URL as NodeURL } from "node:url";
 import { describe, expect, it } from "vitest";
+import { CHAPTER_STATUSES } from "../src/tutorial/machine";
 import { CHAPTERS } from "../src/tutorial/chapters";
+import { NEXT_LABELS } from "../src/tutorial/StepCard";
+import { WHERE_KEYS } from "../src/tutorial/types";
 
 // Every copy key a registered step's card asks for exists in both locales (keys are built from step ids at run time,
 // so the i18n types cannot check them).
@@ -26,6 +29,10 @@ function keysOf(): string[] {
       if (s.requires) keys.push(`tutorial.ui.where.${s.requires.where}`);
     }
   }
+  // The keys the cards and the rail build at run time from a closed set (tk() / template keys): every value of the set.
+  for (const where of WHERE_KEYS) keys.push(`tutorial.ui.where.${where}`);
+  for (const status of [...CHAPTER_STATUSES, "needsTex"]) keys.push(`tutorial.ui.rail.status.${status}`);
+  for (const label of NEXT_LABELS) keys.push(`tutorial.ui.${label}`);
   return keys;
 }
 
