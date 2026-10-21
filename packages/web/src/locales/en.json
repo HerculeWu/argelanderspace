@@ -2942,6 +2942,59 @@
           "title": "Quick appearance",
           "body": "“Quick appearance” on the right of the title bar changes the theme, accent color, density and language. The Copilot switch beside it comes in chapter 8."
         }
+      },
+      "writer": {
+        "open": {
+          "title": "Open the sample manuscript",
+          "body": "Click “Write” in the navigation, then the manuscript in the list. A manuscript is something you write yourself, made up of cells.",
+          "waiting": "Moves on once the manuscript editor is open"
+        },
+        "structure": {
+          "title": "Template, header and cells",
+          "body": "The “Template” in the top bar sets the layout; “Info” holds the title and authors. Every cell has a type: this template has LaTeX, figure, table and code, and the abstract is in the first LaTeX cell."
+        },
+        "add-cell": {
+          "title": "Add a paragraph",
+          "body": "Under the last cell, click “Add cell”, choose LaTeX, paste the paragraph below and press Shift+Enter to commit it.",
+          "waiting": "Moves on once there is one more cell",
+          "prepared": {
+            "label": "Prepared text",
+            "text": "The two tails do not hold equal numbers of members. \\citet{} argue that this asymmetry is hard to explain with N-body models under Newtonian gravity; Pflamm-Altenburg et al. (2023) quantified how much asymmetry random fluctuations can produce. To tell the two explanations apart, the statistical significance of the asymmetry has to be established first."
+          }
+        },
+        "cite": {
+          "title": "Insert a citation",
+          "body": "Click “Edit cell” on the cell you just added and put the cursor inside the braces of \\citet{}. Open “References” on the right, search for Kroupa and click “Insert \\cite{key}”.",
+          "waiting": "Moves on once the paragraph has the cite key"
+        },
+        "render": {
+          "title": "Render",
+          "body": "Press Shift+Enter or click “Render” in the top bar. The workbench compiles the whole manuscript with your local TeX, and the citations in the preview become authors and years; without chapter 2's import they cannot be resolved and show as question marks.",
+          "waiting": "Moves on once rendering finishes",
+          "alt": "Without TeX there is no rendering. Come back to this step once it is installed."
+        },
+        "export": {
+          "title": "Export and notes",
+          "body": "“Export” downloads a source zip with references.bib. Each cell's “Add comment” is a note on that cell, for collaborators or agents."
+        },
+        "agent": {
+          "title": "The Copilot can write too",
+          "intro": "Writing has no command-line side, but the Copilot can add paragraphs and insert citations (you will see it in chapter 8). Later you can say:",
+          "prompt": "Add a paragraph to the review manuscript comparing how Kroupa 2022 and Pflamm-Altenburg 2023 explain the asymmetry of the tails",
+          "skill": "Copilot (chapter 8)"
+        }
+      },
+      "finish": {
+        "page": {
+          "title": "You have finished the tutorial",
+          "body": "You have been through the workbench in the tutorial project: adding, reading, exploring, arguments, planning, writing, and the Copilot. This project stays, and you can come back to it any time.",
+          "openOwn": "Open your own project",
+          "openOwnBrowser": "Run `argelanderspace serve` in a terminal to open your own project",
+          "review": "Review any chapter",
+          "close": "Close the tutorial",
+          "settingsNote": "Appearance, language and log level are changed in Settings.",
+          "troubleNote": "If something goes wrong: “Export diagnostics…” under “Diagnostics” in Settings packs the logs, and “Show the log folder” finds them."
+        }
       }
     }
   }

@@ -41,3 +41,8 @@ export const SAMPLE_ARGUMENT_IDS = {
   end: "ak4e7r",
   orphanNative: "an2r5m",
 } as const;
+
+/** Cite keys of the sample library (library.json `cite_key`, the bibcode): the one chapter 7 inserts into the manuscript. */
+export const SAMPLE_CITE_KEYS = {
+  kroupa2022: "2022MNRAS.517.3613K",
+} as const;

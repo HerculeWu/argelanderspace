@@ -2942,6 +2942,59 @@
           "title": "外观速调",
           "body": "标题栏右侧的「外观速调」能改主题、强调色、密度和语言。旁边的 Copilot 开关第 8 章再讲。"
         }
+      },
+      "writer": {
+        "open": {
+          "title": "打开预置稿件",
+          "body": "点导航的「写作」，点列表里的稿件。稿件（Manuscript）是你自己写的东西，由一个个 cell 组成。",
+          "waiting": "稿件编辑器打开后自动前进"
+        },
+        "structure": {
+          "title": "模板、题头与 cell",
+          "body": "顶栏的「模板」决定排版；「信息」里是标题、作者。每个 cell 有类型，这个模板有 LaTeX、图、表、代码；摘要写在第一个 LaTeX cell 里。"
+        },
+        "add-cell": {
+          "title": "加一段",
+          "body": "在最后一个 cell 下点「添加 cell」，选 LaTeX，粘贴下面的段落，按 Shift+Enter 提交。",
+          "waiting": "cell 多一个后自动前进",
+          "prepared": {
+            "label": "准备好的文字",
+            "text": "两条尾部的成员数并不相等。\\citet{} 认为这种不对称难以用牛顿引力下的 N 体模型解释；Pflamm-Altenburg 等（2023）则给出了随机涨落能产生多大不对称的度量。要分辨两种解释，先要确定不对称的统计显著性。"
+          }
+        },
+        "cite": {
+          "title": "插入引用",
+          "body": "点刚加 cell 的「编辑单元格」，把光标放进 \\citet{} 的花括号里。打开右侧「References」，搜 Kroupa，点「插入 \\cite{key}」。",
+          "waiting": "段落里出现该引用键后自动前进"
+        },
+        "render": {
+          "title": "渲染",
+          "body": "按 Shift+Enter 或点顶栏「渲染」。工作台用本机 TeX 编译整篇稿件，预览里的引用会变成作者和年份；没做第 2 章的导入时引用无法解析，显示为问号。",
+          "waiting": "渲染完成后自动前进",
+          "alt": "没有 TeX 渲染不了。装好后回到这一步再试。"
+        },
+        "export": {
+          "title": "导出与便签",
+          "body": "「导出」会下载一个带 references.bib 的源码 zip。每个 cell 的「添加评论」是单元便签，给协作者或 agent 看。"
+        },
+        "agent": {
+          "title": "也可以让 Copilot 写",
+          "intro": "写作没有命令行面，但 Copilot 能加段落、插引用（第 8 章会看到）。以后可以这样说：",
+          "prompt": "在综述稿件里加一段，比较 Kroupa 2022 与 Pflamm-Altenburg 2023 对尾部不对称的解释",
+          "skill": "Copilot（第 8 章）"
+        }
+      },
+      "finish": {
+        "page": {
+          "title": "教程走完了",
+          "body": "你已经在教程项目里过了一遍工作台：添加、阅读、探索、论证、计划、写作，还有 Copilot。这个项目会留着，随时能回来。",
+          "openOwn": "打开自己的项目",
+          "openOwnBrowser": "在终端运行 `argelanderspace serve` 打开自己的项目",
+          "review": "回看任一章",
+          "close": "关闭教程",
+          "settingsNote": "外观、语言和日志级别都在设置页改。",
+          "troubleNote": "出了问题：设置页「诊断」里的「导出诊断包…」能打包日志，「显示日志文件夹」能找到它们。"
+        }
       }
     }
   }

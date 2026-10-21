@@ -1,0 +1,6 @@
+/* The finish page (in-app-tutorial ticket 23): a docked card with the three ways out stacked, and two quiet notes. */
+.tut-finish-ways { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+.tut-finish-ways > .ui-button, .tut-finish-ways > .btn { justify-content: flex-start; }
+.tut-finish-ways code, .tut-finish-note code { font-family: var(--font-mono); font-size: .95em; }
+.tut-finish-note { font-size: var(--fs-xs); line-height: 1.55; color: var(--text-faint); margin: 0; overflow-wrap: anywhere; }
+.tut-finish-note + .tut-finish-note { margin-top: -4px; }

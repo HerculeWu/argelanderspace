@@ -2,6 +2,7 @@ import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState }
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import { ActionButton, Button, Tooltip } from "../ui";
+import { FINISH_CHAPTER_ID } from "./chapters/finish";
 import { type StepRecords, chapterStatus, chapterSummary, recordOf } from "./machine";
 import { tk } from "./text";
 import type { ChapterDefinition, StepDefinition } from "./types";
@@ -142,6 +143,25 @@ export function ChapterRail(props: ChapterRailProps) {
       <div className="tut-rail-list">
         {chapters.map((chapter) => {
           const active = chapter.steps.some((s) => s.id === currentStepId);
+          // The finish page's row (prototype B): a flag and its title, no state line and no steps.
+          if (chapter.id === FINISH_CHAPTER_ID) {
+            const title = tk(t, `tutorial.chapters.${chapter.id}.title`);
+            const row = (
+              <button
+                type="button"
+                className={"tut-ch notStarted" + (active ? " active" : "")}
+                data-ui="tutorial-chapter"
+                data-ui-key={chapter.id}
+                aria-current={active ? "step" : undefined}
+                aria-label={collapsed ? title : undefined}
+                onClick={() => props.onGoChapter(chapter)}
+              >
+                <span className="tut-ch-n"><Icon name="flag" cls="ico-sm" /></span>
+                {!collapsed && <span className="tut-ch-body"><span className="tut-ch-title">{title}</span></span>}
+              </button>
+            );
+            return <div key={chapter.id}>{collapsed ? <Tooltip content={title}>{row}</Tooltip> : row}</div>;
+          }
           const status = chapterStatus(chapter, records, currentStepId);
           const summary = chapterSummary(chapter, records);
           const needsTex = tex === false && chapter.steps.some((s) => s.needsTex);
