@@ -25,10 +25,11 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, win32 } from "node:path";
+import { dirname, join, win32 } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import {
   bundledSkillsDir,
+  bundledTutorialDir,
   CLI_COMMAND,
   CLI_LAUNCHER_MARK,
   cliLauncherFile,
@@ -725,5 +726,68 @@ describe("the bundled skills", () => {
         )
       )
     ).toBeNull();
+  });
+});
+
+describe("the bundled tutorial sample (in-app-tutorial ticket 15)", () => {
+  const MARK = "argelanderspace-tutorial.json";
+
+  /** A sample folder at `dir`, with its marker file unless told otherwise. */
+  function sample(dir: string, marked = true): void {
+    mkdirSync(dir, { recursive: true });
+    if (marked) writeFileSync(join(dir, MARK), "{}\n");
+  }
+
+  test("the desktop package: tutorial/ under the resources, beside sidecar/", () => {
+    const resources = join(tempHome(), "usr", "lib", "argelanderspace");
+    const bin = join(resources, "sidecar", "app", "dist", "bin.js");
+    mkdirSync(dirname(bin), { recursive: true });
+    sample(join(resources, "tutorial"));
+    expect(bundledTutorialDir(bin)).toBe(join(resources, "tutorial"));
+    // a dist/tutorial inside the sidecar is not where the package keeps it
+    rmSync(join(resources, "tutorial"), { recursive: true });
+    sample(join(dirname(bin), "tutorial"));
+    expect(bundledTutorialDir(bin)).toBeNull();
+  });
+
+  test("the development form (packages/app/dist and packages/cli/dist): dist/tutorial/", () => {
+    const repo = tempHome();
+    for (const pkg of ["app", "cli"]) {
+      const dist = join(repo, "packages", pkg, "dist");
+      sample(join(dist, "tutorial"));
+      expect(bundledTutorialDir(join(dist, "bin.js"))).toBe(join(dist, "tutorial"));
+    }
+    // the repository root's tutorial/ is not taken for it
+    rmSync(join(repo, "packages", "app", "dist", "tutorial"), { recursive: true });
+    sample(join(repo, "tutorial"));
+    expect(bundledTutorialDir(join(repo, "packages", "app", "dist", "bin.js"))).toBeNull();
+  });
+
+  test("an npm install: dist/tutorial/ beside the CLI", () => {
+    const dist = join(tempHome(), "lib", "node_modules", "argelanderspace", "dist");
+    sample(join(dist, "tutorial"));
+    expect(bundledTutorialDir(join(dist, "bin.js"))).toBe(join(dist, "tutorial"));
+  });
+
+  test("none without the marker file, without the folder, or when the marker is a folder", () => {
+    const home = tempHome();
+    const resources = join(home, "res");
+    const packaged = join(resources, "sidecar", "app", "dist", "bin.js");
+    mkdirSync(dirname(packaged), { recursive: true });
+    expect(bundledTutorialDir(packaged)).toBeNull(); // no folder
+    sample(join(resources, "tutorial"), false);
+    writeFileSync(join(resources, "tutorial", "NOTICE.md"), "notice\n");
+    expect(bundledTutorialDir(packaged)).toBeNull(); // folder, no marker
+
+    const dist = join(home, "repo", "packages", "app", "dist");
+    sample(join(dist, "tutorial"), false);
+    expect(bundledTutorialDir(join(dist, "bin.js"))).toBeNull();
+    mkdirSync(join(dist, "tutorial", MARK));
+    expect(bundledTutorialDir(join(dist, "bin.js"))).toBeNull(); // a folder by the marker's name
+    // a marker file where the folder should be
+    const flat = join(home, "flat", "dist");
+    mkdirSync(flat, { recursive: true });
+    writeFileSync(join(flat, "tutorial"), "not a folder\n");
+    expect(bundledTutorialDir(join(flat, "bin.js"))).toBeNull();
   });
 });

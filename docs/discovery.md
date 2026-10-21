@@ -72,6 +72,7 @@ AbortSignal 从入请求经 core 传到 ADS；取消尽量停止上游工作。a
 - 空结果可作为成功数据缓存；网络、鉴权、限流失败不能缓存为成功数据；abort 不写。
 - Library 成员是即时本地用户态，Add 后立即变化；重新组装小图便宜，因此不建立 DiscoveryGraph 的复杂失效机制。
 - 无 stale-while-revalidate、缓存数据库、后台刷新或持久 discovery session。
+- 带 `pinned: true` 的条目不过期；产品从不写它，只由教程示例生成脚本写入（infra `AdsDiscoveryClient` 的 `pin: true` 选项；`data` 非数组仍算 miss）。
 
 ## 入库：唯一权威 mutation
 

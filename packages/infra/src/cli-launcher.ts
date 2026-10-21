@@ -506,6 +506,41 @@ export function uninstallCliLauncher(opts: CliLauncherOptions = {}): CliLauncher
 }
 
 /**
+ * Which form of the app a CLI entry belongs to, read from the folders around it, and that form's root:
+ * - `packaged`: the desktop package, `<resources>/sidecar/app/dist/bin.js`; the root is `<resources>`.
+ * - `development`: the repository, `<repo>/packages/{app,cli}/dist/bin.js`; the root is `<repo>`.
+ * - `other`: anything else, an npm install (`…/node_modules/argelanderspace/dist/bin.js`) among them; no root.
+ *
+ * Only the layout counts, not what lies three levels up: a local npm install
+ * `<project>/node_modules/argelanderspace/dist/bin.js` has the user's project there, and that is not the app's.
+ * Shared by the bundled skills and the bundled tutorial sample.
+ */
+function cliEntryLayout(
+  cliEntry: string
+): { form: "packaged" | "development"; root: string } | { form: "other" } {
+  const bin = dirname(cliEntry);
+  const pkg = dirname(bin);
+  const outer = dirname(pkg);
+  if (basename(bin) !== "dist") return { form: "other" };
+  const root = resolve(bin, "..", "..", "..");
+  if (basename(pkg) === "app" && basename(outer) === "sidecar") return { form: "packaged", root };
+  if ((basename(pkg) === "app" || basename(pkg) === "cli") && basename(outer) === "packages") {
+    return { form: "development", root };
+  }
+  return { form: "other" };
+}
+
+/** `dir` when it is a folder holding the file `marker`; else null. */
+function folderWith(dir: string, marker: string): string | null {
+  try {
+    if (statSync(dir).isDirectory() && statSync(join(dir, marker)).isFile()) return dir;
+  } catch {
+    /* not there */
+  }
+  return null;
+}
+
+/**
  * The skills that ship with the app, found from the CLI entry the host runs: three levels up, a `skills` folder with
  * its README. That is `<resources>/skills` next to `<resources>/sidecar/app/dist/bin.js` in the desktop package, and
  * the repository's `skills/` next to `packages/app/dist/bin.js` (or `packages/cli/dist/bin.js`) in the development
@@ -517,21 +552,25 @@ export function uninstallCliLauncher(opts: CliLauncherOptions = {}): CliLauncher
  * skills from here, copilot ticket 58).
  */
 export function bundledSkillsDir(cliEntry: string): string | null {
-  const bin = dirname(cliEntry);
-  const pkg = dirname(bin);
-  const outer = dirname(pkg);
-  const packaged =
-    basename(bin) === "dist" && basename(pkg) === "app" && basename(outer) === "sidecar";
-  const development =
-    basename(bin) === "dist" &&
-    (basename(pkg) === "app" || basename(pkg) === "cli") &&
-    basename(outer) === "packages";
-  if (!packaged && !development) return null;
-  const dir = resolve(dirname(cliEntry), "..", "..", "..", "skills");
-  try {
-    if (statSync(dir).isDirectory() && statSync(join(dir, "README.md")).isFile()) return dir;
-  } catch {
-    /* not there */
-  }
-  return null;
+  const layout = cliEntryLayout(cliEntry);
+  if (layout.form === "other") return null;
+  return folderWith(join(layout.root, "skills"), "README.md");
+}
+
+/** The marker file at the root of the tutorial sample (and of a tutorial project copied from it). */
+const TUTORIAL_SAMPLE_MARKER = "argelanderspace-tutorial.json";
+
+/**
+ * The tutorial sample that ships with the app (in-app-tutorial ticket 15), found from the CLI entry: `<resources>/tutorial`
+ * in the desktop package, and `dist/tutorial` beside the CLI in an npm install or the development form
+ * (`packages/{app,cli}/dist/tutorial`). Only a folder holding the marker file {@link TUTORIAL_SAMPLE_MARKER} counts;
+ * null otherwise (an installation without the sample).
+ */
+export function bundledTutorialDir(cliEntry: string): string | null {
+  const layout = cliEntryLayout(cliEntry);
+  const dir =
+    layout.form === "packaged"
+      ? join(layout.root, "tutorial")
+      : resolve(dirname(cliEntry), "tutorial");
+  return folderWith(dir, TUTORIAL_SAMPLE_MARKER);
 }
