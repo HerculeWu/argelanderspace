@@ -1,7 +1,7 @@
 {
   "version": 1,
   "id": "m_6d2f8b14",
-  "rev": 0,
+  "rev": 1,
   "template": "report",
   "title": "The tidal tails of the Hyades: extent, substructure and asymmetry",
   "authors": [],
@@ -26,6 +26,13 @@
       }
     },
     {
+      "id": "c_1b25d01a",
+      "type": "latex",
+      "data": {
+        "source": "The difference between the two estimates is instructive, because it is not a change in the cluster but a change in selection. \\citet{2019A&A...621L...2R} worked within a $200\\,$pc sphere and selected members with a modified convergent point method; their recovered leading tail reached about $170\\,$pc from the cluster with 292 stars, and the trailing tail about $70\\,$pc with 237 stars, so the tails appeared asymmetric but confined to the immediate vicinity. \\citet{2021A&A...647A.137J} instead removed the model velocity--distance correlation along the tails (the CCP method) and traced candidate members out to a total extent of nearly $1\\,$kpc: 1109 candidates in Gaia DR2 (411 leading, 331 trailing) and 862 in eDR3 (293 leading, 166 trailing). The factor of roughly four between the two lengths therefore reflects the difference between a local overdensity search and a model-guided selection that can still follow the tails where their density has dropped below the field."
+      }
+    },
+    {
       "id": "c_2a3b4c5d",
       "type": "latex",
       "data": {
@@ -35,5 +42,5 @@
   ],
   "comments": [],
   "created_at": "2026-10-21T00:00:00.000Z",
-  "updated_at": "2026-10-21T00:00:00.000Z"
+  "updated_at": "2026-10-21T18:47:41.950Z"
 }

@@ -26,7 +26,7 @@ interface Cell {
   type: string;
   data: Record<string, unknown>;
 }
-const PRESET: Cell[] = SAMPLE_CELL_IDS.map((id, i) => ({ id, type: "latex", data: { source: i === 2 ? `\\citet{${KEY}} found…` : "text" } }));
+const PRESET: Cell[] = SAMPLE_CELL_IDS.map((id, i) => ({ id, type: "latex", data: { source: i === SAMPLE_CELL_IDS.length - 1 ? `\\citet{${KEY}} found…` : "text" } }));
 interface EditorOver {
   manuscriptId?: string;
   phase?: "loading" | "ready" | "missing";

@@ -262,7 +262,7 @@ describe("chapter 5 ladders", () => {
 
 describe("chapter 6 gates against fake snapshots (L1: the plan page)", () => {
   const plan = samplePlan();
-  it("the sample plan has its two hand-written tasks; the first already links Jerabkova's Doc", () => {
+  it("the sample plan has its preset tasks (two hand-written, one from the Copilot conversation); the first already links Jerabkova's Doc", () => {
     expect(plan.tasks.map((t) => t.id)).toEqual([...SAMPLE_TASK_IDS]);
     expect(plan.tasks[0]!.links.map((l) => l.doc_id)).toEqual([SAMPLE_DOC_ID]);
   });

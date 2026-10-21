@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "id": "85b4af77-56d0-4684-8a1c-b8926dec17d0",
+  "title": "这篇文章的潮汐尾长度是怎么得出的",
+  "createdAt": "2026-10-21T18:45:37.391Z",
+  "updatedAt": "2026-10-21T18:47:28.902Z",
+  "model": {
+    "provider": "deepseek",
+    "model": "deepseek-v4-pro",
+    "thinking": null
+  },
+  "sessionId": "42a3eeab-d759-46d1-aadd-c7d34cbe4ccc",
+  "run": {
+    "id": "1db9cd4d-8490-4060-8313-5d91065385b4",
+    "status": "completed",
+    "error": null
+  }
+}

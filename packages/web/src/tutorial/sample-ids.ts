@@ -4,9 +4,8 @@
 // that every one of them is really in the sample. Product ids are random, so the sample's hand-written content has
 // fixed ids; regenerating the sample (packages/app/scripts/tutorial-sample.mjs) never changes them.
 //
-// Not here yet: the preset Copilot conversation (its id and the ids of its three user messages), the Task and the
-// manuscript cell that conversation creates. They exist only once the conversation has been recorded with a real
-// provider (spec section 7); until then the last cell of the manuscript is SAMPLE_CELL_IDS' last entry.
+// The preset Copilot conversation was recorded once with a real provider (spec section 7) and is frozen; its Task and
+// manuscript cell carry the ids the product gave them then, and count as preset content like the hand-written ones.
 
 /** The five Works of the sample library (library.json ids). */
 export const SAMPLE_WORK_IDS = {
@@ -27,14 +26,35 @@ export const SAMPLE_ANNOTATION_IDS = {
   text: "a_8a62c4e3",
 } as const;
 
-/** The preset Plan and its hand-written Tasks. */
-export const SAMPLE_PLAN_ID = "p_4e7a1c90";
-export const SAMPLE_TASK_IDS = ["t_1b3d5f70", "t_2c4e6a81"] as const;
+/** The Task the preset Copilot conversation added to the Plan (its second question). */
+export const SAMPLE_COPILOT_TASK_ID = "t_9bca269c";
+/** The paragraph the preset Copilot conversation inserted into the manuscript (its third question). */
+export const SAMPLE_COPILOT_CELL_ID = "c_1b25d01a";
 
-/** The review manuscript and its cells, in order (abstract, then two paragraphs). */
+/** The preset Plan and its Tasks, in order: two hand-written, then the one the Copilot conversation added. */
+export const SAMPLE_PLAN_ID = "p_4e7a1c90";
+export const SAMPLE_TASK_IDS = ["t_1b3d5f70", "t_2c4e6a81", SAMPLE_COPILOT_TASK_ID] as const;
+
+/**
+ * The review manuscript and its cells, in order: the abstract, the first hand-written paragraph, the paragraph the
+ * Copilot conversation inserted, and the second hand-written paragraph (still the last cell).
+ */
 export const SAMPLE_MANUSCRIPT_ID = "m_6d2f8b14";
-export const SAMPLE_CELL_IDS = ["c_0a1b2c3d", "c_1e2f3a4b", "c_2a3b4c5d"] as const;
+export const SAMPLE_CELL_IDS = ["c_0a1b2c3d", "c_1e2f3a4b", SAMPLE_COPILOT_CELL_ID, "c_2a3b4c5d"] as const;
 export const SAMPLE_LAST_CELL_ID = SAMPLE_CELL_IDS[SAMPLE_CELL_IDS.length - 1];
+
+/**
+ * The preset Copilot conversation (copilot/conversations/<id>.json) and its three user messages in order: the
+ * question asked in Jerabkova's reader (it carries that page's context), the Plan request, the manuscript request.
+ */
+export const SAMPLE_CONVERSATION = {
+  id: "85b4af77-56d0-4684-8a1c-b8926dec17d0",
+  questions: [
+    "60494134-ac63-4f1b-b847-4a60047a8d42",
+    "d81e0685-3fc5-4ebf-9d33-1316e1a69691",
+    "bf6e6695-9981-414d-9d17-7236849f58d5",
+  ],
+} as const;
 
 /** Jerabkova 2021's argument graph: its End argument and the Native argument deliberately left unlinked. */
 export const SAMPLE_ARGUMENT_IDS = {
