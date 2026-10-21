@@ -1,0 +1,113 @@
+import type { AnchorLadder, DomQuery, TutorialAnchor, WorkbenchSnapshot } from "./types";
+
+/** How long a missing anchor is waited for before the card says the interface has changed (spec section 5). */
+export const ANCHOR_MISSING_MS = 3000;
+
+const esc = (value: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.escape(value) : value.replace(/["\\]/g, "\\$&"));
+
+/** The selector of an anchor, without its scope. */
+export function anchorSelector(anchor: TutorialAnchor): string {
+  return `[data-ui="${esc(anchor.ui)}"]` + (anchor.key !== undefined ? `[data-ui-key="${esc(anchor.key)}"]` : "");
+}
+
+/** Where an anchor is looked up: the document, or the active workspace pane for a scoped one. */
+function rootOf(doc: Document, anchor: TutorialAnchor, activePaneId: number | null): ParentNode | null {
+  let root: ParentNode | null = doc;
+  if (anchor.scope === "active-pane") {
+    if (activePaneId === null) return null;
+    root = doc.querySelector(`[data-ui="workspace-pane"][data-ui-key="${activePaneId}"]`);
+  }
+  if (root && anchor.within) root = root.querySelector(anchorSelector(anchor.within));
+  return root;
+}
+
+/** Every element the anchor names now, in document order. */
+export function resolveAll(doc: Document, anchor: TutorialAnchor, activePaneId: number | null): Element[] {
+  const root = rootOf(doc, anchor, activePaneId);
+  return root ? [...root.querySelectorAll(anchorSelector(anchor))] : [];
+}
+
+const warned = new Set<string>();
+const isDev = () => {
+  try {
+    return Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV);
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * The one element an anchor names. Several: the first in document order, with a warning in a development build
+ * (a definition error the static test should have caught, or a page showing the same thing twice).
+ */
+export function resolveAnchor(doc: Document, anchor: TutorialAnchor, activePaneId: number | null, warn = isDev()): Element | null {
+  const all = resolveAll(doc, anchor, activePaneId);
+  if (all.length > 1 && warn) {
+    const sel = anchorSelector(anchor);
+    if (!warned.has(sel)) {
+      warned.add(sel);
+      console.warn(`tutorial anchor ${sel} matches ${all.length} elements; the first is used`);
+    }
+  }
+  return all[0] ?? null;
+}
+
+/** The ladder level to highlight: the last one present now; null when none is. */
+export function resolveLadder(doc: Document, ladder: AnchorLadder, activePaneId: number | null): { anchor: TutorialAnchor; element: Element } | null {
+  for (let i = ladder.length - 1; i >= 0; i--) {
+    const anchor = ladder[i]!;
+    const element = resolveAnchor(doc, anchor, activePaneId);
+    if (element) return { anchor, element };
+  }
+  return null;
+}
+
+/** The rungs that apply now: those without a condition, and those whose condition holds for the snapshot. */
+export function activeRungs(ladder: AnchorLadder, snapshot: WorkbenchSnapshot): AnchorLadder {
+  return ladder.every((a) => !a.when) ? ladder : ladder.filter((a) => !a.when || a.when(snapshot));
+}
+
+/** The L3 query over a document. */
+export function domQuery(doc: Document, activePaneId: number | null): DomQuery {
+  return {
+    present: (anchor) => resolveAll(doc, anchor, activePaneId).length > 0,
+    attr: (anchor, name) => resolveAll(doc, anchor, activePaneId)[0]?.getAttribute(name) ?? null,
+  };
+}
+
+export interface Measured {
+  /** The rectangle to highlight (the visible part when clipped); null when nothing is shown. */
+  rect: DOMRect | null;
+  /** The element's whole box, clipped or not (for the chapter rail's overlap test); null when it has no size. */
+  box?: DOMRect | null;
+  /** At least half of the element is inside its scroll containers and the window. */
+  visible: boolean;
+}
+
+/** Whether an element is on screen: more than half of it cut off by a scroll container or the window is not. */
+export function measure(el: Element, win: Window = window): Measured {
+  const r = el.getBoundingClientRect();
+  if (r.width === 0 && r.height === 0) return { rect: null, box: null, visible: false };
+  let top = r.top;
+  let left = r.left;
+  let right = r.right;
+  let bottom = r.bottom;
+  for (let p = el.parentElement; p && p !== win.document.body; p = p.parentElement) {
+    const cs = win.getComputedStyle(p);
+    if (/(auto|scroll|hidden)/.test(cs.overflowY + cs.overflowX)) {
+      const pr = p.getBoundingClientRect();
+      top = Math.max(top, pr.top);
+      left = Math.max(left, pr.left);
+      right = Math.min(right, pr.right);
+      bottom = Math.min(bottom, pr.bottom);
+    }
+  }
+  top = Math.max(top, 0);
+  left = Math.max(left, 0);
+  right = Math.min(right, win.innerWidth);
+  bottom = Math.min(bottom, win.innerHeight);
+  const w = right - left;
+  const h = bottom - top;
+  const visible = w > 0 && h > 0 && (w * h) / (r.width * r.height) >= 0.5;
+  return { rect: visible ? new DOMRect(left, top, w, h) : null, box: r, visible };
+}
