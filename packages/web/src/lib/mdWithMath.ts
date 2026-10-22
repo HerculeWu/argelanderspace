@@ -1,6 +1,9 @@
-import { Marked, marked } from "marked";
+import { Marked } from "marked";
 import { renderMathToString } from "./math";
 import { safeLink } from "./safe-link";
+import { cjkEmphasis } from "./markedCjk";
+
+const defaultMarked = new Marked(cjkEmphasis(), { gfm: true, breaks: true });
 
 // Markdown with $…$/$$…$$ math, for task notes (Stage 4). The pipeline's
 // order matters at every step:
@@ -106,7 +109,7 @@ export function mdWithMath(src: string, opts: { safe?: boolean } = {}): string {
     const stashed = slot ? linkSlots[Number(slot[1])] : undefined;
     return stashed?.kind === "raw" ? stashed.raw : href;
   };
-  const safeMarked = new Marked({
+  const safeMarked = new Marked(cjkEmphasis(), {
     gfm: true,
     breaks: true,
     renderer: {
@@ -127,7 +130,7 @@ export function mdWithMath(src: string, opts: { safe?: boolean } = {}): string {
   });
   let html = opts.safe
     ? (safeMarked.parse(s, { async: false }) as string)
-    : marked.parse(s, { async: false, gfm: true, breaks: true });
+    : (defaultMarked.parse(s, { async: false }) as string);
 
   // 5. restore: KaTeX → URL slots → code sentinel
   html = html.replace(

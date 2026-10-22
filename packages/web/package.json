@@ -44,6 +44,7 @@
     "katex": "0.16.47",
     "lucide-react": "^0.460.0",
     "marked": "^18.0.11",
+    "marked-cjk-friendly": "0.1.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-i18next": "^17.0.14"
