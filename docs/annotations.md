@@ -99,7 +99,7 @@ archive：`archive/YYYYMMDDTHHmmssSSSZ-<旧fp前8>.json`，UTC 定长3位毫秒�
 - 同 doc 更新/失败保最近文字与 `<main>`，清 selection/active/marker/旧 target，隐藏高亮/图，禁创建/写入/定位/旧 jump+undo。确认共同 epoch 才恢复。滚动按最新用户 px 尽力保留，非语义 re-anchor，用户 wheel/touch/key 接管后不延迟回拉。
 - 深链接等 ready 再消费；sync/error 撤原生 id 保 data-block-id，避免浏览器 hash 提前跳。旧 ref 延迟 focus、smooth 校正/observer/RAF 全受代际门，未知/归档 ann 不访问 archive。
 - 外层 session 草稿受保护：创建仅保 body，重新选位后**显式**使用；编辑跨 fingerprint 保字节但禁存，id 恰好重用也不解锁。相同 epoch 外部 body 冲突不自动覆盖/重发。
-- PUT 成功只清仍对应该次提交 draft revision/body 的草稿，迟到成功不能清用户新输入；discard 同时退出局部编辑态。提供复制/明确丢弃，不只把不可见 state 留内存。
+- PUT 成功只清仍对应该次提交 draft revision/body 的草稿，迟到成功不能清用户新输入；discard 同时退出局部编辑态。提供复制/明确丢弃，不只把不可见 state 留内存。「保留的草稿」条（`RetainedDrafts`）因此在草稿非空时即显示，包括弹层里仍在输入、或刚点「编辑」时：编辑弹层只有「取消」（保留草稿），复制与明确丢弃只在这个条上，它是编辑中唯一的出口（2026-10-22 用户确认维持此设计，owner-review-observations 票 02）。
 - 保证仅当前页面会话自动更新/失败期间；不承诺 F5/关闭页/跨 doc 恢复，不增加存储或迁移。初始无正文可 loading，明确 doc 404 则 missing、草稿仍可复制。
 - **离开 Doc 视图时询问，草稿不跨卸载保留**（2026-10-22，backlog-sweep 第 2 组，architecture-deepening 票 17 选项 2）。旧定位：LaTeX/文本 Doc 的标注草稿随 DocPane 卸载（切视图、关窗格、换 Doc）无提示丢弃，上面“明确丢弃”只管 session 存活期间。新结论：session 持有非空草稿（`hasUnsavedDraft`：创建草稿正文非空，或某个编辑草稿与已存正文不同；只打开未改的编辑器不算）时，登记 Doc 视图的离开守卫，用户发起的离开弹应用内对话框（继续编辑／放弃修改），Copilot 发起的离开遇此一律 `leave_blocked`，关页或刷新走 `beforeunload`。选择放弃或离开后草稿即丢弃：**不**把 ReaderSession 提升出 Doc 窗格，不扩大上面的保留承诺，切回时 `latex-retained-drafts` 仍为空。范围：LaTeX Doc 与文本 Doc 的 Reader；PDF 见上文 PDF 段。原因：用户键入的标注文字被无提示丢弃，而同一 Doc 窗格里的 PDF 未保存标注与文本源编辑器都会问，三者不一致；选择不跨视图保留，是因为本节契约只保证 session 存活期间，把草稿提升出 Doc 窗格就是扩大保留承诺，需要另行决定。同一 Doc 里有几种未保存内容（文本 Doc 的源文本加标注草稿）时合成一次提问，对话框一并写明，不连问两次。
 
