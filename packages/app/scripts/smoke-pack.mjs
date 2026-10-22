@@ -33,8 +33,10 @@
 //      agentDir <dataDir>/copilot/agent, plus cwd and HOME), and answers: web assets, KaTeX fonts, notices, argelander.sty.
 //   4. a Copilot conversation against a local scripted OpenAI-Responses server (no real model, no external network)
 //      opens, loads the pdf-transcription instruction, runs real tools (plan write, PDF read, PDFium page render to a PNG
-//      the model receives), is answered after a server restart (the native session history resumes), the model only ever
-//      sees the six application tools, no decoy resource reaches it, and read_svg_image answers cleanly without resvg.
+//      the model receives), is answered after a server restart (the native session history resumes), the model sees
+//      exactly the application tools plus the file and command tools of the default permission (ADR 0011: "ask") and,
+//      once config.toml says "off", the application tools alone, no decoy resource reaches it, and read_svg_image
+//      answers cleanly without resvg.
 //   5. the installed package's dist/tutorial (the tutorial sample, in-app-tutorial ticket 27) is loadable: a temp copy
 //      is the data dir of the installed server (`--data-dir <copy>/literatures`, own temp HOME/XDG), which lists the
 //      five Works and gives Jerabkova's three annotations without archiving them; NOTICE.md and the upload zip are
@@ -56,6 +58,7 @@ import { createServer } from "node:http";
 import { homedir, networkInterfaces, tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { FILE_TOOL_NAMES } from "../../contracts/dist/index.js";
 import { lockfileClosure, pnpmVersion } from "./dep-dir-lib.mjs";
 import { checkPackContents } from "./pack-contents.mjs";
 import { checkTutorialLoadable, tutorialSize } from "./tutorial-smoke-lib.mjs";
@@ -167,7 +170,29 @@ const packJson = JSON.parse(
   run("npm", ["pack", "--pack-destination", packDir, "--json"], { cwd: appRoot })
 );
 const tarball = join(packDir, packJson[0].filename);
-const listing = packJson[0].files.map((f) => f.path).sort();
+// The tarball's own listing: npm 11 masks UUID-shaped file names in `pack --json` (`***.json`), which the example's
+// Copilot conversation files are, so the JSON listing cannot be read back from the extracted tree.
+const listing = run("tar", ["-tzf", tarball])
+  .split("\n")
+  .filter((name) => name.startsWith("package/") && !name.endsWith("/"))
+  .map((name) => name.slice("package/".length))
+  .sort();
+check(
+  listing.length === packJson[0].files.length,
+  "the tarball's own listing has as many files as npm reported",
+  `${listing.length} vs ${packJson[0].files.length}`
+);
+// Every path npm reported unmasked must be in tar's listing under the same spelling (a non-ASCII name that tar
+// escaped would show up here), so the listing used below is trustworthy.
+const inListing = new Set(listing);
+const missingFromTar = packJson[0].files
+  .map((f) => f.path)
+  .filter((p) => !p.includes("***") && !inListing.has(p));
+check(
+  missingFromTar.length === 0,
+  "every unmasked path npm reported is in the tarball's own listing",
+  missingFromTar.slice(0, 5).join("; ")
+);
 writeFileSync(join(evidenceDir, "tarball-contents.txt"), `${listing.join("\n")}\n`);
 log(
   `tarball ${packJson[0].filename}: ${listing.length} files, ${packJson[0].size} bytes packed, ${packJson[0].unpackedSize} unpacked`
@@ -490,6 +515,14 @@ if (latexmk && !piReachable(texPath)) {
 
 // ---- the scripted model: an OpenAI Responses endpoint on 127.0.0.1 ------------------------------------------------- //
 const seen = [];
+// The tools a run of this smoke is offered (copilot-tool-registry.ts TOOL_TABLE; ADR 0011). Application tools: every
+// entry whose gate holds in the smoke's full workbench -- Mail is not mounted (no account), so there is no `mail`. File
+// and command tools: contracts' FILE_TOOL_NAMES minus the other platform's shell, offered unless config.toml says "off"
+// (default "ask": the same tools, each call confirmed). A new tool must be added here on purpose.
+const APP_TOOLS = ["argument", "library", "plan", "reader", "text", "workspace", "writer"];
+const FILE_TOOLS_ASK = FILE_TOOL_NAMES.filter(
+  (n) => n !== (process.platform === "win32" ? "bash" : "powershell")
+);
 const sse = (res, events) => {
   res.writeHead(200, { "content-type": "text/event-stream" });
   for (const e of events) res.write(`event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`);
@@ -970,14 +1003,9 @@ try {
     ...new Set(seen.flatMap((s) => (s.body.tools ?? []).map((t) => t.name))),
   ].sort();
   check(
-    JSON.stringify(toolNames) ===
-      JSON.stringify(["library", "plan", "reader", "text", "workspace", "writer"]),
-    "the model was offered exactly the six application tools",
+    JSON.stringify(toolNames) === JSON.stringify([...APP_TOOLS, ...FILE_TOOLS_ASK].sort()),
+    "the model was offered exactly the application tools plus the file and command tools of the default permission (ask)",
     toolNames.join(",")
-  );
-  check(
-    !toolNames.some((n) => ["read", "bash", "edit", "write", "grep", "find", "ls"].includes(n)),
-    "no default Pi read/bash/edit/write/grep/find/ls tool was offered"
   );
   check(
     seen.every((s) => s.auth === "Bearer SYNTHETIC_SMOKE_KEY_NOT_REAL"),
@@ -1043,6 +1071,25 @@ try {
   check(
     /SVG renderer is not installed/.test(svgOutput),
     "the model was told plainly the SVG renderer is not installed"
+  );
+
+  // the permission gates the file and command tools: config.toml "off" leaves the model the application tools alone
+  const offSet = await api("PUT", "/api/settings/copilot_file_tools", { set: "off" });
+  check(
+    offSet.status === 200 && offSet.json?.ok === true,
+    "copilot_file_tools set to off through the settings endpoint",
+    `${offSet.status} ${offSet.text.slice(0, 160)}`
+  );
+  const beforeOff = seen.length;
+  const offRun = await ask(id, view, "SMOKE_RESUME and now with the file tools off");
+  check(offRun.conversation.run.status === "completed", "run 4 (file tools off) completed");
+  const offTools = [
+    ...new Set(seen.slice(beforeOff).flatMap((s) => (s.body.tools ?? []).map((t) => t.name))),
+  ].sort();
+  check(
+    JSON.stringify(offTools) === JSON.stringify([...APP_TOOLS].sort()),
+    "with the permission off the model was offered exactly the application tools and no file or command tool",
+    offTools.join(",")
   );
 
   const exit = await stopApp();

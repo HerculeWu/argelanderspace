@@ -11,7 +11,11 @@ import {
   expectedPlatformPackages,
   findTool,
   foreignPrebuild,
+  loadedAmong,
+  loadedPackages,
   matchesTarget,
+  orphanPackages,
+  PEER_FRAMEWORK_PACKAGES,
   PRUNE_CATEGORIES,
   pngInk,
   pnpmVersion,
@@ -179,7 +183,7 @@ test("matchesTarget follows npm's os/cpu/libc fields, including negations", () =
 
 test("pruneAction names what to remove for each candidate, and nothing else", () => {
   const target = { platform: "linux", arch: "x64", libc: "glibc" };
-  assert.deepEqual(PRUNE_CATEGORIES, ["fonts", "foreign", "esbuild"]);
+  assert.deepEqual(PRUNE_CATEGORIES, ["fonts", "foreign", "esbuild", "peers"]);
   // fonts: the CJK packages are the PDF engine's font fallback (ticket 28) and stay whole; of the others only the
   // font files go (the package's JS manifest stays: engines imports it statically)
   for (const name of ["jp", "kr", "sc", "tc"])
@@ -209,6 +213,98 @@ test("pruneAction names what to remove for each candidate, and nothing else", ()
     null
   );
   assert.equal(pruneAction({ name: "@napi-rs/keyring" }, target), null);
+  // peers (ticket 29): typescript and the UI frameworks @embedpdf/engines lists as peers, whole packages, any platform
+  assert.deepEqual(PEER_FRAMEWORK_PACKAGES, [
+    "typescript",
+    "react",
+    "react-dom",
+    "vue",
+    "svelte",
+    "preact",
+  ]);
+  for (const name of PEER_FRAMEWORK_PACKAGES)
+    for (const t of [
+      target,
+      { platform: "win32", arch: "x64" },
+      { platform: "darwin", arch: "arm64" },
+    ])
+      assert.deepEqual(pruneAction({ name }, t), { category: "peers", remove: "." }, name);
+  for (const name of [
+    "react-is",
+    "typescript-eslint",
+    "@types/react",
+    "vue-demi",
+    "preact-render-to-string",
+  ])
+    assert.equal(pruneAction({ name }, target), null, name);
+});
+
+test("orphanPackages finds what only the removed packages pull in, and refuses a hard dependent of a removed one", () => {
+  const pkgs = [
+    { name: "app-dep", dependencies: { shared: "1" }, peerDependencies: { react: "*", vue: "*" } },
+    { name: "shared", optionalDependencies: { opt: "1" } },
+    { name: "opt" },
+    { name: "react", dependencies: { "loose-env": "1" } },
+    { name: "loose-env" },
+    {
+      name: "vue",
+      dependencies: { "vue-core": "1", shared: "1" },
+      peerDependencies: { typescript: "*" },
+    },
+    { name: "vue-core", dependencies: { "loose-env": "1" } },
+    { name: "typescript" },
+  ];
+  const r = orphanPackages(pkgs, ["app-dep"], ["react", "vue", "typescript"]);
+  // the cut packages themselves are not "orphans"; what only they reached is; `shared` stays: a root reaches it too
+  assert.deepEqual(r.orphans, ["loose-env", "vue-core"]);
+  assert.deepEqual(r.hardDependents, []);
+  // peers do not block the removal but are listed, so a package other than the known one losing a peer is visible
+  assert.deepEqual(r.peerDependents, [
+    { from: "app-dep", to: "react" },
+    { from: "app-dep", to: "vue" },
+  ]);
+  // a reachable package that really depends on a removed one (not as a peer) is reported, never silently broken
+  const broken = orphanPackages(
+    [...pkgs, { name: "needs-react", dependencies: { react: "1" } }].map((p) =>
+      p.name === "app-dep" ? { ...p, dependencies: { shared: "1", "needs-react": "1" } } : p
+    ),
+    ["app-dep"],
+    ["react", "vue", "typescript"]
+  );
+  assert.deepEqual(broken.hardDependents, [{ from: "needs-react", to: "react" }]);
+});
+
+test("loadedPackages turns a module-load trace into the dependency packages loaded in each phase", () => {
+  const nm = "file:///tmp/x/sidecar/app/node_modules";
+  const trace = [
+    "# host start",
+    `${nm}/@earendil-works/pi-ai/dist/index.js`,
+    `${nm}/chalk/source/index.js`,
+    "file:///tmp/x/sidecar/app/dist/bin.js",
+    "node:fs",
+    "# pdf",
+    `${nm}/@embedpdf/engines/dist/lib/pdfium/index.js`,
+    `${nm}/chalk/source/other.js`,
+    `${nm}/typescript/lib/typescript.js`,
+    "",
+  ];
+  assert.deepEqual(loadedPackages(trace, nm), {
+    "host start": ["@earendil-works/pi-ai", "chalk"],
+    pdf: ["@embedpdf/engines", "chalk", "typescript"],
+  });
+  // a nested copy counts as the package it is
+  assert.deepEqual(
+    loadedPackages(
+      [`${nm}/foo/node_modules/react/index.js`, `${nm}/foo/node_modules/@s/p/x.js`],
+      nm
+    ),
+    { "": ["@s/p", "react"] }
+  );
+  // the smoke fails when anything of the removable set shows up in the trace
+  assert.deepEqual(loadedAmong(loadedPackages(trace, nm), ["react", "typescript", "vue"]), [
+    "typescript",
+  ]);
+  assert.deepEqual(loadedAmong(loadedPackages(trace.slice(0, 6), nm), ["react", "typescript"]), []);
 });
 
 test("foreignPrebuild picks another platform's prebuilds directory inside a package", () => {

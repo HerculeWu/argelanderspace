@@ -3,8 +3,24 @@
 import nodePath, { posix as posixPath, win32 as win32Path } from "node:path";
 import { inflateSync } from "node:zlib";
 
-/** The three kinds of package the generator may remove, in the order the ticket names them. */
-export const PRUNE_CATEGORIES = ["fonts", "foreign", "esbuild"];
+/** The kinds of package the generator may remove: tickets 22 (fonts, foreign, esbuild) and 29 (peers). */
+export const PRUNE_CATEGORIES = ["fonts", "foreign", "esbuild", "peers"];
+
+/**
+ * typescript and the UI frameworks that `@embedpdf/engines` lists as peerDependencies (pnpm's autoInstallPeers installs
+ * them; typescript comes in as an optional peer of vue). The server loads only `@embedpdf/engines/pdfium`; the engines'
+ * react / preact / vue / svelte entry points, the only code that imports these, are never reached (ticket 29: the
+ * loader trace of a full run loads none of them). Removed by name on every platform, together with what only they
+ * pull in (`orphanPackages`).
+ */
+export const PEER_FRAMEWORK_PACKAGES = [
+  "typescript",
+  "react",
+  "react-dom",
+  "vue",
+  "svelte",
+  "preact",
+];
 
 /** The PDF engine's fallback font packages (`@embedpdf/fonts-<name>`), kept whole; a test checks them against contracts. */
 export const FALLBACK_FONT_PACKAGES = ["jp", "kr", "sc", "tc"];
@@ -101,6 +117,7 @@ export function matchesTarget(pkg, target) {
  *             manifest statically, so removing the whole package breaks loading the engine (ticket 22 smoke).
  *   foreign - a whole package whose os/cpu/libc fields exclude the target (another platform's native file)
  *   esbuild - esbuild and its platform binaries, the whole package
+ *   peers   - typescript and the UI frameworks listed as peers of @embedpdf/engines (`PEER_FRAMEWORK_PACKAGES`), whole
  * `remove` is relative to the package directory ("." is the package itself).
  */
 export function pruneAction(pkg, target) {
@@ -109,8 +126,77 @@ export function pruneAction(pkg, target) {
   if (/^@embedpdf\/fonts-/.test(name)) return { category: "fonts", remove: "fonts" };
   if (name === "esbuild" || name.startsWith("@esbuild/"))
     return { category: "esbuild", remove: "." };
+  if (PEER_FRAMEWORK_PACKAGES.includes(name)) return { category: "peers", remove: "." };
   if (!matchesTarget(pkg, target)) return { category: "foreign", remove: "." };
   return null;
+}
+
+/**
+ * Which installed packages are left without a reason to exist once `cut` is removed. `pkgs` are package.json objects
+ * (`name`, `dependencies`, `optionalDependencies`, `peerDependencies`); `roots` are the names the app depends on.
+ * Reachability follows all three dependency kinds by name (conservative: a name counts if any installed copy is
+ * reached) but never enters `cut`. Returns `orphans` (sorted names that nothing reachable reaches and that are not
+ * in `cut`) and `hardDependents`: reachable packages that depend on a cut package through `dependencies` or
+ * `optionalDependencies` (not a peer), which removing would break; the generator refuses those. `peerDependents` lists
+ * every reachable package with a peer dependency on a cut package (peers are not install requirements, so they do not
+ * block the removal; the generator reports the ones that are not @embedpdf/engines, the known one).
+ */
+export function orphanPackages(pkgs, roots, cut) {
+  const cutSet = new Set(cut);
+  const byName = new Map();
+  for (const p of pkgs) byName.set(p.name, [...(byName.get(p.name) ?? []), p]);
+  const reached = new Set();
+  const queue = [...roots];
+  while (queue.length > 0) {
+    const name = queue.pop();
+    if (reached.has(name) || cutSet.has(name)) continue;
+    reached.add(name);
+    for (const p of byName.get(name) ?? [])
+      for (const kind of ["dependencies", "optionalDependencies", "peerDependencies"])
+        queue.push(...Object.keys(p[kind] ?? {}));
+  }
+  const hardDependents = [];
+  const peerDependents = [];
+  for (const name of [...reached].sort())
+    for (const p of byName.get(name) ?? []) {
+      for (const kind of ["dependencies", "optionalDependencies"])
+        for (const dep of Object.keys(p[kind] ?? {}))
+          if (cutSet.has(dep)) hardDependents.push({ from: name, to: dep });
+      for (const dep of Object.keys(p.peerDependencies ?? {}))
+        if (cutSet.has(dep)) peerDependents.push({ from: name, to: dep });
+    }
+  const orphans = [...byName.keys()].filter((n) => !reached.has(n) && !cutSet.has(n)).sort();
+  return { orphans, hardDependents, peerDependents };
+}
+
+/** The names among `names` that `loadedPackages` shows loaded in any phase (sorted). */
+export function loadedAmong(byPhase, names) {
+  const wanted = new Set(names);
+  return [...new Set(Object.values(byPhase).flat())].filter((n) => wanted.has(n)).sort();
+}
+
+/**
+ * The dependency packages loaded in each phase of a smoke run, from the module-load trace (one URL per line, `# <phase>`
+ * lines start a phase). `nmUrl` is the `file:` URL of the sidecar's node_modules. Package names are the first path
+ * segment after the last `node_modules/` (two for a scoped package), so nested copies count; each phase's list is sorted and unique.
+ */
+export function loadedPackages(traceLines, nmUrl) {
+  const byPhase = {};
+  let phase = "";
+  for (const line of traceLines) {
+    if (line.startsWith("# ")) phase = line.slice(2);
+    else if (line.startsWith(`${nmUrl}/`)) {
+      // the package is named by the last node_modules segment, so a nested copy (foo/node_modules/react) counts as react
+      const rel = line
+        .slice(nmUrl.length + 1)
+        .split("/node_modules/")
+        .at(-1);
+      const pkg = rel.startsWith("@") ? rel.split("/").slice(0, 2).join("/") : rel.split("/")[0];
+      byPhase[phase] ??= new Set();
+      byPhase[phase].add(pkg);
+    }
+  }
+  return Object.fromEntries(Object.entries(byPhase).map(([p, s]) => [p, [...s].sort()]));
 }
 
 const OSES = [
