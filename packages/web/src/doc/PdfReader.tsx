@@ -31,7 +31,8 @@ import { pageFontFallback } from "./pdf-font-fallback";
 import { PdfAnnotationSession } from "./PdfAnnotationSession";
 import { PdfHighlightColorPicker } from "./PdfHighlightColorPicker";
 import { buildPdfTextTarget, pdfPageRectFromVisible, pdfPageRectToVisible, pdfSelectionQuote } from "./pdf-text-target";
-import { registerWorkspaceLeaveGuard, useWorkspace } from "../argelander/workspace";
+import { useWorkspace } from "../argelander/workspace";
+import { useUnsavedSource } from "../argelander/leave-dialog";
 import { ReaderArgumentEntry } from "../argument/ArgumentEntry";
 import { fetchPdfDoc } from "../api/pdf";
 import { PdfReadingPositionWriter, type PositionWriterFailure, type PositionWriterState } from "./PdfReadingPositionWriter";
@@ -173,6 +174,7 @@ function LoadedPdfDocument({
   isError: boolean; totalPages: number; onReady: () => void; onFailure: (code: PdfLoadFailure) => void;
 }) {
   const { t } = useTranslation();
+  const leaveDialog = useUnsavedSource(() => (session.hasUnsaved() ? t("pdfReader.unsavedLeave") : null));
   // The two side panels fold on their own when the pane is too narrow to keep a reading column (the LaTeX Reader's rule,
   // same threshold, same manual-override semantics); the folds shown are the effective ones.
   const layoutRef = useRef<HTMLDivElement>(null);
@@ -322,10 +324,6 @@ function LoadedPdfDocument({
     pdfBridge.setHandle(handle);
     return () => pdfBridge.setHandle(null);
   }, [bytes, docId, filename, isLoaded, markUserNavigation, navigatePdfLink, pdfBridge, session]);
-  useEffect(() => {
-    const remove = registerWorkspaceLeaveGuard(() => !session.hasUnsaved() || window.confirm(t("pdfReader.unsavedLeave")));
-    return remove;
-  }, [session, t]);
   useEffect(() => { if (sessionState.blocked) changeSelectionMode("read"); }, [sessionState.blocked]);
   useLayoutEffect(() => {
     const textMode = selectionMode === "highlight" || selectionMode === "underline" || selectionMode === "strikeout";
@@ -582,6 +580,7 @@ function LoadedPdfDocument({
         /></div>
       </aside>
     </div>
+    {leaveDialog}
   </>;
 }
 

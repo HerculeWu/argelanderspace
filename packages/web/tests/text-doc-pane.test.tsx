@@ -4,7 +4,7 @@ import type { DocDescription, TextSourceDto, TextSourcePage } from "@argelanders
 import { ReaderBridgeContext, type ReaderBridge } from "../src/doc/reader-bridge";
 import { EditorView } from "@codemirror/view";
 import { TextDocPane } from "../src/doc/TextDocPane";
-import { confirmWorkspaceLeave, WorkspaceProvider, type Workspace } from "../src/argelander/workspace";
+import { askWorkspaceLeave, WorkspaceProvider, type Workspace } from "../src/argelander/workspace";
 
 const events = vi.hoisted(() => ({
   published: new Set<(m: { doc_id: string; published_source_rev: number; at: string; type: "text-doc.published" }) => void>(),
@@ -482,15 +482,24 @@ describe("text Doc pane: conflict, leave protection, source PDF", () => {
     expect(backend.puts.length).toBe(putsBefore);
   });
 
-  it("leaving with unsaved or conflicted text asks first; a saved text leaves freely", async () => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  it("leaving with unsaved or conflicted text asks in the app's dialog (stay keeps it, discard leaves); the Copilot is refused; a saved text leaves freely", async () => {
+    const confirm = vi.spyOn(window, "confirm");
     const view = await ready();
-    expect(confirmWorkspaceLeave()).toBe(true);
+    expect(askWorkspaceLeave()).toBe(true);
     typeText(view.container, "unsaved");
-    expect(confirmWorkspaceLeave()).toBe(false);
-    expect(confirm).toHaveBeenCalledTimes(1);
-    confirm.mockReturnValue(true);
-    expect(confirmWorkspaceLeave()).toBe(true);
+    expect(askWorkspaceLeave(undefined, undefined, "agent")).toBe(false);
+    expect(document.querySelector('[data-ui="leave-dialog"]')).toBeNull();
+    const stay = askWorkspaceLeave();
+    expect(stay).toBeInstanceOf(Promise);
+    await waitFor(() => expect(document.querySelector('[data-ui="leave-dialog"]')).toBeTruthy());
+    fireEvent.click(document.querySelector('[data-ui="leave-dialog-stay"]')!);
+    expect(await stay).toBe(false);
+    expect(document.querySelector('[data-ui="leave-dialog"]')).toBeNull();
+    const leave = askWorkspaceLeave();
+    await waitFor(() => expect(document.querySelector('[data-ui="leave-dialog"]')).toBeTruthy());
+    fireEvent.click(document.querySelector('[data-ui="leave-dialog-discard"]')!);
+    expect(await leave).toBe(true);
+    expect(confirm).not.toHaveBeenCalled(); // never the browser's confirm; only beforeunload stays native
     confirm.mockRestore();
   });
 

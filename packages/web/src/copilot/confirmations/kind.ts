@@ -22,7 +22,7 @@ export interface ConfirmationCardKind<C extends CopilotConfirmation = CopilotCon
   tone?: "danger";
   problemScope: ConfirmationProblemScope;
   /** The page's guard before an approval; false keeps the card and sends nothing. */
-  beforeApprove?(card: C, guards: ConfirmationGuards): boolean;
+  beforeApprove?(card: C, guards: ConfirmationGuards): boolean | Promise<boolean>;
 }
 
 /** Every card kind, keyed by its action (the shape of the server's `ConfirmationKinds`): a missing action does not compile. */
@@ -33,7 +33,7 @@ export type ConfirmationCardKinds = {
 /** The workspace's guards a confirmation must pass before an approval takes something the user has open away. */
 export interface ConfirmationGuards {
   /** Deleting a Doc: asks the workspace's leave guard only when it is the open Doc. */
-  leaveDoc(docId: string): boolean;
+  leaveDoc(docId: string): boolean | Promise<boolean>;
   /** Deleting a manuscript: asks before discarding unsaved edits of an open editor. */
-  leaveManuscript(id: string): boolean;
+  leaveManuscript(id: string): boolean | Promise<boolean>;
 }

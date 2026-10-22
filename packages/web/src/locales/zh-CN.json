@@ -182,7 +182,7 @@
       "diagnosticDocument": "整篇文档",
       "characters": "{{count}} 字符",
       "publishedRev": "阅读版本来自修订 {{rev}}",
-      "unsavedLeave": "文本源有尚未保存的修改。仍要离开吗？",
+      "unsavedLeave": "文本源有尚未保存的修改，现在离开会丢弃它们。",
       "diag": {
         "link_unsupported": "暂不支持链接。请把地址写成普通文字。",
         "quote_unsupported": "不支持块引用。请改写成段落。",
@@ -322,6 +322,7 @@
       }
     },
     "drafts": {
+      "unsavedLeave": "你输入的标注文字还没有保存。离开这篇文档会丢弃它。",
       "summary": "保留的草稿（可复制；重新选位后使用创建文字）",
       "createLabel": "创建草稿",
       "createAria": "保留的创建草稿",
@@ -1134,6 +1135,12 @@
       "note": "A → B 表示 A 引用 B；位置不表示相似度。"
     }
   },
+  "leaveDialog": {
+    "title": "放弃未保存的修改？",
+    "stay": "继续编辑",
+    "discard": "放弃修改",
+    "blockedByDialog": "有未保存的内容：请先关闭当前对话框"
+  },
   "pdfReader": {
     "loading": "正在校验并打开 PDF…",
     "failed": "PDF 无法安全打开，文件与用户数据保持不变。",
@@ -1232,7 +1239,7 @@
     "redo": "重做",
     "changedBlocked": "PDF 内容已变化。已有标注仍保留但已隐藏并锁定；请新增正文 Doc。",
     "resizeRectangle": "调整第 {{page}} 页矩形大小",
-    "unsavedLeave": "此 PDF 有标注草稿或保存尚未完成。离开并放弃本页未保存内容？",
+    "unsavedLeave": "此 PDF 有标注草稿或保存尚未完成，现在离开会丢弃本页未保存的内容。",
     "collapseOutline": "收起目录面板",
     "expandOutline": "展开目录面板",
     "collapseAnnotations": "收起标注面板",
@@ -1639,7 +1646,7 @@
       "metaManuscript": "{{id}} · 稿件 v{{rev}}",
       "expiredManuscript": "稿件在你决定前已被改动，未删除任何内容。",
       "failedManuscript": "结果未知：你的决定可能已到达服务，也可能没有。请先检查稿件列表再重试。",
-      "manuscriptDraftGuard": "该稿件在编辑器中有尚未保存的修改，删除会丢弃它们。仍要删除吗？",
+      "manuscriptDraftGuard": "该稿件在编辑器中有尚未保存的修改，删除会丢弃它们。",
       "replaceText": "替换“{{name}}”的阅读正文",
       "unreadableDoc": "确认时的检查无法读取此文档的数据（标注、文本或图片）。没有替换任何内容，也没有改动任何内容。",
       "unreadablePlan": "确认时的检查无法读取计划的数据。这不是你的改动，没有删除任何内容。请重试，或到计划页面查看。",

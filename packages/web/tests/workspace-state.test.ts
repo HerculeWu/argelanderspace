@@ -23,17 +23,13 @@ import { manualTimers, memoryBrowser, type MemoryBrowser } from "./memory-browse
 
 /** A leave guard whose answers the test scripts; `view` is normalised as the guard registry does (none: the Doc views). */
 function scriptedLeave() {
-  const asks: { view: string; paneId?: number; origin: LeaveOrigin; sync: boolean }[] = [];
+  const asks: { view: string; paneId?: number; origin: LeaveOrigin }[] = [];
   const late: ((ok: boolean) => void)[] = [];
   let answer: (view: string, paneId: number | undefined, origin: LeaveOrigin) => LeaveVerdict = () => true;
   const port: LeavePort = {
     ask: (view, paneId, origin = "user") => {
-      asks.push({ view: view ?? "doc", paneId, origin, sync: false });
+      asks.push({ view: view ?? "doc", paneId, origin });
       return answer(view ?? "doc", paneId, origin);
-    },
-    confirm: (view, paneId) => {
-      asks.push({ view: view ?? "doc", paneId, origin: "user", sync: true });
-      return answer(view ?? "doc", paneId, "user") === true;
     },
   };
   return {
@@ -324,7 +320,7 @@ describe("Back/Forward and hand-edited hashes", () => {
     expect(t.views()).toEqual(["doc"]);
     t.browser.pop("/");
     expect(t.views()).toEqual(["library"]);
-    expect(t.leave.asks).toContainEqual({ view: "doc", paneId: 1, origin: "user", sync: false });
+    expect(t.leave.asks).toContainEqual({ view: "doc", paneId: 1, origin: "user" });
     expect(t.browser.url()).toBe("/");
   });
 
@@ -468,7 +464,7 @@ describe("Back/Forward and hand-edited hashes", () => {
     let allow = false;
     t.leave.answer((view) => (view === "library" ? allow : true));
     t.browser.pop("/");
-    expect(t.leave.asks).toEqual([{ view: "library", paneId: 1, origin: "user", sync: false }]);
+    expect(t.leave.asks).toEqual([{ view: "library", paneId: 1, origin: "user" }]);
     expect(t.library.exits).toEqual([]);
     expect(t.library.open.get(1)).toBe("w1");
     expect(t.browser.url()).toBe("/#argument/w1");
@@ -788,6 +784,77 @@ describe("opening a Doc", () => {
     expect(t.browser.entries).toEqual(["/doc/d1"]);
   });
 
+  it("a Doc guard that answers later (its dialog): the switch waits for yes; no keeps the Doc and its address; the Copilot is not asked", async () => {
+    const t = await booted({ url: "/doc/d1" });
+    t.leave.lateFor("doc");
+    expect(t.x.openDoc("d2")).toBe(false); // not yet
+    expect(t.x.getState().currentDoc).toBe("d1");
+    expect(t.browser.entries).toEqual(["/doc/d1"]);
+    t.leave.late[0]!(true);
+    await flush();
+    expect(t.x.getState().currentDoc).toBe("d2");
+    expect(t.browser.entries).toEqual(["/doc/d1", "/doc/d2"]);
+    t.leave.late.length = 0;
+    t.x.openDoc("d1");
+    t.leave.late[0]!(false); // "keep editing"
+    await flush();
+    expect(t.x.getState().currentDoc).toBe("d2");
+    expect(t.browser.url()).toBe("/doc/d2");
+    // the Copilot's open_doc is a request with origin agent: the guard refuses it without a question
+    t.leave.answer((_view, _pane, origin) => origin !== "agent");
+    expect(await t.x.openDocAction("d1")).toEqual({ ok: false, detail: "leave_blocked" });
+    expect(t.leave.asks[t.leave.asks.length - 1]).toEqual({ view: "doc", paneId: undefined, origin: "agent" });
+  });
+
+  it("Back to a Doc address the Doc's guard answers later: one traversal (popstate, then hashchange) asks once; yes opens it, no puts the open Doc's address back", async () => {
+    const t = await booted({ url: "/doc/d1" });
+    t.leave.lateFor("doc");
+    t.browser.pop("/doc/d2");
+    t.browser.pop("/doc/d2");
+    await flush();
+    expect(t.leave.late).toHaveLength(1);
+    expect(t.x.getState().currentDoc).toBe("d1");
+    t.leave.late[0]!(false);
+    await flush();
+    expect(t.browser.url()).toBe("/doc/d1");
+    expect(t.x.getState().currentDoc).toBe("d1");
+    t.leave.late.length = 0;
+    t.browser.pop("/doc/d2");
+    t.browser.pop("/doc/d2");
+    await flush();
+    expect(t.leave.late).toHaveLength(1);
+    t.leave.late[0]!(true);
+    await flush();
+    expect(t.x.getState().currentDoc).toBe("d2");
+  });
+
+  it("a second Doc open while the first question is open supersedes it: the earlier no (superseded) changes nothing, and the later answer decides", async () => {
+    const t = await booted({ url: "/doc/d1" });
+    t.leave.lateFor("doc");
+    t.x.openDoc("d2");
+    t.x.openDoc("d3"); // the dialog now carries this question; the first is answered no
+    expect(t.leave.late).toHaveLength(2);
+    t.leave.late[0]!(false);
+    await flush();
+    expect(t.browser.url()).toBe("/doc/d1"); // the superseded no puts nothing back and opens nothing
+    expect(t.x.getState().currentDoc).toBe("d1");
+    t.leave.late[1]!(true);
+    await flush();
+    expect(t.x.getState().currentDoc).toBe("d3");
+    expect(t.browser.url()).toBe("/doc/d3");
+  });
+
+  it("setCurrentDoc waits for a Doc guard that answers later", async () => {
+    const t = await booted({ url: "/doc/d1" });
+    t.leave.lateFor("doc");
+    t.x.setCurrentDoc("d2");
+    expect(t.x.getState().currentDoc).toBe("d1");
+    t.leave.late[0]!(true);
+    await flush();
+    expect(t.x.getState().currentDoc).toBe("d2");
+    expect(t.browser.url()).toBe("/doc/d2");
+  });
+
   it("with no Doc given it shows the current Doc (else the first) and leaves the address and the anchor alone", async () => {
     const t = await booted({ url: "/doc/d2#sec-1" });
     t.x.clearPendingAnchor();
@@ -849,7 +916,7 @@ describe("opening a Doc", () => {
     const t = await booted({ panes: [{ id: 1, view: "library", size: 1 }] });
     t.leave.answer((view, _paneId, origin) => !(view === "library" && origin === "agent"));
     expect(t.x.openDoc("d2", undefined, { origin: "agent" })).toBe(false);
-    expect(t.leave.asks[t.leave.asks.length - 1]).toEqual({ view: "library", paneId: 1, origin: "agent", sync: false });
+    expect(t.leave.asks[t.leave.asks.length - 1]).toEqual({ view: "library", paneId: 1, origin: "agent" });
   });
 });
 
@@ -1010,7 +1077,7 @@ describe("a Back that was let through is let through once", () => {
     await flush();
     t.leave.answer((view) => view !== "library");
     t.browser.pop("/");
-    expect(t.leave.asks).toEqual([{ view: "library", paneId: 1, origin: "user", sync: false }]);
+    expect(t.leave.asks).toEqual([{ view: "library", paneId: 1, origin: "user" }]);
     expect(t.library.exits).toEqual([]);
     expect(t.browser.url()).toBe("/#argument/w1");
   });
@@ -1098,11 +1165,17 @@ describe("a Doc's deletion: the three states", () => {
     const asked = t.leave.asks.length;
     t.leave.answer(() => false);
     expect(t.x.leaveDoc("d1")).toBe(false); // unsaved work in the open Doc keeps the card
-    expect(t.leave.asks.slice(asked)).toEqual([{ view: "doc", paneId: undefined, origin: "user", sync: true }]);
+    expect(t.leave.asks.slice(asked)).toEqual([{ view: "doc", paneId: undefined, origin: "user" }]);
     expect(t.x.leaveDoc("d2")).toBe(true);
     expect(t.leave.asks.slice(asked)).toHaveLength(1);
     t.leave.answer(() => true);
     expect(t.x.leaveDoc("d1")).toBe(true);
+    // a guard that answers later (its dialog) is passed on as a pending answer, never counted as a refusal
+    t.leave.lateFor("doc");
+    const pending = t.x.leaveDoc("d1");
+    expect(pending).toBeInstanceOf(Promise);
+    t.leave.late[0]!(true);
+    expect(await pending).toBe(true);
   });
 });
 

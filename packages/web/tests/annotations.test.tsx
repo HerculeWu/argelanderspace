@@ -28,7 +28,7 @@ import {
   type TexDocIr,
 } from "@argelanderspace/contracts";
 import { DocPane } from "../src/doc/DocPane";
-import { WorkspaceProvider, type Workspace } from "../src/argelander/workspace";
+import { askWorkspaceLeave, WorkspaceProvider, type Workspace } from "../src/argelander/workspace";
 
 // Each case renders the full golden arXiv IR; under a parallel full run that can pass the 5s default.
 vi.setConfig({ testTimeout: 30000 });
@@ -779,6 +779,52 @@ describe("PUT conflict flows (roadmap §5)", () => {
     expect(container.querySelector(".ann-popover")).toBeNull();
     expect(container.querySelector(".reader-sync-status")?.textContent).toContain("更新失败");
     expect(container.querySelector("[data-block-id='p-6'] .ann-marker")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("leaving the Doc view with an annotation draft (the workspace leave guard)", () => {
+  const dialog = () => document.querySelector('[data-ui="leave-dialog"]');
+  const click = (ui: string) => fireEvent.click(document.querySelector(`[data-ui="${ui}"]`)!);
+
+  it("a typed, unsaved draft asks in the app's dialog: stay keeps it, discard lets go; the Copilot is refused at once; an empty editor asks nothing", async () => {
+    const confirm = vi.spyOn(window, "confirm");
+    const { container } = renderDocPane();
+    await ready(container);
+    fireEvent.click(container.querySelector("[data-block-id='p-6'] .ann-edge-btn") as HTMLButtonElement);
+    const pop = await waitPopover(container);
+    expect(askWorkspaceLeave()).toBe(true); // an editor nothing was typed in loses nothing
+    fireEvent.change(pop.querySelector("textarea")!, { target: { value: "还没保存的草稿" } });
+    expect(askWorkspaceLeave(undefined, undefined, "agent")).toBe(false); // leave_blocked, no dialog
+    expect(dialog()).toBeNull();
+    const stay = askWorkspaceLeave();
+    await waitFor(() => expect(dialog()).toBeTruthy());
+    expect(document.querySelector('[data-ui="leave-dialog-body"]')?.textContent).toContain("标注");
+    click("leave-dialog-stay");
+    expect(await stay).toBe(false);
+    expect(container.querySelector<HTMLTextAreaElement>(".ann-popover textarea")?.value).toBe("还没保存的草稿");
+    const leave = askWorkspaceLeave();
+    await waitFor(() => expect(dialog()).toBeTruthy());
+    click("leave-dialog-discard");
+    expect(await leave).toBe(true);
+    expect(confirm).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
+  it("closing the page prompts through beforeunload only while a draft exists", async () => {
+    const { container } = renderDocPane();
+    await ready(container);
+    const unload = () => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    expect(unload()).toBe(false);
+    fireEvent.click(container.querySelector("[data-block-id='p-6'] .ann-edge-btn") as HTMLButtonElement);
+    const pop = await waitPopover(container);
+    fireEvent.change(pop.querySelector("textarea")!, { target: { value: "草稿" } });
+    expect(unload()).toBe(true);
   });
 });
 

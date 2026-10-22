@@ -14,6 +14,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RefDetail } from "../src/library/RefDetail";
 import { applyDocDeletion } from "../src/argelander/workspace";
+import { useLeaveDialog } from "../src/argelander/leave-dialog";
 import type { LibraryRef } from "../src/library/types";
 
 vi.mock("../src/api/ws", () => ({
@@ -110,7 +111,7 @@ function installFetch() {
   );
 }
 
-function renderDetail(onDocDeleted?: (docId: string, remaining: string[]) => void) {
+function renderDetail(onDocDeleted?: (docId: string, remaining: string[]) => void, onBeforeDocDelete?: (docId: string) => boolean | Promise<boolean>) {
   const onReload = vi.fn();
   const utils = render(
     <RefDetail
@@ -120,6 +121,7 @@ function renderDetail(onDocDeleted?: (docId: string, remaining: string[]) => voi
       onOpenDoc={() => {}}
       onReload={onReload}
       onDocDeleted={onDocDeleted}
+      onBeforeDocDelete={onBeforeDocDelete}
     />
   );
   return { ...utils, onReload };
@@ -197,6 +199,92 @@ describe("RefDetail document delete", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "删除这份文档？" })).toBeNull());
     expect(onDocDeleted).toHaveBeenCalledWith("upload-main-1", ["arxiv-old-2"]);
     expect(onReload).toHaveBeenCalled();
+  });
+
+  describe("the open Doc's leave guard answers later (its own dialog)", () => {
+    const deleteDialog = () => screen.queryByRole("dialog", { name: "删除这份文档？" });
+    const gate = () => {
+      let answer!: (ok: boolean) => void;
+      const guard = vi.fn(() => new Promise<boolean>((resolve) => (answer = resolve)));
+      return { guard, answer: (ok: boolean) => answer(ok) };
+    };
+    async function confirmDelete(guard: (docId: string) => boolean | Promise<boolean>, onDocDeleted?: (docId: string, remaining: string[]) => void) {
+      const view = renderDetail(onDocDeleted, guard);
+      openFilesTab();
+      await openDeleteDialog(0);
+      await waitFor(() => expect(screen.getByText(/包含 2 条当前标注/)).toBeTruthy());
+      fireEvent.click(screen.getByRole("button", { name: "永久删除" }));
+      return view;
+    }
+
+    it("the delete dialog steps aside while the question is open: two modals are never open at once", async () => {
+      const g = gate();
+      await confirmDelete(g.guard);
+      expect(g.guard).toHaveBeenCalledWith("upload-main-1");
+      await waitFor(() => expect(deleteDialog()).toBeNull());
+      expect(deleteCalls).toEqual([]);
+      g.answer(false); // keep editing: the delete dialog is back, nothing deleted
+      await waitFor(() => expect(deleteDialog()).toBeTruthy());
+      expect(deleteCalls).toEqual([]);
+    });
+
+    it("discard deletes once, exactly the Doc that was asked about", async () => {
+      const g = gate();
+      const onDocDeleted = vi.fn();
+      await confirmDelete(g.guard, onDocDeleted);
+      await waitFor(() => expect(deleteDialog()).toBeNull());
+      g.answer(true);
+      await waitFor(() => expect(deleteCalls).toEqual(["upload-main-1"]));
+      await waitFor(() => expect(onDocDeleted).toHaveBeenCalledWith("upload-main-1", ["arxiv-old-2"]));
+    });
+
+    it("a browser Back that supersedes the delete question keeps the delete dialog away: never two modals (Escape would close both)", async () => {
+      let ask!: ReturnType<typeof useLeaveDialog>["ask"];
+      function Host() {
+        const leave = useLeaveDialog();
+        ask = leave.ask;
+        return (
+          <>
+            <RefDetail
+              r={REF}
+              node={null}
+              onClose={() => {}}
+              onOpenDoc={() => {}}
+              onReload={() => {}}
+              onBeforeDocDelete={() => ask("the open Doc has unsaved work")}
+            />
+            {leave.dialog}
+          </>
+        );
+      }
+      render(<Host />);
+      openFilesTab();
+      await openDeleteDialog(0);
+      await waitFor(() => expect(screen.getByText(/包含 2 条当前标注/)).toBeTruthy());
+      fireEvent.click(screen.getByRole("button", { name: "永久删除" }));
+      await waitFor(() => expect(document.querySelector('[data-ui="leave-dialog"]')).toBeTruthy());
+      expect(deleteDialog()).toBeNull();
+      // the Back question takes over the one dialog; the delete question is answered no
+      void ask("Back: the open Doc has unsaved work");
+      await waitFor(() => expect(document.querySelector('[data-ui="leave-dialog-body"]')?.textContent).toContain("Back"));
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(deleteDialog()).toBeNull();
+      expect(document.querySelectorAll('[role="dialog"][aria-modal="true"]')).toHaveLength(1);
+      // once the question is answered the delete dialog is back, and nothing was deleted
+      fireEvent.click(document.querySelector('[data-ui="leave-dialog-stay"]')!);
+      await waitFor(() => expect(deleteDialog()).toBeTruthy());
+      expect(deleteCalls).toEqual([]);
+    });
+
+    it("a discard that arrives after the detail went away deletes nothing", async () => {
+      const g = gate();
+      const view = await confirmDelete(g.guard);
+      await waitFor(() => expect(deleteDialog()).toBeNull());
+      view.unmount();
+      g.answer(true);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(deleteCalls).toEqual([]);
+    });
   });
 
   it("deleting the old version leaves the main doc in `remaining`", async () => {

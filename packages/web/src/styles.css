@@ -555,6 +555,14 @@ ul.doc-list li, ol.doc-list li { margin: 2px 0; }
   border: none; border-radius: 5px; background: none; color: var(--muted); cursor: pointer;
 }
 .ann-toast-x:hover { background: var(--hover-bg); color: var(--ink); }
+/* A refused leave (a modal dialog is open and work is unsaved): the same toast look, above the dialog overlay (z-index 250). */
+.leave-blocked-toast {
+  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 300;
+  max-width: 92%; padding: 8px 14px; border-radius: 10px;
+  background: var(--surface-1); border: 1px solid var(--line);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+  font-size: 13px; color: var(--ink); font-family: var(--font-ui);
+}
 
 /* ---------- text annotations (Stage 8 MS4) ---------- */
 /* Range painting is NOT done here: the painter (annotations/highlights.ts)

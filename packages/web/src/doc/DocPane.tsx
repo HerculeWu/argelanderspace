@@ -10,6 +10,7 @@ import { RightPanel } from "../components/RightPanel";
 import { MathText } from "../lib/segments";
 import { applyAnchor, applyAnnotationAnchor, isAnnotationAnchor } from "../lib/deeplink";
 import { useWorkspace } from "../argelander/workspace";
+import { DocLeaveScope, useUnsavedSource } from "../argelander/leave-dialog";
 import { ReaderArgumentEntry } from "../argument/ArgumentEntry";
 import { fetchDocDescription } from "../api/doc";
 import { onTextDocPublished } from "../api/ws";
@@ -94,12 +95,12 @@ function DocReadingEntry({ docId, publishText }: { docId: string; publishText: (
   </div></div>;
   switch (state.description.format) {
     case "latex":
-      return <ReaderSession docId={docId}><SessionWorkspace /></ReaderSession>;
+      return <DocLeaveScope><ReaderSession docId={docId}><SessionWorkspace /></ReaderSession></DocLeaveScope>;
     case "text":
       // The shared Reader on the last generated reading text; its admitted epoch and the source panel are offered to the Copilot.
-      return <TextDocPane key={docId} docId={docId} description={state.description} onPage={publishText} reader={<ReaderSession docId={docId}><TextPublishSync docId={docId} /><SessionWorkspace format="text" afterPublish /></ReaderSession>} />;
+      return <DocLeaveScope><TextDocPane key={docId} docId={docId} description={state.description} onPage={publishText} reader={<ReaderSession docId={docId}><TextPublishSync docId={docId} /><SessionWorkspace format="text" afterPublish /></ReaderSession>} /></DocLeaveScope>;
     case "pdf":
-      return <div className="reader-root" data-ui="pdf-doc" data-ui-key={docId}><PdfReader key={`${docId}:${state.description.sha256}`} docId={docId} description={state.description} /></div>;
+      return <DocLeaveScope><div className="reader-root" data-ui="pdf-doc" data-ui-key={docId}><PdfReader key={`${docId}:${state.description.sha256}`} docId={docId} description={state.description} /></div></DocLeaveScope>;
   }
 }
 
@@ -112,6 +113,18 @@ function SessionWorkspace({ publish = true, afterPublish = false, format = "late
   const { state, controller } = useReaderSession();
   const { t } = useTranslation();
   const bridge = useReaderBridge();
+  // Annotation drafts live and die with this Reader (docs/annotations.md): leaving the Doc view asks first (the Doc's one
+  // leave question: the app's dialog for the person, a refusal for the Copilot) and closing the page gets the browser's own prompt.
+  const leaveDialog = useUnsavedSource(() => (controller.hasUnsavedDraft() ? t("doc.drafts.unsavedLeave") : null));
+  useEffect(() => {
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (controller.hasUnsavedDraft()) event.preventDefault();
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", beforeUnload);
+    };
+  }, [controller]);
   const ir = state.accepted?.ir;
   const [publishedSinceReady, setPublishedSinceReady] = useState(false);
   useEffect(() => (afterPublish ? onTextDocPublished((message) => { if (message.doc_id === controller.docId) setPublishedSinceReady(true); }) : undefined), [afterPublish, controller]);
@@ -133,6 +146,7 @@ function SessionWorkspace({ publish = true, afterPublish = false, format = "late
     {ir && state.phase !== "missing" ? <StoreProvider ir={ir} anchorPending={!!ws.pendingAnchor}>
       <AnnotationProvider><DocWorkspace papers={ws.papers} currentId={ir.docId} onSelect={ws.setCurrentDoc} /></AnnotationProvider>
     </StoreProvider> : !ir && state.phase === "syncing" && <div className="loading">{t("doc.loadingPaper")}</div>}
+    {leaveDialog}
   </div>;
 }
 

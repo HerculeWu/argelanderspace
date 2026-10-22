@@ -101,6 +101,7 @@ archive：`archive/YYYYMMDDTHHmmssSSSZ-<旧fp前8>.json`，UTC 定长3位毫秒�
 - 外层 session 草稿受保护：创建仅保 body，重新选位后**显式**使用；编辑跨 fingerprint 保字节但禁存，id 恰好重用也不解锁。相同 epoch 外部 body 冲突不自动覆盖/重发。
 - PUT 成功只清仍对应该次提交 draft revision/body 的草稿，迟到成功不能清用户新输入；discard 同时退出局部编辑态。提供复制/明确丢弃，不只把不可见 state 留内存。
 - 保证仅当前页面会话自动更新/失败期间；不承诺 F5/关闭页/跨 doc 恢复，不增加存储或迁移。初始无正文可 loading，明确 doc 404 则 missing、草稿仍可复制。
+- **离开 Doc 视图时询问，草稿不跨卸载保留**（2026-10-22，backlog-sweep 第 2 组，architecture-deepening 票 17 选项 2）。旧定位：LaTeX/文本 Doc 的标注草稿随 DocPane 卸载（切视图、关窗格、换 Doc）无提示丢弃，上面“明确丢弃”只管 session 存活期间。新结论：session 持有非空草稿（`hasUnsavedDraft`：创建草稿正文非空，或某个编辑草稿与已存正文不同；只打开未改的编辑器不算）时，登记 Doc 视图的离开守卫，用户发起的离开弹应用内对话框（继续编辑／放弃修改），Copilot 发起的离开遇此一律 `leave_blocked`，关页或刷新走 `beforeunload`。选择放弃或离开后草稿即丢弃：**不**把 ReaderSession 提升出 Doc 窗格，不扩大上面的保留承诺，切回时 `latex-retained-drafts` 仍为空。范围：LaTeX Doc 与文本 Doc 的 Reader；PDF 见上文 PDF 段。原因：用户键入的标注文字被无提示丢弃，而同一 Doc 窗格里的 PDF 未保存标注与文本源编辑器都会问，三者不一致；选择不跨视图保留，是因为本节契约只保证 session 存活期间，把草稿提升出 Doc 窗格就是扩大保留承诺，需要另行决定。同一 Doc 里有几种未保存内容（文本 Doc 的源文本加标注草稿）时合成一次提问，对话框一并写明，不连问两次。
 
 ## 文档删除与 server 生命周期
 
@@ -126,7 +127,7 @@ Reader 沿既有 `/doc/:doc_id#anchor` 路由格式增加 1-based 页 anchor `#p
 
 Web 对每个已打开 PDF Doc 使用单一 `PdfAnnotationSession` 协调页/篇/矩形/文字操作：expected rev 串行 PUT、工作台本地撤销重做（已提交操作用新 PUT）、正文显式保存、几何/样式手势及文字选择完成后保存。跨页标记整体创建、删除、撤销和重做，target 与 quote 创建后不可变；新的不同文字必须重新选择并创建新标注。本标签页广播的 `annotation.changed` 允许触发校验 GET，但不能在自身在途 PUT 尚未回包时把其新 rev 误作外部冲突；外部冲突须显式重试合并或放弃，不盲目重发；若另一标签页修改了同一字段或待删除标注，本地操作不能覆写它，保留草稿提示复制/放弃。读取失败仍是系统错误，不伪装 rev 冲突。失败队列和后续输入在当前会话保留，关闭通知只隐藏横幅、不清失败或解除离开保护。切换 Doc/会话代际后不接纳旧 GET/PUT 的成功或失败；草稿不跨刷新持久化。PDF 页矩形的 pointer 捕获结束由 Reader 统一提交，鼠标在虚拟化页上被引擎取消时以最后有效预览完成一次，触摸取消则丢弃手势；位置仍存页局部归一化矩形，而非屏幕像素。
 
-Web 每次挂载使用一个按 Doc/固定 SHA-256 绑定的临时 annotation session；它协调创建、删除、矩形几何/样式与显式正文保存，PUT 顺序由上一次成功返回的 rev 推进。几何/样式操作仅在指针手势或控件操作完成后入队，正文 textarea 保持草稿直到点击保存。迟到 PUT/GET 在 session unmount/generation 改变后不能更新新 Reader；同值 `annotation.changed` 是当前 revision 回声时忽略，foreign rev 则清除本地 undo/redo 并保留待提交草稿。Rev 冲突需用户显式 retry（重新读同 SHA sidecar 后按变更字段重放）或 discard，不自动盲写；目标 Doc/hash 不匹配时锁定视图与操作，只有重新验证相同原件 hash 才能恢复。已提交操作的 undo/redo 通过新 PUT 表达，rev 永不回退。离开有未提交内容/失败/请求时用应用内确认和 `beforeunload` 提醒；草稿只在当前页面，不写硬盘/浏览器存储，不承诺刷新恢复。
+Web 每次挂载使用一个按 Doc/固定 SHA-256 绑定的临时 annotation session；它协调创建、删除、矩形几何/样式与显式正文保存，PUT 顺序由上一次成功返回的 rev 推进。几何/样式操作仅在指针手势或控件操作完成后入队，正文 textarea 保持草稿直到点击保存。迟到 PUT/GET 在 session unmount/generation 改变后不能更新新 Reader；同值 `annotation.changed` 是当前 revision 回声时忽略，foreign rev 则清除本地 undo/redo 并保留待提交草稿。Rev 冲突需用户显式 retry（重新读同 SHA sidecar 后按变更字段重放）或 discard，不自动盲写；目标 Doc/hash 不匹配时锁定视图与操作，只有重新验证相同原件 hash 才能恢复。已提交操作的 undo/redo 通过新 PUT 表达，rev 永不回退。离开有未提交内容/失败/请求时（`session.hasUnsaved()`：队列、在途写、与已存正文不同的草稿、失败状态任一为真）切视图、换 Doc、关窗格由用户发起时弹应用内确认对话框（`leave-dialog`，同一 `Dialog` 组件与问法，论证图另有自己的实例：默认焦点「继续编辑」，「放弃修改」为 danger），关页或刷新走浏览器自己的 `beforeunload`；**局部修订（2026-10-22）**：旧定位是这里的“应用内确认”实为浏览器 `window.confirm`，新结论是确为应用内 `Dialog`；范围＝PDF Reader 的离开询问；原因＝与论证图和文本源统一，见 architecture「Doc 视图的离开询问」。Copilot 发起的切换遇未保存内容不弹对话框，动作结果 `leave_blocked`。`discard-pdf-pending` **不是离开对话框的按钮**，它在标注面板里，只在三种情形出现：面板 blocked（Doc/hash 不匹配等）时列出的保留草稿、其标注已不在的草稿、以及保存失败的提示条；离开对话框里的“放弃修改”则丢弃整页未保存内容。草稿只在当前页面，不写硬盘/浏览器存储，不承诺刷新恢复。
 
 ### PDF 高亮颜色（有限修订）
 

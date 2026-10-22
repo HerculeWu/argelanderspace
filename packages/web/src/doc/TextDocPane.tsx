@@ -11,13 +11,14 @@ import {
   validateTextSource,
 } from "../api/text-docs";
 import { onTextDocPublished, onTextSourceChanged } from "../api/ws";
-import { registerWorkspaceLeaveGuard, useWorkspace } from "../argelander/workspace";
+import { useWorkspace } from "../argelander/workspace";
 import { Icon } from "../lib/icons";
 import { ActionButton, Dialog, InlineMessage, Tabs } from "../ui";
 import { useReaderSession } from "./ReaderSession";
 import { useReaderBridge } from "./reader-bridge";
 import { PdfImagePicker } from "./PdfImagePicker";
 import { TextSourceField, type TextSourceApi } from "./TextSourceField";
+import { useUnsavedSource } from "../argelander/leave-dialog";
 import "./text-doc.css";
 
 type TextDescription = Extract<DocDescription, { format: "text" }>;
@@ -308,6 +309,8 @@ function TextSourceEditor({
   onPage?: (page: TextSourcePage) => void;
 }) {
   const { t } = useTranslation();
+  // leaving with unsaved or unsaveable text asks first (the Doc's one leave question: argelander/leave-dialog.tsx)
+  const leaveDialog = useUnsavedSource(() => (status.current === "saved" ? null : t("doc.text.unsavedLeave")));
   const [load, setLoad] = useState<{ phase: "loading" } | { phase: "error"; detail: string } | { phase: "ready" }>({ phase: "loading" });
   const [attempt, setAttempt] = useState(0);
   // The load-error page's Retry is the model's `reader retry_sync` for as long as that page is shown (ticket 32).
@@ -447,17 +450,15 @@ function TextSourceEditor({
 
   // leaving with unsaved or unsaveable text asks first (the workspace guard) and the browser warns on close
   useEffect(() => {
-    const remove = registerWorkspaceLeaveGuard(() => status.current === "saved" || window.confirm(t("doc.text.unsavedLeave")));
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
       if (status.current === "saved") return;
       event.preventDefault();
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => {
-      remove();
       window.removeEventListener("beforeunload", onBeforeUnload);
     };
-  }, [t]);
+  }, []);
 
   const settle = async (): Promise<boolean> => {
     await flush();
@@ -852,6 +853,7 @@ function TextSourceEditor({
           <p>{t("doc.text.importReplaceBody")}</p>
         </Dialog>
       )}
+      {leaveDialog}
     </div>
   );
 }
