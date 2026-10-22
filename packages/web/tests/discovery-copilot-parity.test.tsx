@@ -260,6 +260,8 @@ describe("graph buttons of the exploration", () => {
     await explore();
     await run({ action: "set_discovery_display", display: "list" });
     await waitFor(() => expect(q('[data-ui="graph-stub"]')).toBeNull());
+    // The page's report (and the buttons the Copilot may press) follow the display in a later effect than the DOM.
+    await waitFor(() => expect(disc().display).toBe("list"));
     expect(await run({ action: "discovery_graph_control", control: "fit" })).toEqual({ ok: false, detail: "unavailable" });
     expect(g.calls).toEqual([]);
   }, 20000);

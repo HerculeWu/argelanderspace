@@ -8,6 +8,7 @@ export default defineConfig({
   test: {
     environment: "happy-dom",
     include: ["tests/**/*.test.{ts,tsx}"],
-    setupFiles: ["./tests/setup.ts"],
+    globalSetup: ["../infra/tests/global-temp-dir.ts"],
+    setupFiles: ["../infra/tests/track-temp-dirs.ts", "./tests/setup.ts"],
   },
 });

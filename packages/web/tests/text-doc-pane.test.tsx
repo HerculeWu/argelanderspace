@@ -428,8 +428,9 @@ describe("text Doc pane: load failure Retry offered to the Copilot (ticket 32 ga
     backend.sourceStatus = 500;
     const view = render(<Harness />);
     await waitFor(() => expect(ui(view.container, "text-source-load-error")).toBeTruthy());
+    // The Retry is offered in an effect, one step after the render that shows the error notice.
+    await waitFor(() => expect(typeof retryHandles[retryHandles.length - 1]).toBe("function"));
     const offered = retryHandles[retryHandles.length - 1];
-    expect(typeof offered).toBe("function");
     const getsBefore = backend.log.filter((l) => l === `GET /api/paper/${DOC}/source`).length;
     backend.sourceStatus = 200;
     act(() => offered?.());
