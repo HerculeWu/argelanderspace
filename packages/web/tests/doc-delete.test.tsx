@@ -297,7 +297,8 @@ describe("RefDetail document delete", () => {
 
     releaseDelete();
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(document.activeElement).toBe(trigger);
+    // The dialog hands the focus back in an effect after it unmounts.
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
   });
 
   it("keeps a system error in the dialog and allows retry or cancel", async () => {

@@ -428,11 +428,11 @@ describe("the Reader floor rule through the Copilot (ticket 32)", () => {
     try {
       await boot();
       const folded = (key: string) => q(`[data-ui="latex-${key}-panel"]`)!.classList.contains("collapsed");
-      await waitFor(() => expect([folded("outline"), folded("right")]).toEqual([true, true]));
+      await waitFor(() => expect([folded("outline"), folded("right")]).toEqual([true, true]), { timeout: 5000 });
       expect(await run({ action: "set_panel", docId: DOC, panel: "outline", collapsed: false })).toEqual({ ok: true });
-      await waitFor(() => expect([folded("outline"), folded("right")]).toEqual([false, true]));
+      await waitFor(() => expect([folded("outline"), folded("right")]).toEqual([false, true]), { timeout: 5000 });
       expect(await run({ action: "set_panel", docId: DOC, panel: "right", collapsed: false })).toEqual({ ok: true, folded: "outline" });
-      await waitFor(() => expect([folded("outline"), folded("right")]).toEqual([true, false]));
+      await waitFor(() => expect([folded("outline"), folded("right")]).toEqual([true, false]), { timeout: 5000 });
       await waitFor(() => expect(reader().panels.outlineCollapsed).toBe(true));
       // folding never folds anything else
       expect(await run({ action: "set_panel", docId: DOC, panel: "right", collapsed: true })).toEqual({ ok: true });

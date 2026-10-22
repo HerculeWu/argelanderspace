@@ -69,6 +69,9 @@ installShellHarness({
 beforeEach(() => {
   resetHostInfoForTests();
   resetProjectSwitchForTests();
+  // The undo window's end is read off the clock when the case starts, not when the file was loaded: under a loaded
+  // parallel run the seconds between the two would show "5 s left" for a 6.5 s window.
+  IMPACT.mail[0]!.endsAt = Date.now() + 6500;
   settings = fakeSettings({ "ui.language": "en" });
   host = DESKTOP;
   recent = {

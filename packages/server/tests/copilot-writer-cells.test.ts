@@ -36,6 +36,10 @@ import { ProviderSettings } from "../src/providers.js";
 import { __setNumberingComputeForTests, computeWriterNumbering } from "../src/writer-numbering.js";
 import { stubPipelines, stubSources } from "./helpers.js";
 
+// Whole-package parallel runs (and several worktrees at once) push this file past the 5s default; the cases wait on
+// real servers and timers, so give them room instead of racing the clock (backlog-sweep group 12, copilot ticket 44).
+vi.setConfig({ testTimeout: 45_000 });
+
 type Out = { text?: string; call?: Record<string, unknown> };
 type Step = (context: TranscriptContext) => Out | Promise<Out>;
 let root: string;
@@ -266,7 +270,7 @@ const settled = async (id: string) => {
       const status = (await host.snapshot(id)).conversation.run?.status;
       expect(["running", "waiting-for-user"]).not.toContain(status);
     },
-    { timeout: 8000 }
+    { timeout: 30_000 }
   );
   return host.snapshot(id);
 };

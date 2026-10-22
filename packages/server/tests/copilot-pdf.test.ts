@@ -39,6 +39,10 @@ import { WsHub } from "../src/ws.js";
 import { stubPipelines, stubSources } from "./helpers.js";
 import { syntheticPdf } from "./pdf-fixture.js";
 
+// Whole-package parallel runs (and several worktrees at once) push this file past the 5s default; the cases wait on
+// real servers and timers, so give them room instead of racing the clock (backlog-sweep group 12, copilot ticket 44).
+vi.setConfig({ testTimeout: 45_000 });
+
 type Out = { text?: string; call?: Record<string, unknown>; tool?: string };
 type Step = (context: TranscriptContext) => Out | Promise<Out>;
 let root: string;

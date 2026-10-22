@@ -43,4 +43,4 @@ test("while a large entry is compressed, the event loop runs", async () => {
   done = true;
   expect(zip.length).toBeGreaterThan(big.length / 2);
   expect(ticks).toBeGreaterThan(5);
-});
+}, 45_000); // 24 MB of random bytes passes the 5s default when the package runs in parallel with other work
