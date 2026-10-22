@@ -675,3 +675,16 @@ test("saveReadingPosition: a notification that throws is the save's error; the p
   expect(await throwing.saveReadingPosition(doc, positionBody())).toEqual({ kind: "error" });
   expect(positionFile()).toEqual({ ...positionBody(), rev: 1 });
 });
+
+test("ownerFailure: null for one owner, the 404 for none and the 500 (with the id) for several", () => {
+  expect(access.ownerFailure(doc)).toBeNull();
+  expect(access.ownerFailure("pdf-x")).toEqual({
+    body: { detail: "paper 'pdf-x' not found" },
+    status: 404,
+  });
+  own(W2, doc);
+  expect(access.ownerFailure(doc)).toEqual({
+    body: { detail: `PDF document '${doc}' has inconsistent Work ownership` },
+    status: 500,
+  });
+});

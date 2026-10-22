@@ -87,10 +87,8 @@ import {
   PdfContentChangedError,
   readDocumentAsset,
   readManuscriptAsset,
-  readPdfAnnotationsFile,
   readPdfMetadataIfPresent,
   readPdfReadingPosition,
-  readVerifiedPdf,
   type WriterExportBundle,
   WriterExportError,
   workToRef,
@@ -112,7 +110,6 @@ import {
   zipEntries,
 } from "@argelanderspace/infra";
 import type { Context, Hono } from "hono";
-import type { ContentfulStatusCode } from "hono/utils/http-status";
 import {
   createAcquisition,
   createLockedRebuild,
@@ -145,6 +142,7 @@ import { createDocDeletion } from "./doc-delete.js";
 import { badDocId, badFileName } from "./doc-id.js";
 import { DocMutationRegistry } from "./doc-mutations.js";
 import { environmentReport, mountEnvironmentRoutes } from "./environment.js";
+import { detail, pyRepr } from "./fastapi-parity.js";
 import { fileToolsDefault } from "./file-tools-default.js";
 import { type HostBridge, mountHostRoutes, switchJobOf } from "./host-routes.js";
 import type { JobRunner } from "./jobs.js";
@@ -314,11 +312,6 @@ export interface AppDeps {
 // Small parity helpers
 // --------------------------------------------------------------------------- //
 
-/** FastAPI's `HTTPException(status, msg)` body. */
-function detail(msg: string, status: ContentfulStatusCode) {
-  return { body: { detail: msg }, status };
-}
-
 /**
  * Stage 14 discovery seed validation: bibcodes are identifiers, not ADS
  * query strings — capped length, no whitespace/quotes/control characters
@@ -368,11 +361,6 @@ function parseBoolQuery(raw: string | undefined): boolean | null {
   if (["true", "1", "yes", "on", "t", "y"].includes(v)) return true;
   if (["false", "0", "no", "off", "f", "n", ""].includes(v)) return false;
   return null;
-}
-
-/** Python `f"...{value!r}..."` for the simple ids that reach these messages. */
-function pyRepr(s: string): string {
-  return `'${s}'`;
 }
 
 /** Document images are data, never a page: no sniffing, and a script inside an SVG that is opened directly cannot run. */
@@ -1200,59 +1188,37 @@ export function createApp(deps: AppDeps): Hono {
   app.get("/api/paper/:doc_id/pdf/snapshot", (c) => {
     c.header("Cache-Control", "no-store");
     const docId = c.req.param("doc_id");
-    if (!docId.trim() || badDocId(docId)) {
-      const e = detail("bad doc id", 400);
+    const source = pdfAccess.source(docId, { annotations: true });
+    if (source.kind !== "ok") {
+      const e = pdfAccess.sourceFailure(docId, source.kind);
       return c.json(e.body, e.status);
     }
-    if (docMutations.isDocumentContentBusy(docId)) return c.json({ detail: DOCUMENT_BUSY }, 409);
-    const owners = pdfAccess.owners(docId);
-    if (owners.length === 0) {
-      const e = detail(`paper ${pyRepr(docId)} not found`, 404);
-      return c.json(e.body, e.status);
-    }
-    if (owners.length !== 1) {
-      const e = detail(`PDF document ${pyRepr(docId)} has inconsistent Work ownership`, 500);
-      return c.json(e.body, e.status);
-    }
-    try {
-      const metadata = readPdfMetadataIfPresent(paths, docId);
-      if (!metadata) throw new Error("PDF metadata missing");
-      readVerifiedPdf(paths, docId);
-      const annotations = readPdfAnnotationsFile(paths, docId);
-      const reading_position = (() => {
-        try {
-          return { status: "ready" as const, file: readPdfReadingPosition(paths, docId) };
-        } catch {
-          return {
-            status: "error" as const,
-            detail: "PDF reading position could not be restored; the stored sidecar is preserved",
-          };
-        }
-      })();
-      return c.json({ metadata, annotations, reading_position }, 200, {
-        "Cache-Control": "no-store",
-      });
-    } catch (error) {
-      const changed = error instanceof PdfContentChangedError;
-      const e = detail(
-        changed ? "document changed" : `PDF document ${pyRepr(docId)} or its user data is invalid`,
-        changed ? 409 : 500
-      );
-      return c.json(e.body, e.status);
-    }
+    const reading_position = (() => {
+      try {
+        return { status: "ready" as const, file: readPdfReadingPosition(paths, docId) };
+      } catch {
+        return {
+          status: "error" as const,
+          detail: "PDF reading position could not be restored; the stored sidecar is preserved",
+        };
+      }
+    })();
+    return c.json(
+      { metadata: source.metadata, annotations: source.annotations, reading_position },
+      200,
+      { "Cache-Control": "no-store" }
+    );
   });
 
   app.get("/api/paper/:doc_id/pdf/reading-position", (c) => {
     c.header("Cache-Control", "no-store");
     const docId = c.req.param("doc_id");
-    if (!docId.trim() || badDocId(docId)) return c.json({ detail: "bad doc id" }, 400);
-    if (docMutations.isDocumentContentBusy(docId)) return c.json({ detail: DOCUMENT_BUSY }, 409);
-    const owners = pdfAccess.owners(docId);
-    if (owners.length === 0) return c.json({ detail: `paper ${pyRepr(docId)} not found` }, 404);
-    if (owners.length !== 1)
-      return c.json({ detail: "PDF document has inconsistent Work ownership" }, 500);
+    const source = pdfAccess.source(docId);
+    if (source.kind !== "ok") {
+      const e = pdfAccess.sourceFailure(docId, source.kind);
+      return c.json(e.body, e.status);
+    }
     try {
-      readVerifiedPdf(paths, docId);
       return c.json({ status: "ready", file: readPdfReadingPosition(paths, docId) }, 200, {
         "Cache-Control": "no-store",
       });
@@ -1282,10 +1248,8 @@ export function createApp(deps: AppDeps): Hono {
     const parsed = PdfReadingPositionSchema.safeParse(body);
     if (!parsed.success || parsed.data.doc_id !== docId)
       return c.json({ detail: "invalid reading position data" }, 400);
-    const owners = pdfAccess.owners(docId);
-    if (owners.length === 0) return c.json({ detail: `paper ${pyRepr(docId)} not found` }, 404);
-    if (owners.length !== 1)
-      return c.json({ detail: "PDF document has inconsistent Work ownership" }, 500);
+    const notOwned = pdfAccess.ownerFailure(docId);
+    if (notOwned) return c.json(notOwned.body, notOwned.status);
     const saved = await pdfAccess.saveReadingPosition(docId, parsed.data);
     switch (saved.kind) {
       case "saved":
@@ -1306,35 +1270,15 @@ export function createApp(deps: AppDeps): Hono {
   app.get("/api/paper/:doc_id/pdf/annotations/count", (c) => {
     c.header("Cache-Control", "no-store");
     const docId = c.req.param("doc_id");
-    if (!docId.trim() || badDocId(docId)) {
-      const e = detail("bad doc id", 400);
+    const source = pdfAccess.source(docId, { annotations: true });
+    if (source.kind !== "ok") {
+      const e = pdfAccess.sourceFailure(docId, source.kind);
       return c.json(e.body, e.status);
     }
-    if (docMutations.isDocumentContentBusy(docId)) return c.json({ detail: DOCUMENT_BUSY }, 409);
-    const owners = pdfAccess.owners(docId);
-    if (owners.length === 0) {
-      const e = detail(`paper ${pyRepr(docId)} not found`, 404);
-      return c.json(e.body, e.status);
-    }
-    if (owners.length !== 1) {
-      const e = detail(`PDF document ${pyRepr(docId)} has inconsistent Work ownership`, 500);
-      return c.json(e.body, e.status);
-    }
-    try {
-      readVerifiedPdf(paths, docId);
-      const annotations = readPdfAnnotationsFile(paths, docId);
-      return c.json({
-        count: annotations.annotations.length,
-        content_sha256: annotations.content_sha256,
-      });
-    } catch (error) {
-      const changed = error instanceof PdfContentChangedError;
-      const e = detail(
-        changed ? "document changed" : "PDF annotations could not be counted",
-        changed ? 409 : 500
-      );
-      return c.json(e.body, e.status);
-    }
+    return c.json({
+      count: source.annotations.annotations.length,
+      content_sha256: source.annotations.content_sha256,
+    });
   });
 
   app.put("/api/paper/:doc_id/pdf/annotations", { noStore: true }, async (c) => {
@@ -1351,15 +1295,8 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("invalid PDF annotation JSON", 400);
       return c.json(e.body, e.status);
     }
-    const owners = pdfAccess.owners(docId);
-    if (owners.length === 0) {
-      const e = detail(`paper ${pyRepr(docId)} not found`, 404);
-      return c.json(e.body, e.status);
-    }
-    if (owners.length !== 1) {
-      const e = detail(`PDF document ${pyRepr(docId)} has inconsistent Work ownership`, 500);
-      return c.json(e.body, e.status);
-    }
+    const notOwned = pdfAccess.ownerFailure(docId);
+    if (notOwned) return c.json(notOwned.body, notOwned.status);
     const candidate = PdfAnnotationsFileSchema.safeParse(body);
     if (!candidate.success) {
       const e = detail("invalid PDF annotation data", 400);
@@ -1480,52 +1417,29 @@ export function createApp(deps: AppDeps): Hono {
   app.get("/api/paper/:doc_id/pdf", (c) => {
     c.header("Cache-Control", "no-store");
     const docId = c.req.param("doc_id");
-    if (!docId.trim() || badDocId(docId)) {
-      const e = detail("bad doc id", 400);
+    const source = pdfAccess.source(docId);
+    if (source.kind !== "ok") {
+      const e = pdfAccess.sourceFailure(docId, source.kind);
       return c.json(e.body, e.status);
     }
-    if (docMutations.isDocumentContentBusy(docId)) return c.json({ detail: DOCUMENT_BUSY }, 409);
-    const owners = pdfAccess.owners(docId);
-    if (owners.length === 0) {
-      const e = detail(`paper ${pyRepr(docId)} not found`, 404);
-      return c.json(e.body, e.status);
-    }
-    if (owners.length !== 1) {
-      const e = detail(`PDF document ${pyRepr(docId)} has inconsistent Work ownership`, 500);
-      return c.json(e.body, e.status);
-    }
-    try {
-      const metadata = readPdfMetadataIfPresent(paths, docId);
-      if (!metadata) {
-        const e = detail(`PDF document ${pyRepr(docId)} has invalid metadata`, 500);
-        return c.json(e.body, e.status);
-      }
-      const bytes = readVerifiedPdf(paths, docId);
-      const name = [...metadata.original_filename]
-        .map((character) => {
-          const code = character.charCodeAt(0);
-          return code < 0x20 || code === 0x7f || code === 0x22 || code === 0x3b || code === 0x5c
-            ? "_"
-            : character;
-        })
-        .join("");
-      return new Response(bytes, {
-        headers: {
-          "Content-Type": "application/pdf",
-          "Content-Length": String(bytes.length),
-          "Content-Disposition": `attachment; filename="${name}"; filename*=UTF-8''${encodeURIComponent(name)}`,
-          "Cache-Control": "no-store",
-          "X-Content-Type-Options": "nosniff",
-        },
-      });
-    } catch (error) {
-      const changed = error instanceof PdfContentChangedError;
-      const e = detail(
-        changed ? "document changed" : `PDF document ${pyRepr(docId)} cannot be verified`,
-        changed ? 409 : 500
-      );
-      return c.json(e.body, e.status);
-    }
+    const { metadata, bytes } = source;
+    const name = [...metadata.original_filename]
+      .map((character) => {
+        const code = character.charCodeAt(0);
+        return code < 0x20 || code === 0x7f || code === 0x22 || code === 0x3b || code === 0x5c
+          ? "_"
+          : character;
+      })
+      .join("");
+    return new Response(bytes, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Length": String(bytes.length),
+        "Content-Disposition": `attachment; filename="${name}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
   });
 
   // ---- GET /api/paper/{doc_id}/ir -------------------------------------------- //
