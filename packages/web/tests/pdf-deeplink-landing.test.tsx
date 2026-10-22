@@ -85,6 +85,12 @@ vi.mock("../src/api/pdf", () => ({
   }),
 }));
 
+// The reading position the Reader saves on unmount/scroll is not under test: answer the PUT like a server that accepts it, so no request leaves the test.
+vi.mock("../src/api/pdf-reading-position", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/api/pdf-reading-position")>()),
+  savePdfReadingPosition: async (file: { rev: number }) => ({ ok: true, file: { ...file, rev: file.rev + 1 } }),
+}));
+
 const rectOf = (top: number, height: number) => ({ top, bottom: top + height, left: 0, right: 340, width: 340, height, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
 const realRect = HTMLElement.prototype.getBoundingClientRect;
 

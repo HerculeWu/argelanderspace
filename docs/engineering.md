@@ -45,6 +45,7 @@
 - `skills/argelander-find-papers/scripts/` 在 workspace 之外，四门与 biome 都不覆盖；其离线测试单独运行：`node --test skills/argelander-find-papers/scripts/ads.test.mjs`（fetch 与 HOME 注入，不触网、不读真实 key）。
 - `--offline` 自 Stage 7 起 gate ADS/Crossref/OpenAlex，缓存仍可读。迁移声称离线仍应核实所走路径，不将 env 恰有 token 当测试前提。
 - web Vitest ^3 与 Vite 5 配套，其余包 Vitest 4；独立 vitest.config 不加载 React 插件。happy-dom 全局 URL 不是 Node URL，读文件用 `node:url` 的 fileURLToPath；IntersectionObserver 需 stub。
+- **web 测试的网络守卫**（web-test-flake 04，`packages/web/tests/network-guard.ts`，由 `tests/setup.ts` 安装）：happy-dom 的默认 origin 是 `localhost:3000`，没被 mock 的相对 `fetch` 会真的连它。所以默认 `fetch` / `XMLHttpRequest` 不连网，没有测试 mock 的调用会失败并报 `[network-guard] unmocked fetch <完整 URL>`，附调用栈和发生时正在跑的测试，当前测试（文件最后一个测试之后才到的，则是该文件的 afterAll）随之失败。默认 `WebSocket` 是永不连接的惰性 socket，只记录并 `console.warn`（URL 与测试名），不使测试失败；需要帧的测试用 `createFakeBus` 或自己 stub。测试里 `vi.stubGlobal` / 赋值的 mock 会覆盖守卫，`vi.unstubAllGlobals()` 还原为守卫而不是 happy-dom 的真实实现。因此卸载组件时异步冲刷请求（如 Mail 草稿）的测试，要在 unstub 之前等一个宏任务，否则冲刷落到守卫上（`mail-compose.test.tsx` 的 afterEach）。
 - happy-dom 无布局：rect/selection/scroll 相关测试“绿”不能证明真实像素正确。Stage 8 selbar-y 钳制测试零 rect 恒过，真实 Chrome 双轴探针才是证据。测试局限不是产品缺陷。
 - SVG 忠实性真值：pdftoppm 位图 + 真实 Chrome 截图；不要用 ImageMagick MSVG 作裁判，其渲染器也会丢特性。
 - **真实 fixture 必须覆盖文字、内嵌位图、尺寸**：glyph use、image 存在及 viewBox 对 pdfinfo。三角 stub 曾放过 dvisvgm 真实图丢全部文字/位图，不能重走该路线。现 infra `fig-text.pdf` / `fig-imshow.pdf` / `fig-text.eps` 回归覆盖。

@@ -66,6 +66,8 @@ vi.mock("../src/writer/latexSource", () => ({ LatexSourceField: (p: ComponentPro
     onKeyDown={(e) => { if (e.key === "Enter" && e.shiftKey && !e.nativeEvent.isComposing) p.onCommit?.(); }} />
 ) }));
 vi.mock("../src/api/writer", () => h.api);
+// The References tab reads the Library; it is not under test here, so it gets an empty live one (no request leaves the test).
+vi.mock("../src/api/library", () => ({ fetchLibrary: async () => ({ data: { refs: [] }, live: true }) }));
 vi.mock("../src/api/ws", () => ({
   onWriterChanged: (cb: (msg: unknown) => void) => { h.wsCbs.push(cb); return () => { const i = h.wsCbs.indexOf(cb); if (i >= 0) h.wsCbs.splice(i, 1); }; },
 }));

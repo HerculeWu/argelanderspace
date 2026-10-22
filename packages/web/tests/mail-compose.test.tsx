@@ -162,8 +162,10 @@ beforeEach(async () => {
     })
   );
 });
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  // Unmounting a composer flushes its draft to the server on a later microtask; let that reach the stub, not the real network.
+  await new Promise((resolve) => setTimeout(resolve, 0));
   vi.unstubAllGlobals();
 });
 
