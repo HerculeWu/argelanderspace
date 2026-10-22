@@ -9,6 +9,7 @@
  * mocked, with plan.changed subscribers captured so tests can fire them.
  */
 
+import { StrictMode } from "react";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlanPage, PlansFile, Task } from "@argelanderspace/contracts";
@@ -126,6 +127,8 @@ function mkDoc(tasks: Task[], over: Record<string, unknown> = {}): PlansFile {
 let serverDoc: PlansFile;
 let putBodies: PlansFile[];
 let forceNext409: boolean;
+let putFailStatus: number | null;
+let putFailOnce: number | null;
 let getCalls: number;
 let plansGetFails: boolean;
 let putGate: Promise<void> | null;
@@ -158,6 +161,14 @@ function installFetch() {
           await gate; // hold the PUT in flight until the test releases it
         }
         const body = JSON.parse(String(init?.body)) as PlansFile;
+        if (putFailOnce !== null) {
+          const status = putFailOnce;
+          putFailOnce = null;
+          return { ok: false, status, json: async () => ({ detail: "synthetic" }) } as Response;
+        }
+        if (putFailStatus !== null) {
+          return { ok: false, status: putFailStatus, json: async () => ({ detail: "synthetic" }) } as Response;
+        }
         if (forceNext409) {
           forceNext409 = false;
           return { ok: false, status: 409, json: async () => ({ detail: "rev mismatch", rev: serverDoc.rev }) } as Response;
@@ -211,6 +222,8 @@ beforeEach(() => {
   serverDoc = mkDoc([]);
   putBodies = [];
   forceNext409 = false;
+  putFailStatus = null;
+  putFailOnce = null;
   getCalls = 0;
   plansGetFails = false;
   putGate = null;
@@ -479,6 +492,124 @@ describe("PlanView: delete + 8s undo", () => {
     await waitFor(() => expect(container.querySelectorAll(".plan-task-row")).toHaveLength(3));
     const titles = [...container.querySelectorAll(".plan-task-title")].map((e) => e.textContent);
     expect(titles).toEqual(["甲", "乙", "丙"]); // 原位插回
+  });
+});
+
+describe("PlanView: a failed note save keeps the draft", () => {
+  async function openNoteEditor(note?: string) {
+    serverDoc = mkDoc([mkTask({ title: "乙", note })]);
+    const { container } = renderPlan();
+    fireEvent.click((await waitFor(() => rowOf(container, "乙"))).querySelector(".plan-task-title")!);
+    const drawer = await waitFor(() => container.querySelector(".plan-drawer") as HTMLElement);
+    fireEvent.click(drawer.querySelector(note ? '[data-ui="edit-task-note"]' : '[data-ui="add-task-note"]')!);
+    const input = () => drawer.querySelector<HTMLTextAreaElement>('[data-ui="task-note-input"]');
+    return { container, drawer, input };
+  }
+
+  for (const status of [403, 500]) {
+    it(`PUT ${status}: stays in edit with the draft and a reason; a retry succeeds and leaves edit`, async () => {
+      const { drawer, input } = await openNoteEditor("旧便签");
+      putFailStatus = status;
+      fireEvent.change(input()!, { target: { value: "新草稿" } });
+      fireEvent.click(drawer.querySelector('[data-ui="save-task-note"]')!);
+
+      const err = await waitFor(() => {
+        const el = drawer.querySelector<HTMLElement>('[data-ui="task-note-save-error"]');
+        expect(el).not.toBeNull();
+        return el!;
+      });
+      expect(err.textContent).toContain("草稿已保留");
+      // the page reloaded the old value, yet the draft survives in the open editor
+      await waitFor(() => expect(getCalls).toBeGreaterThan(1));
+      expect(input()!.value).toBe("新草稿");
+      expect(drawer.querySelector('[data-ui="task-note-view"]')).toBeNull();
+
+      putFailStatus = null;
+      fireEvent.click(drawer.querySelector('[data-ui="save-task-note"]')!);
+      await waitFor(() => expect(drawer.querySelector('[data-ui="task-note-view"]')).toBeTruthy());
+      expect(drawer.querySelector('[data-ui="task-note-save-error"]')).toBeNull();
+      expect(lastPut().plans[0]!.tasks[0]!.note).toBe("新草稿");
+      expect(drawer.querySelector(".plan-md-body")!.textContent).toContain("新草稿");
+    });
+  }
+
+  it("Ctrl+Enter takes the same path; cancel after a failure discards the draft", async () => {
+    const { drawer, input } = await openNoteEditor();
+    putFailStatus = 403;
+    fireEvent.change(input()!, { target: { value: "草稿甲" } });
+    fireEvent.keyDown(input()!, { key: "Enter", ctrlKey: true });
+    await waitFor(() => expect(drawer.querySelector('[data-ui="task-note-save-error"]')).toBeTruthy());
+    expect(input()!.value).toBe("草稿甲");
+    fireEvent.click(drawer.querySelector('[data-ui="cancel-task-note"]')!);
+    expect(drawer.querySelector('[data-ui="task-note-view"]')).toBeTruthy();
+    expect(drawer.querySelector('[data-ui="task-note-save-error"]')).toBeNull();
+    fireEvent.click(drawer.querySelector('[data-ui="add-task-note"]')!);
+    expect(input()!.value).toBe("");
+  });
+
+  it("a 409 conflict also keeps the draft, with the conflict reason", async () => {
+    const { drawer, input } = await openNoteEditor("旧便签");
+    forceNext409 = true;
+    fireEvent.change(input()!, { target: { value: "新草稿" } });
+    fireEvent.click(drawer.querySelector('[data-ui="save-task-note"]')!);
+    const err = await waitFor(() => {
+        const el = drawer.querySelector<HTMLElement>('[data-ui="task-note-save-error"]');
+        expect(el).not.toBeNull();
+        return el!;
+      });
+    expect(err.textContent).toContain("草稿已保留");
+    expect(input()!.value).toBe("新草稿");
+  });
+
+  it("under React.StrictMode a successful save still leaves edit (the mounted flag is re-armed)", async () => {
+    serverDoc = mkDoc([mkTask({ title: "乙" })]);
+    const { container } = render(
+      <StrictMode>
+        <WorkspaceProvider value={WORKSPACE}>
+          <PlanView />
+        </WorkspaceProvider>
+      </StrictMode>
+    );
+    fireEvent.click((await waitFor(() => rowOf(container, "乙"))).querySelector(".plan-task-title")!);
+    const drawer = await waitFor(() => container.querySelector(".plan-drawer") as HTMLElement);
+    fireEvent.click(drawer.querySelector('[data-ui="add-task-note"]')!);
+    fireEvent.change(drawer.querySelector('[data-ui="task-note-input"]')!, { target: { value: "严格模式" } });
+    fireEvent.click(drawer.querySelector('[data-ui="save-task-note"]')!);
+    await waitFor(() => expect(drawer.querySelector('[data-ui="task-note-view"]')).toBeTruthy());
+    expect(lastPut().plans[0]!.tasks[0]!.note).toBe("严格模式");
+  });
+
+  it("an earlier write fails and its reload wipes the optimistic note: the note save reports failure, not success", async () => {
+    const { container, drawer, input } = await openNoteEditor();
+    let release!: () => void;
+    putGate = new Promise<void>((r) => (release = r));
+    putFailOnce = 500;
+    fireEvent.click(rowOf(container, "乙").querySelector(".plan-st-btn")!); // write #1, held in flight
+    fireEvent.change(input()!, { target: { value: "会被冲掉的草稿" } });
+    fireEvent.click(drawer.querySelector('[data-ui="save-task-note"]')!); // write #2 queued behind it
+    release(); // #1 fails → reload → the optimistic note is gone from the doc
+    const err = await waitFor(() => {
+      const el = drawer.querySelector<HTMLElement>('[data-ui="task-note-save-error"]');
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    expect(err.textContent).toContain("草稿已保留");
+    expect(input()!.value).toBe("会被冲掉的草稿");
+    expect(drawer.querySelector('[data-ui="task-note-view"]')).toBeNull();
+    expect(putBodies).toHaveLength(0); // the reloaded doc was not written back as a false success
+  });
+
+  it("while the PUT is in flight the editor stays open and the save button is busy; success then leaves edit", async () => {
+    const { drawer, input } = await openNoteEditor();
+    let release!: () => void;
+    putGate = new Promise<void>((r) => (release = r));
+    fireEvent.change(input()!, { target: { value: "进行中" } });
+    fireEvent.click(drawer.querySelector('[data-ui="save-task-note"]')!);
+    await waitFor(() => expect(drawer.querySelector<HTMLButtonElement>('[data-ui="save-task-note"]')!.disabled).toBe(true));
+    expect(input()!.value).toBe("进行中");
+    release();
+    await waitFor(() => expect(drawer.querySelector('[data-ui="task-note-view"]')).toBeTruthy());
+    expect(lastPut().plans[0]!.tasks[0]!.note).toBe("进行中");
   });
 });
 

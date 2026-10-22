@@ -113,6 +113,9 @@ export function dueState(due: string | undefined, today: string): "overdue" | "t
 // Today's-focus grouping
 // --------------------------------------------------------------------------- //
 
+/** Outcome of one Plan write: ok, or failed (`conflict` = the rev was stale, 409, or the edit was superseded by a reload). */
+export type SaveResult = { ok: true } | { ok: false; conflict: boolean };
+
 export interface FocusItem {
   task: Task;
   plan: Plan;

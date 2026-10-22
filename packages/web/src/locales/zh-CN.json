@@ -808,6 +808,8 @@
       "note": "备注",
       "notePlaceholder": "支持 Markdown 与 $…$ / $$…$$ 数学：# 标题 · **粗体** · - 列表",
       "noteHint": "支持 Markdown 与数学 · ⌘↵ 保存",
+      "noteSaveFailed": "备注未能保存，草稿已保留，可重试或取消。",
+      "noteSaveConflict": "草稿已保留：计划数据在保存前发生了变化，可再次保存或取消。",
       "noteEmpty": "添加备注 — 记录思路、实验观察或下一步…",
       "deleteTask": "删除任务"
     },
