@@ -6,6 +6,8 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DocLeaveScope, useLeaveDialog, useLeaveQuestionOpen, useUnsavedSource } from "../src/argelander/leave-dialog";
 import { askWorkspaceLeave, type LeaveOrigin } from "../src/argelander/workspace";
+import en from "../src/locales/en.json";
+import zh from "../src/locales/zh-CN.json";
 
 afterEach(cleanup);
 
@@ -78,8 +80,13 @@ describe("useLeaveDialog", () => {
     expect(dialog()).toBeNull();
     // the refusal is not silent: a status toast says why nothing happened
     await waitFor(() => expect(document.querySelector('[data-ui="leave-blocked-notice"]')?.getAttribute("role")).toBe("status"));
-    expect(document.querySelector('[data-ui="leave-blocked-notice"]')?.textContent).toContain("对话框");
+    expect(document.querySelector('[data-ui="leave-blocked-notice"]')?.textContent).toBe("有未保存的内容：请先关闭当前对话框。");
     other.remove();
+  });
+
+  it("the refusal toast's two languages end the sentence alike", () => {
+    expect(en.leaveDialog.blockedByDialog).toMatch(/\.$/);
+    expect(zh.leaveDialog.blockedByDialog).toMatch(/。$/);
   });
 
   it("the question counts as open from asking until answered, for views that step aside for it", async () => {

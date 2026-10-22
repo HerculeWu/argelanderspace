@@ -114,7 +114,7 @@ export function useLeaveDialog(): { ask: (body: string | string[], origin?: Leav
     </Dialog>
   ) : null;
   const toast = notice ? (
-    <div className="leave-blocked-toast view-in" role="status" data-ui="leave-blocked-notice">
+    <div className="leave-blocked-toast" role="status" data-ui="leave-blocked-notice">
       {t("leaveDialog.blockedByDialog")}
     </div>
   ) : null;
