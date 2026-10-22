@@ -287,7 +287,7 @@ describe("right-panel tabs", () => {
     await ready(container);
     // default tab: the in-view cards (the panel-title is its header)
     await waitFor(() =>
-      expect(container.querySelector(".right .panel-title")?.textContent).toContain("In view")
+      expect(container.querySelector(".right .panel-title")?.textContent).toContain("视野内")
     );
     expect(tabButton(container, "引用").className).toContain("on");
     expect(tabButton(container, "标注").textContent).toContain("2"); // badge
@@ -533,7 +533,7 @@ describe("structure annotation creation (hover edge button → popover)", () => 
     // still on 引用, the in-view cards untouched, badge now counts 1
     expect(tabButton(container, "引用").className).toContain("on");
     expect(tabButton(container, "标注").textContent).toContain("1");
-    expect(container.querySelector(".right .panel-title")?.textContent).toContain("In view");
+    expect(container.querySelector(".right .panel-title")?.textContent).toContain("视野内");
   });
 
   it("section headings are annotatable structure targets", async () => {
