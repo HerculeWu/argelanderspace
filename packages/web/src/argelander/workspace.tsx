@@ -27,6 +27,16 @@ export interface Workspace {
    */
   openCopilotSettings?: () => void;
   openMailAccounts?: () => void;
+  /**
+   * What each Library page had selected (a library graph node id, not a Work id), by pane id, for the length of the session
+   * (an entry goes when its pane closes). A Doc pane replaces the page (and
+   * unmounts it); Back to the Library address brings it back with the Work the Doc was opened from still selected.
+   */
+  librarySelection?: {
+    /** `undefined`: nothing remembered; `null`: the detail was closed. */
+    get: (paneId: number) => string | null | undefined;
+    set: (paneId: number, node: string | null) => void;
+  };
   tweaks: Tweaks;
 }
 

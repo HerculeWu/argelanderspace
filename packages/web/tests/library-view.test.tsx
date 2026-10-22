@@ -6,7 +6,7 @@
  * mocked away (no WebSocket in tests).
  */
 
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceProvider, type Workspace } from "../src/argelander/workspace";
 import { effectiveLabel, labelColor, LibraryView } from "../src/library/LibraryView";
@@ -163,6 +163,44 @@ describe("LibraryView side list: labels + read marker", () => {
     const unread = rowOf(container, "Plain Unread Paper");
     expect(unread.className).toContain("unread");
     expect(unread.querySelector(".side-ref-meta")?.textContent).not.toContain("已读");
+  });
+});
+
+// Back from an opened Doc returns to the Library page with the same Work selected: a Doc pane replaces (unmounts) the page,
+// so the workspace keeps the selected graph node per pane for the page to read when it mounts again.
+describe("LibraryView: the selected Work across an unmount", () => {
+  const selected = (container: HTMLElement) => container.querySelector(".side-ref.sel .side-ref-title")?.textContent ?? null;
+  const withMemory = (memory: Map<number, string | null>): Workspace => ({
+    ...WORKSPACE,
+    librarySelection: { get: (paneId) => memory.get(paneId), set: (paneId, node) => void memory.set(paneId, node) },
+  });
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => (String(input) === "/api/library" ? ({ ok: true, json: async () => PAYLOAD } as Response) : ({ ok: false, status: 404, json: async () => ({}) } as unknown as Response))));
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("a page mounted again for the same pane selects the Work it showed", async () => {
+    const memory = new Map<number, string | null>();
+    const first = render(<WorkspaceProvider value={withMemory(memory)}><LibraryView paneId={1} /></WorkspaceProvider>);
+    await waitFor(() => expect(selected(first.container)).toBe("Labeled Paper")); // the default: the first Work
+    fireEvent.click(rowOf(first.container, "Read Paper"));
+    await waitFor(() => expect(selected(first.container)).toBe("Read Paper"));
+    first.unmount();
+    const again = render(<WorkspaceProvider value={withMemory(memory)}><LibraryView paneId={1} /></WorkspaceProvider>);
+    await waitFor(() => expect(selected(again.container)).toBe("Read Paper"));
+  });
+
+  it("another pane keeps its own default, and a remembered node that is gone falls back to the default", async () => {
+    const memory = new Map<number, string | null>([[1, "gone-node"]]);
+    const other = render(<WorkspaceProvider value={withMemory(memory)}><LibraryView paneId={2} /></WorkspaceProvider>);
+    await waitFor(() => expect(selected(other.container)).toBe("Labeled Paper"));
+    other.unmount();
+    const gone = render(<WorkspaceProvider value={withMemory(memory)}><LibraryView paneId={1} /></WorkspaceProvider>);
+    await waitFor(() => expect(selected(gone.container)).toBe("Labeled Paper"));
   });
 });
 

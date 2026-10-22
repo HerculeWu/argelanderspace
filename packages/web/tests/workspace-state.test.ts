@@ -58,6 +58,7 @@ function libraryPages(x: WorkspaceState, browser: MemoryBrowser) {
   const requests: { workId: string; confirmed: boolean; showing: string | null }[] = [];
   const exits: number[] = [];
   const explores: string[] = [];
+  const exploreExits: number[] = [];
   const exploring = new Set<number>();
   const mounted = new Map<number, () => void>();
   const mount = (paneId: number) => {
@@ -87,7 +88,9 @@ function libraryPages(x: WorkspaceState, browser: MemoryBrowser) {
           explores.push(seed);
           exploring.add(paneId);
         },
-        exit: () => void exploring.delete(paneId),
+        exit: () => {
+          if (exploring.delete(paneId)) exploreExits.push(paneId);
+        },
       }),
     ];
     return () => offs.forEach((off) => off());
@@ -115,6 +118,7 @@ function libraryPages(x: WorkspaceState, browser: MemoryBrowser) {
     requests,
     exits,
     explores,
+    exploreExits,
     unmount: () => {
       off();
       for (const unregister of mounted.values()) unregister();
@@ -315,6 +319,143 @@ describe("Back/Forward and hand-edited hashes", () => {
     expect(t.views()).toEqual(["doc"]);
   });
 
+  it("Back to a plain URL turns the Doc pane back into a Library page, asking the Doc's guard as the person", async () => {
+    const t = await booted({ url: "/doc/d1" });
+    expect(t.views()).toEqual(["doc"]);
+    t.browser.pop("/");
+    expect(t.views()).toEqual(["library"]);
+    expect(t.leave.asks).toContainEqual({ view: "doc", paneId: 1, origin: "user", sync: false });
+    expect(t.browser.url()).toBe("/");
+  });
+
+  it("Back to a plain URL where a Library pane already is changes no pane", async () => {
+    const t = await booted({
+      url: "/doc/d1",
+      panes: [
+        { id: 1, view: "library", size: 1 },
+        { id: 2, view: "doc", size: 1 },
+      ],
+    });
+    t.browser.pop("/");
+    expect(t.views()).toEqual(["library", "doc"]);
+  });
+
+  it("Back to a plain URL with no Doc pane changes no pane", async () => {
+    const t = await booted({ url: "/", panes: [{ id: 1, view: "plan", size: 1 }] });
+    t.browser.pop("/");
+    expect(t.views()).toEqual(["plan"]);
+  });
+
+  it("Back to a plain URL that the Doc's guard refuses: the Doc stays and its URL is put back", async () => {
+    const t = await booted({ url: "/doc/d1" });
+    t.leave.answer((view) => view !== "doc");
+    t.browser.pop("/");
+    expect(t.views()).toEqual(["doc"]);
+    expect(t.browser.url()).toBe("/doc/d1");
+  });
+
+  it("Back to a plain URL that the Doc's guard answers later: kept until yes, URL put back on no", async () => {
+    const t = await booted({ url: "/doc/d1" });
+    t.leave.lateFor("doc");
+    t.browser.pop("/");
+    expect(t.views()).toEqual(["doc"]);
+    t.leave.late[0]!(false);
+    await flush();
+    expect(t.views()).toEqual(["doc"]);
+    expect(t.browser.url()).toBe("/doc/d1");
+    t.browser.pop("/");
+    t.leave.late[1]!(true);
+    await flush();
+    expect(t.views()).toEqual(["library"]);
+  });
+
+  it("to #explore/ with no Library pane makes one first, as the boot path does", async () => {
+    const t = await booted({ url: "/doc/d1" });
+    t.browser.pop("/#explore/2020X");
+    await flush();
+    expect(t.views()).toEqual(["library"]);
+    expect(t.library.explores).toEqual(["2020X"]);
+  });
+
+  it("to #explore/ whose Library pane the guard of a Doc pane keeps away: nothing is opened", async () => {
+    const t = await booted({ url: "/doc/d1" });
+    t.leave.answer((view) => view !== "doc");
+    t.browser.pop("/#explore/2020X");
+    await flush();
+    expect(t.views()).toEqual(["doc"]);
+    expect(t.library.explores).toEqual([]);
+  });
+
+  it("Back (a real traversal: popstate, then hashchange) to #explore/ that the Doc's guard refuses asks once and puts the Doc's URL back", async () => {
+    const t = await booted({ url: "/#explore/2020X" });
+    expect(t.x.openDoc("d2")).toBe(true);
+    expect(t.views()).toEqual(["doc"]);
+    t.leave.answer((view) => view !== "doc");
+    const before = t.leave.asks.length;
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.leave.asks.slice(before).filter((a) => a.view === "doc")).toHaveLength(1);
+    expect(t.browser.url()).toBe("/doc/d2");
+    expect(t.views()).toEqual(["doc"]);
+  });
+
+  it("Back to #explore/ that the Doc's guard answers later: asked once, yes makes the Library pane, an answer after the address moved on changes nothing", async () => {
+    const t = await booted({ url: "/#explore/2020X" });
+    t.x.openDoc("d2");
+    t.leave.lateFor("doc");
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.leave.late).toHaveLength(1);
+    expect(t.views()).toEqual(["doc"]);
+    t.leave.late[0]!(true);
+    await flush();
+    expect(t.views()).toEqual(["library"]);
+    expect(t.browser.url()).toBe("/#explore/2020X");
+
+    const u = await booted({ url: "/#explore/2020X" });
+    u.x.openDoc("d2");
+    u.leave.lateFor("doc");
+    u.browser.port.back();
+    await u.browser.settle();
+    expect(u.leave.late).toHaveLength(1);
+    u.leave.answer(() => true);
+    u.browser.pop("/doc/d9"); // the address moved on while the question was open
+    u.leave.late[0]!(true);
+    await flush();
+    expect(u.views()).toEqual(["doc"]);
+    expect(u.x.getState().currentDoc).toBe("d9");
+  });
+
+  it("Back to a plain URL that the Doc's guard answers later: a second event asks nothing, and a late no after the address moved on leaves the address alone", async () => {
+    const t = await booted({ url: "/doc/d1" });
+    t.leave.lateFor("doc");
+    t.browser.pop("/");
+    t.browser.pop("/"); // popstate then hashchange of one traversal
+    expect(t.leave.late).toHaveLength(1);
+    t.leave.answer(() => true);
+    t.browser.pop("/doc/d2");
+    t.leave.late[0]!(false);
+    await flush();
+    expect(t.browser.url()).toBe("/doc/d2");
+  });
+
+  it("to a Doc address leaves the exploration (the Doc pane is already open, so the picture alone would not change)", async () => {
+    const t = await booted({
+      url: "/#explore/2020X",
+      panes: [
+        { id: 1, view: "library", size: 1 },
+        { id: 2, view: "doc", size: 1 },
+      ],
+    });
+    expect(t.library.explores).toEqual(["2020X"]);
+    t.browser.pop("/doc/d2");
+    expect(t.library.exploreExits).toEqual([1]);
+    expect(t.x.getState().currentDoc).toBe("d2");
+    expect(t.views()).toEqual(["library", "doc"]);
+  });
+
   it("a hand-edited hash (hashchange alone) is handled like a traversal", async () => {
     const t = await booted({ url: "/#argument/w1" });
     t.browser.editHash("/#explore/2020X");
@@ -446,10 +587,205 @@ describe("opening a Doc", () => {
     expect(t.browser.url()).toBe("/doc/d1");
   });
 
-  it("from any other URL it replaces the entry", async () => {
+  it("from the Library it writes a new entry, so Back returns to the Library page", async () => {
+    const t = await booted({ panes: [{ id: 1, view: "library", size: 1 }] });
+    expect(t.x.openDoc("d2", "sec-1")).toBe(true);
+    expect(t.browser.entries).toEqual(["/", "/doc/d2#sec-1"]);
+    expect(t.views()).toEqual(["doc"]);
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.browser.url()).toBe("/");
+    expect(t.views()).toEqual(["library"]);
+    t.browser.forward();
+    await t.browser.settle();
+    await flush();
+    expect(t.browser.url()).toBe("/doc/d2#sec-1");
+    expect(t.views()).toEqual(["doc"]);
+    expect(t.x.getState()).toMatchObject({ currentDoc: "d2", pendingAnchor: "sec-1" });
+    expect(t.browser.entries).toEqual(["/", "/doc/d2#sec-1"]);
+  });
+
+  it("from a Plan page it records the view it replaces: Back puts the Plan page back, Forward the Doc, Back the Plan again", async () => {
+    const t = await booted(); // one pane, the Plan page
+    expect(t.x.openDoc("d2")).toBe(true);
+    expect(t.views()).toEqual(["doc"]);
+    expect(t.browser.entries).toEqual(["/", "/doc/d2"]);
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.views()).toEqual(["plan"]);
+    expect(t.browser.url()).toBe("/");
+    t.browser.forward();
+    await t.browser.settle();
+    await flush();
+    expect(t.views()).toEqual(["doc"]);
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.views()).toEqual(["plan"]);
+  });
+
+  it("the recorded view returns to the pane the Doc replaced, even where another pane shows the Library", async () => {
+    const t = await booted({
+      panes: [
+        { id: 1, view: "library", size: 1 },
+        { id: 2, view: "plan", size: 1 },
+      ],
+      activeId: 2,
+    });
+    t.x.openDoc("d2");
+    expect(t.views()).toEqual(["library", "doc"]);
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.views()).toEqual(["library", "plan"]);
+  });
+
+  it("a Doc pane that already existed is recorded too: opening another Doc and going Back shows the previous Doc, the pane stays a Doc pane", async () => {
+    const t = await booted({
+      panes: [
+        { id: 1, view: "doc", size: 1 },
+        { id: 2, view: "plan", size: 1 },
+      ],
+      activeId: 2,
+    });
+    expect(t.x.getState().currentDoc).toBe("d1");
+    t.x.openDoc("d2");
+    expect(t.x.getState().currentDoc).toBe("d2");
+    expect(t.browser.entries).toEqual(["/", "/doc/d2"]);
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.views()).toEqual(["doc", "plan"]);
+    expect(t.x.getState().currentDoc).toBe("d1");
+    expect(t.leave.asks.filter((a) => a.view === "doc" && a.origin === "user").length).toBeGreaterThan(0);
+  });
+
+  it("with nothing recorded (a boot deep link) Back to a plain URL still falls back to the Library page", async () => {
+    const t = await booted({ url: "/doc/d1", panes: [{ id: 1, view: "plan", size: 1 }] });
+    t.browser.pop("/");
+    expect(t.views()).toEqual(["library"]);
+  });
+
+  it("a stale record is ignored and no pane is touched: the pane shows another Doc now, or is no Doc pane any more", async () => {
+    const t = await booted();
+    t.x.openDoc("d2");
+    t.x.setCurrentDoc("d1"); // a switch inside the Doc pane
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.views()).toEqual(["doc"]);
+    expect(t.x.getState().currentDoc).toBe("d1");
+
+    const u = await booted();
+    u.x.openDoc("d2");
+    u.x.setPaneView(1, "write");
+    u.browser.port.back();
+    await u.browser.settle();
+    await flush();
+    expect(u.views()).toEqual(["write"]);
+  });
+
+  it("the record also puts the replaced view back when Back lands on #explore/ or #argument/", async () => {
+    for (const url of ["/#explore/2020X", "/#argument/w1"]) {
+      const t = await booted({
+        url,
+        panes: [
+          { id: 1, view: "library", size: 1 },
+          { id: 2, view: "plan", size: 1 },
+        ],
+        activeId: 2,
+      });
+      t.x.openDoc("d2");
+      expect(t.views()).toEqual(["library", "doc"]);
+      expect(t.browser.entries).toEqual([url, "/doc/d2"]);
+      t.browser.port.back();
+      await t.browser.settle();
+      await flush();
+      expect(t.views()).toEqual(["library", "plan"]);
+      expect(t.browser.url()).toBe(url);
+    }
+  });
+
+  it("a second, different Back while the Doc's question is open asks for itself, and the earlier answer is void", async () => {
+    const t = await booted();
+    t.x.openDoc("d2");
+    t.leave.lateFor("doc");
+    t.browser.port.back(); // to "/": asks (record: the Plan page)
+    await t.browser.settle();
+    expect(t.leave.late).toHaveLength(1);
+    t.browser.pop("/#explore/2020X"); // another navigation before the answer
+    expect(t.leave.late).toHaveLength(2);
+    t.leave.late[0]!(true); // the answer to the first question
+    await flush();
+    expect(t.views()).toEqual(["doc"]);
+    t.leave.late[1]!(true);
+    await flush();
+    expect(t.views()).toEqual(["library"]);
+    expect(t.library.explores).toEqual(["2020X"]);
+  });
+
+  it("a refused Back to the recorded view asks once and puts the Doc's URL back", async () => {
+    const t = await booted();
+    t.x.openDoc("d2");
+    t.leave.answer((view) => view !== "doc");
+    const before = t.leave.asks.length;
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.leave.asks.slice(before).filter((a) => a.view === "doc")).toHaveLength(1);
+    expect(t.views()).toEqual(["doc"]);
+    expect(t.browser.url()).toBe("/doc/d2");
+  });
+
+  it("from any other URL it writes a new entry too (the task drawer, the Copilot's open_doc)", async () => {
     const t = await booted({ url: "/doc/d1" });
     t.x.openDoc("d2", "sec-1");
-    expect(t.browser.entries).toEqual(["/doc/d2#sec-1"]);
+    expect(t.browser.entries).toEqual(["/doc/d1", "/doc/d2#sec-1"]);
+    expect((await t.x.openDocAction("d1")).ok).toBe(true);
+    expect(t.browser.entries).toEqual(["/doc/d1", "/doc/d2#sec-1", "/doc/d1"]);
+  });
+
+  it("the address it would write is the address already there: no second entry", async () => {
+    const t = await booted({ url: "/doc/d1" });
+    t.x.openDoc("d1");
+    t.x.openDoc("d1", null);
+    expect(t.browser.entries).toEqual(["/doc/d1"]);
+  });
+
+  it("Back/Forward to a Doc address opens the Doc without writing an entry of its own", async () => {
+    const t = await booted({ panes: [{ id: 1, view: "library", size: 1 }] });
+    t.x.openDoc("d1");
+    t.x.setPaneView(1, "library");
+    t.x.openDoc("d2");
+    expect(t.browser.entries).toEqual(["/", "/doc/d1", "/doc/d2"]);
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.x.getState().currentDoc).toBe("d1");
+    expect(t.browser.entries).toEqual(["/", "/doc/d1", "/doc/d2"]);
+    expect(t.browser.index).toBe(1);
+  });
+
+  it("from an exploration it writes a new entry, so Back returns to the exploration (the Library pane is made again)", async () => {
+    const t = await booted({ url: "/#explore/2020X" });
+    expect(t.library.explores).toEqual(["2020X"]);
+    expect(t.x.openDoc("d2")).toBe(true);
+    expect(t.browser.entries).toEqual(["/#explore/2020X", "/doc/d2"]);
+    expect(t.views()).toEqual(["doc"]);
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.browser.url()).toBe("/#explore/2020X");
+    expect(t.views()).toEqual(["library"]);
+  });
+
+  it("refused by the open Doc's guard: no entry is written", async () => {
+    const t = await booted({ url: "/doc/d1" });
+    t.leave.answer((view) => view !== "doc");
+    expect(t.x.openDoc("d2")).toBe(false);
+    expect(t.browser.entries).toEqual(["/doc/d1"]);
   });
 
   it("with no Doc given it shows the current Doc (else the first) and leaves the address and the anchor alone", async () => {
@@ -713,6 +1049,23 @@ describe("the current Doc", () => {
     expect(t.host().currentDoc()).toBe("d1");
     expect(await t.host().openDoc("d2")).toEqual({ ok: true });
     expect(t.host().currentDoc()).toBe("d2");
+  });
+});
+
+describe("the Library pages' remembered selection", () => {
+  it("is kept per pane and dropped when the pane closes", async () => {
+    const t = await booted({
+      panes: [
+        { id: 1, view: "library", size: 1 },
+        { id: 2, view: "library", size: 1 },
+      ],
+    });
+    t.x.librarySelection.set(1, "n1");
+    t.x.librarySelection.set(2, "n2");
+    expect(t.x.librarySelection.get(1)).toBe("n1");
+    t.x.close(2);
+    expect(t.x.librarySelection.get(2)).toBeUndefined();
+    expect(t.x.librarySelection.get(1)).toBe("n1");
   });
 });
 

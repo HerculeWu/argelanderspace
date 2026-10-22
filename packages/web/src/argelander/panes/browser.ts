@@ -18,6 +18,10 @@ export interface BrowserPort {
   push(url: string): void;
   /** The current entry rewritten; no navigation event (as `history.replaceState`). */
   replace(url: string): void;
+  /** The history state of the current entry (`history.state`); null when none was written. */
+  state(): unknown;
+  /** Write the current entry's state, its address kept (`history.replaceState(state, "")`). `replace` clears it, as the browser does. */
+  setState(state: unknown): void;
   /** The browser's Back: the traversal and its `popstate` (and `hashchange`) come later. */
   back(): void;
   /** `onNav` for every `popstate` and every `hashchange`; the returned function stops listening. */
@@ -41,6 +45,8 @@ export function windowBrowser(): BrowserPort {
       const { pathname, hash, search, href } = window.location;
       return { pathname, hash, search, href };
     },
+    state: () => window.history.state,
+    setState: (state) => window.history.replaceState(state, ""),
     push: (url) => window.history.pushState(null, "", url),
     replace: (url) => window.history.replaceState(null, "", url),
     back: () => window.history.back(),
