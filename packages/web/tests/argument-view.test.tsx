@@ -187,7 +187,7 @@ describe("reading panel", () => {
 
   it("marks an implicit Warrant, and only then", () => {
     const { container } = panel("n1");
-    expect(container.querySelector('[data-ui="argument-warrant-implicit"]')!.textContent).toBe("(implicit)");
+    expect(container.querySelector('[data-ui="argument-warrant-implicit"]')!.textContent).toBe("（隐含）");
     cleanup();
     const { container: c2 } = panel("n2");
     expect(c2.querySelector('[data-ui="argument-warrant-implicit"]')).toBeNull();

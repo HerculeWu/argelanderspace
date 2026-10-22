@@ -72,10 +72,10 @@
     "rightPanel": {
       "refsTab": "引用",
       "annotationsTab": "标注",
-      "inView": "In view · {{count}}",
+      "inView": "视野内 · {{count}}",
       "referencesTooltip": "查看当前视野中的引用",
       "annotationsTooltip": "查看文档标注",
-      "empty": "Nothing referenced in the current view. Scroll the article — figures, equations, tables and citations mentioned nearby appear here."
+      "empty": "当前视野内没有被引用的内容。滚动文章后，附近提到的图、公式、表格和引用会出现在这里。"
     },
     "referenceCard": {
       "expand": "展开内容",
@@ -95,19 +95,19 @@
     "mathBudgetUsed": "本文档的大公式过多，此公式未排版，显示其源码：",
     "mathTooLarge": "公式过大，未排版（{{count}} 个字符），显示其源码：",
     "empty": "没有可显示的文档。处理一篇论文，或从 文献 中打开。",
-    "loadingPaper": "Loading paper…",
-    "switchPaper": "Switch paper",
-    "metaPages": "{{n}} pp · ",
-    "metaRefsFigs": "{{refs}} refs · {{figs}} figs",
+    "loadingPaper": "正在载入文档…",
+    "switchPaper": "切换文档",
+    "metaPages": "{{n}} 页 · ",
+    "metaRefsFigs": "{{refs}} 条引用 · {{figs}} 张图",
     "positionNote": "更新后位置可能变化",
-    "expandContents": "Expand contents",
-    "collapseContents": "Collapse contents",
-    "railContents": "Contents",
-    "expandRefs": "Expand references",
-    "collapseRefs": "Collapse references",
-    "railRefs": "References",
-    "undoTitle": "Return to position before the jump",
-    "undoBack": "↩ Back",
+    "expandContents": "展开目录",
+    "collapseContents": "收起目录",
+    "railContents": "目录",
+    "expandRefs": "展开引用",
+    "collapseRefs": "收起引用",
+    "railRefs": "引用",
+    "undoTitle": "回到跳转之前的位置",
+    "undoBack": "↩ 返回",
     "actions": {
       "expandOutline": "展开目录",
       "collapseOutline": "收起目录",
@@ -940,8 +940,8 @@
       "jumpTo": "跳转到{{title}}"
     },
     "tabs": {
-      "references": "References",
-      "crossrefs": "Crossrefs",
+      "references": "参考文献",
+      "crossrefs": "交叉引用",
       "comments": "评论"
     },
     "refs": {
@@ -987,9 +987,9 @@
       "affils": "机构",
       "addAuthor": "作者",
       "addAffil": "机构",
-      "namePh": "Name",
-      "affPh": "Aff.",
-      "emailPh": "Email"
+      "namePh": "姓名",
+      "affPh": "机构",
+      "emailPh": "邮箱"
     },
     "preamble": {
       "title": "导言区",
@@ -2216,7 +2216,7 @@
       "panel": {
         "label": "论证详情",
         "close": "关闭",
-        "implicit": "(implicit)",
+        "implicit": "（隐含）",
         "implicitLabel": "原文未明说，由整理者补出",
         "notFilled": "未填写",
         "findings": "审计发现",
@@ -2269,7 +2269,7 @@
       "kindEndHint": "本文的最终贡献或结论",
       "unsavedNew": "新论证尚未保存",
       "linkNeedsSave": "保存这个论证后才能连边",
-      "implicitCheck": "(implicit)",
+      "implicitCheck": "（隐含）",
       "addFrom": "添加来自其他论证的 {{role}}",
       "addUse": "让另一个论证使用它…",
       "pickArg": "选择论证…",

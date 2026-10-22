@@ -178,7 +178,7 @@ describe("DocPane deep-link anchors", () => {
   it("the topbar shows the ref/fig counts (no nPages for latex docs)", async () => {
     const { container } = renderDocPane(null);
     await waitFor(() => expect(container.querySelector(".doc-meta")).toBeTruthy());
-    expect(container.querySelector(".doc-meta")?.textContent).toBe("76 refs · 25 figs");
+    expect(container.querySelector(".doc-meta")?.textContent).toBe("76 条引用 · 25 张图");
   });
 
   it("unknown anchor still opens the doc without scrolling", async () => {
