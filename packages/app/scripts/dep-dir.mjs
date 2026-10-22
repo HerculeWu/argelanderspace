@@ -14,7 +14,7 @@
 //   --online  let pnpm download what the local store lacks (another target's native packages). Default: --offline,
 //             from the local pnpm store only, like smoke-pack's --offline-lock. Either way versions come from the repo
 //             lockfile (--frozen-lockfile); the registry's own resolution of the ranges is never used.
-//   --keep    comma list of categories NOT to prune: fonts, foreign, esbuild (all three = the unpruned control).
+//   --keep    comma list of categories NOT to prune: fonts, foreign, esbuild, peers (all four = the unpruned control).
 //   --no-license-scan  skip the license scan of the closure (it needs a second, isolated install).
 //   --budget-mb  the size budget in decimal MB (default 500, the user's decision for ticket 22). What it measures: the
 //             sum of the sizes of the files under node_modules after pruning (`bytes_after` / `budget` in the report)
@@ -27,8 +27,9 @@
 // optional native packages come in. The layout is `node-linker=hoisted` (a flat npm-style tree, no symlinks: installers
 // and Tauri resources copy it as plain files) with `package-import-method=copy` (no hard links into the real store, so
 // pruning can never touch it). Then the prune rules of dep-dir-lib.mjs remove the font files of the PDF engine's
-// non-CJK font packages (the CJK ones are its font fallback and stay, ticket 28), other platforms' prebuilt files and
-// esbuild. The license scan (scripts/license-scan.mjs, unchanged) needs pnpm's isolated layout, so
+// non-CJK font packages (the CJK ones are its font fallback and stay, ticket 28), other platforms' prebuilt files,
+// esbuild, and typescript with the UI frameworks that are only peers of @embedpdf/engines (ticket 29) plus what only
+// they pull in. The license scan (scripts/license-scan.mjs, unchanged) needs pnpm's isolated layout, so
 // it runs on a second, isolated install of the same lockfile in a temp dir.
 //
 // Isolation, stated exactly (the smoke-pack convention; NOT a fully isolated tree): pnpm runs with an env allowlist
@@ -60,6 +61,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { installedPackages as packages } from "./dep-dir-fs.mjs";
 import {
   budgetCheck,
   corepackCommand,
@@ -67,6 +69,8 @@ import {
   expectedPlatformPackages,
   findTool,
   foreignPrebuild,
+  orphanPackages,
+  PEER_FRAMEWORK_PACKAGES,
   PRUNE_CATEGORIES,
   pnpmVersion,
   pruneAction,
@@ -234,28 +238,6 @@ function du(path) {
   for (const e of readdirSync(path)) n += du(join(path, e));
   return n;
 }
-/** Every installed package directory (hoisted and nested), with its package.json. */
-function packages(root) {
-  const found = [];
-  const visitModules = (modulesDir) => {
-    if (!existsSync(modulesDir)) return;
-    for (const entry of readdirSync(modulesDir)) {
-      if (entry.startsWith(".")) continue;
-      const p = join(modulesDir, entry);
-      if (entry.startsWith("@")) {
-        for (const sub of readdirSync(p)) visitPackage(join(p, sub));
-      } else visitPackage(p);
-    }
-  };
-  const visitPackage = (dir) => {
-    const pj = join(dir, "package.json");
-    if (!existsSync(pj)) return;
-    found.push({ dir, pkg: JSON.parse(readFileSync(pj, "utf8")) });
-    visitModules(join(dir, "node_modules"));
-  };
-  visitModules(root);
-  return found;
-}
 function dirsUnder(dir, base = dir, acc = []) {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     if (!e.isDirectory() || e.name === "node_modules") continue;
@@ -281,9 +263,34 @@ function dirsUnder(dir, base = dir, acc = []) {
 const sizeBefore = du(nm);
 const countBefore = packages(nm).length;
 const removed = Object.fromEntries(PRUNE_CATEGORIES.map((c) => [c, []]));
+// peers (ticket 29): what only typescript and the UI frameworks pull in goes with them. A package that really depends
+// on one of them (not as a peer) would be broken by removing it: refuse instead.
+let peerOrphans = new Set();
+let unexpectedPeerDependents = [];
+if (!keep.has("peers")) {
+  const plan = orphanPackages(
+    packages(nm).map(({ pkg }) => pkg),
+    Object.keys(subset.dependencies),
+    PEER_FRAMEWORK_PACKAGES
+  );
+  if (plan.hardDependents.length > 0)
+    throw new Error(
+      `peers: ${plan.hardDependents.map((d) => `${d.from} depends on ${d.to}`).join(", ")}; those cannot be removed`
+    );
+  peerOrphans = new Set(plan.orphans);
+  // @embedpdf/engines is the known package that lists them as peers (its framework entry points are never loaded).
+  // Any other reachable package with such a peer would lose it silently: say so (report + warning).
+  unexpectedPeerDependents = plan.peerDependents.filter((d) => d.from !== "@embedpdf/engines");
+  for (const d of unexpectedPeerDependents)
+    console.warn(
+      `warning: peers: ${d.from} lists ${d.to} as a peer dependency, and ${d.to} is removed`
+    );
+}
 for (const { dir, pkg } of packages(nm)) {
   if (!existsSync(dir)) continue; // inside a package removed earlier
-  const action = pruneAction(pkg, target);
+  const action = peerOrphans.has(pkg.name)
+    ? { category: "peers", remove: "." }
+    : pruneAction(pkg, target);
   if (action && !keep.has(action.category)) {
     const path = action.remove === "." ? dir : join(dir, action.remove);
     if (existsSync(path)) {
@@ -379,6 +386,7 @@ const report = {
   ),
   packages_without_license_file: withoutFile,
   packages_without_license_text: withoutText,
+  peer_dependents_of_removed: unexpectedPeerDependents,
   budget: {
     measures: "sum of file sizes under node_modules after pruning (decimal MB = 1e6 bytes)",
     bytes: budget.bytes,

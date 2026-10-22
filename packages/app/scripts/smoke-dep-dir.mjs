@@ -52,7 +52,18 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { findTool, pngInk, removalPath, runErrorCategory, smokeVerdict } from "./dep-dir-lib.mjs";
+import { installedPackages } from "./dep-dir-fs.mjs";
+import {
+  findTool,
+  loadedAmong,
+  loadedPackages,
+  orphanPackages,
+  PEER_FRAMEWORK_PACKAGES,
+  pngInk,
+  removalPath,
+  runErrorCategory,
+  smokeVerdict,
+} from "./dep-dir-lib.mjs";
 
 const appRoot = fileURLToPath(new URL("..", import.meta.url));
 const argv = process.argv.slice(2);
@@ -694,26 +705,44 @@ if (givenNode)
 // Which dependency files were loaded, by phase.
 const trace = existsSync(traceFile) ? readFileSync(traceFile, "utf8").split("\n") : [];
 const nmUrl = pathToFileURL(join(sidecar, "node_modules")).href;
-let phase = "";
-const byPhase = {};
-for (const line of trace) {
-  if (line.startsWith("# ")) phase = line.slice(2);
-  else if (line.startsWith(nmUrl)) {
-    const rel = line.slice(nmUrl.length + 1);
-    const pkg = rel.startsWith("@") ? rel.split("/").slice(0, 2).join("/") : rel.split("/")[0];
-    byPhase[phase] ??= new Set();
-    byPhase[phase].add(pkg);
-  }
-}
-observed.loadedPackages = Object.fromEntries(
-  Object.entries(byPhase).map(([p, s]) => [p, [...s].sort()])
-);
-const all = new Set(Object.values(byPhase).flatMap((s) => [...s]));
+const byPhase = loadedPackages(trace, nmUrl);
+observed.loadedPackages = byPhase;
+const all = new Set(Object.values(byPhase).flat());
 observed.loadedEsbuild = [...all].filter((p) => p === "esbuild" || p.startsWith("@esbuild/"));
 observed.loadedFontManifests = [...all].filter((p) => p.startsWith("@embedpdf/fonts-"));
 log(
   `loaded dependency packages: ${all.size}; esbuild: ${observed.loadedEsbuild.join(",") || "none"}; font manifests: ${observed.loadedFontManifests.length}; native files mapped by the host: ${observed.loadedNative ? observed.loadedNative.join(",") || "none" : "not read"}`
 );
+// Ticket 29: typescript, the UI frameworks that are only peers of @embedpdf/engines and what only they pull in are
+// removed from the dependency directory, so no run may load any of them. On an unpruned directory (the control) the
+// check is the evidence that removing them is safe; on a pruned one it shows nothing was missed. `present` says which
+// of them this directory still holds, so a pass over an already-pruned directory is not mistaken for the evidence.
+{
+  const nm = join(sidecar, "node_modules");
+  // the same enumeration dep-dir.mjs prunes by, nested copies (foo/node_modules/react) included
+  const installed = installedPackages(nm);
+  const topLevel = installed.map(({ pkg }) => pkg);
+  const roots = Object.keys(
+    JSON.parse(readFileSync(join(appRoot, "package.json"), "utf8")).dependencies ?? {}
+  );
+  const watched = [
+    ...PEER_FRAMEWORK_PACKAGES,
+    ...orphanPackages(topLevel, roots, PEER_FRAMEWORK_PACKAGES).orphans,
+  ];
+  const present = [...new Set(topLevel.map((p) => p.name))]
+    .filter((n) => watched.includes(n))
+    .sort();
+  observed.peers = { present, loaded: loadedAmong(byPhase, watched) };
+  check(
+    observed.peers.loaded.length === 0,
+    "typescript, the UI-framework peers of @embedpdf/engines and what only they pull in were not loaded by any path",
+    observed.peers.loaded.length > 0
+      ? `loaded: ${observed.peers.loaded.join(", ")}`
+      : present.length === 0
+        ? "none of them is in this directory"
+        : `${present.length} of them are in this directory and none was loaded: ${present.slice(0, 8).join(", ")}${present.length > 8 ? ", …" : ""}`
+  );
+}
 writeFileSync(
   join(evidenceDir, `${label}-modules.txt`),
   trace.map((l) => l.replace(pathToFileURL(work).href, "<tmp>")).join("\n")
