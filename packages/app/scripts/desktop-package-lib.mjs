@@ -149,10 +149,21 @@ export function keyringNativeFile(target) {
 export const SHELL_NOTICES_FILE = "THIRD-PARTY-SHELL-NOTICES.txt";
 
 /**
+ * The tutorial sample in the resource directory (in-app-tutorial ticket 27): desktop-sidecar.mjs copies the repository's
+ * tutorial-sample/ here, unpacked, and tauri.package.conf.json maps it; infra `bundledTutorialDir` finds it from the
+ * packaged CLI entry (`<resources>/sidecar/app/dist/bin.js` → `<resources>/tutorial`).
+ *
+ * Kept here, not imported from infra: this module holds pure rules and imports no build output, and infra does not
+ * export the name (it is a literal inside `bundledTutorialDir`). desktop-package.test.mjs checks that infra's
+ * `bundledTutorialDir` finds the sample at exactly this resource directory.
+ */
+export const TUTORIAL_RESOURCE_DIR = "tutorial";
+
+/**
  * The files a sidecar must have, relative to the bundle's resource directory: the Node runtime and its license; the
  * app's build (CLI bundle, page resources, argelander.sty, notices) with its package.json (version, module type) and
  * license; PDFium's WASM and the keychain module's native file in the dependency directory with its notices; the skills;
- * the shell's crate notices.
+ * the shell's crate notices; the tutorial sample's marker (what bundledTutorialDir looks for) and its notice.
  */
 export function sidecarRequiredFiles(target) {
   const node = nodeDist("0.0.0", target).binary;
@@ -176,7 +187,49 @@ export function sidecarRequiredFiles(target) {
     "sidecar/sidecar-manifest.json",
     "skills/README.md",
     SHELL_NOTICES_FILE,
+    `${TUTORIAL_RESOURCE_DIR}/argelanderspace-tutorial.json`,
+    `${TUTORIAL_RESOURCE_DIR}/NOTICE.md`,
   ];
+}
+
+/** The required files (sidecarRequiredFiles) not under `root`; `exists` is the file system's existsSync. */
+export function missingRequiredFiles(root, target, exists) {
+  return sidecarRequiredFiles(target).filter((f) => !exists(`${root}/${f}`));
+}
+
+/**
+ * Entries of the resource directory's tutorial/ that are a library cache (`literatures/library/cache` and anything
+ * below it), as `tutorial/...` paths; the assembly and the package smoke fail on any. A library cache holds source data
+ * (ADS API terms forbid redistributing anything obtained from ADS); the sample carries none since 2026-10-21, and the
+ * npm package's pack-contents rule refuses it the same way (in-app-tutorial tickets 16, 27). `list` is
+ * `(dir) => readdirSync(dir, { recursive: true })`; no tutorial/ at all is the required-files check's to report.
+ */
+export function tutorialCacheEntries(root, list) {
+  let entries;
+  try {
+    entries = list(`${root}/${TUTORIAL_RESOURCE_DIR}`);
+  } catch (error) {
+    if (error?.code === "ENOENT") return [];
+    throw error;
+  }
+  return entries
+    .map((e) => String(e).replaceAll("\\", "/"))
+    .filter((e) => /(^|\/)literatures\/library\/cache(\/|$)/.test(e))
+    .map((e) => `${TUTORIAL_RESOURCE_DIR}/${e}`);
+}
+
+/**
+ * The cpSync filter for packages/app/dist → sidecar/app/dist: everything but dist/tutorial (the npm build's copy of
+ * the sample, ticket 16). The desktop package carries the sample once, at the resource directory's tutorial/, which is
+ * where bundledTutorialDir looks in the packaged layout; a second copy under dist/ would only be dead weight.
+ */
+export function sidecarAppDistFilter(distRoot) {
+  const slash = (p) => p.replaceAll("\\", "/");
+  const skip = `${slash(distRoot).replace(/\/+$/, "")}/${TUTORIAL_RESOURCE_DIR}`;
+  return (src) => {
+    const p = slash(src);
+    return p !== skip && !p.startsWith(`${skip}/`);
+  };
 }
 
 /**

@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "id": "m_6d2f8b14",
+  "rev": 1,
+  "template": "report",
+  "title": "The tidal tails of the Hyades: extent, substructure and asymmetry",
+  "authors": [],
+  "affiliations": [],
+  "userPreamble": "",
+  "infoValues": {
+    "date": ""
+  },
+  "cells": [
+    {
+      "id": "c_0a1b2c3d",
+      "type": "latex",
+      "data": {
+        "source": "\\begin{abstract}\nGaia astrometry has turned the tidal tails of the Hyades from a theoretical expectation into an observed structure. We review how the tails were first detected close to the cluster, how a model-based selection extended the candidate members to the full expected length of about 800\\,pc, and why the asymmetry between the leading and the trailing tail has become a test of gravitational dynamics.\n\\end{abstract}"
+      }
+    },
+    {
+      "id": "c_1e2f3a4b",
+      "type": "latex",
+      "data": {
+        "source": "\\citet{2019A&A...621L...2R} searched a 200\\,pc sphere around the Sun in Gaia DR2 with a modified convergent point method and found a clear indication of both tails. \\citet{2019A&A...621L...3M} detected two well-defined tails independently, selecting members in three-dimensional galactocentric cylindrical velocity space. \\citet{2021A&A...647A.137J} showed with $N$-body models that the full tails do not form a compact group in any velocity space, introduced the compact convergent point (CCP) method, and recovered candidate members along the expected length of about 800\\,pc; in Gaia eDR3 they also found spatial overdensities that are kinematically consistent with epicyclic overdensities."
+      }
+    },
+    {
+      "id": "c_1b25d01a",
+      "type": "latex",
+      "data": {
+        "source": "The difference between the two estimates is instructive, because it is not a change in the cluster but a change in selection. \\citet{2019A&A...621L...2R} worked within a $200\\,$pc sphere and selected members with a modified convergent point method; their recovered leading tail reached about $170\\,$pc from the cluster with 292 stars, and the trailing tail about $70\\,$pc with 237 stars, so the tails appeared asymmetric but confined to the immediate vicinity. \\citet{2021A&A...647A.137J} instead removed the model velocity--distance correlation along the tails (the CCP method) and traced candidate members out to a total extent of nearly $1\\,$kpc: 1109 candidates in Gaia DR2 (411 leading, 331 trailing) and 862 in eDR3 (293 leading, 166 trailing). The factor of roughly four between the two lengths therefore reflects the difference between a local overdensity search and a model-guided selection that can still follow the tails where their density has dropped below the field."
+      }
+    },
+    {
+      "id": "c_2a3b4c5d",
+      "type": "latex",
+      "data": {
+        "source": "In these data the leading tail holds more stars than the trailing one. Because the evaporation of stars into the tails is stochastic, \\citet{2023A&A...671A..88P} quantified how much asymmetry chance alone produces: for the Hyades the observed asymmetry lies at about $6.7\\sigma$, so processes beyond statistical evaporation are required. \\citet{2022MNRAS.517.3613K} found the tails nearly symmetrical in Newtonian models, whereas in Milgromian dynamics the asymmetry reaches the observed values."
+      }
+    }
+  ],
+  "comments": [],
+  "created_at": "2026-10-21T00:00:00.000Z",
+  "updated_at": "2026-10-21T18:47:41.950Z"
+}

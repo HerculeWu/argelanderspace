@@ -41,24 +41,44 @@ export const REQUIRED_FILES = [
   "dist/web/THIRD-PARTY-EMBEDPDF-NOTICES.txt",
   "dist/web/THIRD-PARTY-BUNDLED-NOTICES.txt",
   "dist/web/THIRD-PARTY-MAIL-NOTICES.txt",
+  // The tutorial sample (in-app-tutorial ticket 16): its marker makes bundledTutorialDir find it; its notice carries
+  // the papers' licenses.
+  "dist/tutorial/argelanderspace-tutorial.json",
+  "dist/tutorial/NOTICE.md",
   ...VENDORED_LICENSE_FILES,
 ];
 
-/** Only these top-level entries may exist in the tarball. */
+/** Only these top-level entries may exist in the tarball (dist/ includes the tutorial sample, dist/tutorial/…). */
 const ALLOWED_ROOT = /^(?:package\.json|README\.md|LICENSE|dist\/.+|licenses\/[^/]+)$/;
+
+/**
+ * The tutorial sample is a project folder by design (in-app-tutorial ticket 16): under dist/tutorial/ its literature
+ * data is what the package must carry. Every other rule holds there too.
+ */
+const TUTORIAL_SAMPLE = /^dist\/tutorial\//;
+/**
+ * The sample's one preset Copilot conversation (in-app-tutorial ticket 17): its record and its Pi session file, at
+ * exactly the places the server reads them. Only these two shapes are exempt from the Copilot and `.jsonl` rules.
+ */
+const TUTORIAL_CONVERSATION =
+  /^dist\/tutorial\/literatures\/copilot\/(?:conversations\/[^/]+\.json|sessions\/[^/]+\.jsonl)$/;
 
 const FORBIDDEN = [
   [/(^|\/)\.scratch(\/|$)/, "a private scratch/ticket file"],
-  [/(^|\/)literatures(\/|$)/, "literature data"],
+  [/(^|\/)literatures(\/|$)/, "literature data", "sample"],
+  // Never exempt, not even in the sample: a library cache holds source data (ADS API terms forbid redistributing
+  // anything obtained from ADS; the sample carries no cache since 2026-10-21, in-app-tutorial ticket 16).
+  [/(^|\/)literatures\/library\/cache(\/|$)/, "a library cache (e.g. ADS discovery data)"],
   [
     /(^|\/)(?:\.pi|\.git|\.codegraph|\.serena|node_modules|svglib)(\/|$)/,
     "a repository/tooling directory",
   ],
-  [/(^|\/)copilot(\/|$)/, "Copilot conversation data"],
+  [/(^|\/)copilot(\/|$)/, "Copilot conversation data", "conversation"],
   [/(^|\/)(?:auth|models|settings)\.json$/, "a provider credential/config file"],
   [/(^|\/)\.env(?:\.|$)|\.(?:pem|key)$|(^|\/)id_rsa/, "a secret-looking file"],
   [/\.tgz$/, "a nested tarball"],
-  [/\.(?:pdf|jsonl)$/i, "a document or conversation/session file"],
+  [/\.pdf$/i, "a document"],
+  [/\.jsonl$/i, "a conversation/session file", "conversation"],
   [/(^|\/)(?:\.npmrc|preferences\.json)$/, "a user config file"],
   [/\.map$/, "a source map (it would embed sources)"],
   [/\.test\.|(^|\/)tests?\//, "a test file"],
@@ -76,8 +96,15 @@ export function checkPackContents(paths) {
   for (const file of files) {
     if (!ALLOWED_ROOT.test(file))
       problems.push(`unexpected file outside the package contract: ${file}`);
-    for (const [pattern, why] of FORBIDDEN)
-      if (pattern.test(file)) problems.push(`forbidden file ${file}: ${why}`);
+    const inSample = TUTORIAL_SAMPLE.test(file);
+    const isConversation = TUTORIAL_CONVERSATION.test(file);
+    for (const [pattern, why, exempt] of FORBIDDEN)
+      if (
+        pattern.test(file) &&
+        !(inSample && exempt === "sample") &&
+        !(isConversation && exempt === "conversation")
+      )
+        problems.push(`forbidden file ${file}: ${why}`);
   }
   return problems;
 }

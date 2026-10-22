@@ -2752,5 +2752,478 @@
     "confirm": "仍然切换",
     "close": "关闭",
     "gone": "这次切换已不在等待确认，没有切换。"
+  },
+  "tutorial": {
+    "ui": {
+      "title": "教程",
+      "cardHeader": "第 {{chapter}} 章 · {{index}}/{{count}} · {{title}}",
+      "back": "上一步",
+      "next": "下一步",
+      "nextChapter": "下一章",
+      "finish": "完成教程",
+      "skip": "跳过这一步",
+      "leave": "退出教程",
+      "takeMeThere": "带我去",
+      "preparedText": "准备好的文字",
+      "copy": "复制",
+      "copied": "已复制",
+      "copyFailed": "没有复制成功：浏览器不允许写剪贴板",
+      "agentCard": "也可以让 agent 做",
+      "agentSkill": "skill：{{name}}",
+      "needsTex": "需要 TeX",
+      "noTexTitle": "本机没有找到 TeX",
+      "noTexBody": "可以跳过这一步；装好 TeX 后点「重新检查」。{{alt}}",
+      "recheck": "重新检查",
+      "recheckBusy": "正在检查…",
+      "rail": {
+        "heading": "教程 · 章节",
+        "title": "章节",
+        "collapse": "收起章节栏",
+        "expand": "展开章节栏",
+        "more": "更多",
+        "chapterLabel": "{{n}} {{title}} · {{state}}",
+        "chapterLabelNeedsTex": "{{n}} {{title}} · {{state}} · 需要 TeX",
+        "stepRow": "{{number}} {{title}}",
+        "stepRowSkipped": "{{number}} {{title}} · 已跳过",
+        "status": {
+          "notStarted": "未开始",
+          "inProgress": "进行中",
+          "done": "完成",
+          "skipped": "已跳过",
+          "needsTex": "需要 TeX"
+        },
+        "summary": "{{done}}/{{total}} 完成，{{skipped}} 跳过"
+      },
+      "capsule": "教程 · 第 {{chapter}} 章",
+      "capsuleResume": "继续教程",
+      "anchorWaiting": "正在等待界面…",
+      "anchorMissingTitle": "界面已变化",
+      "anchorMissingBody": "找不到这一步要指的位置。你可以自己做完这一步，再点「下一步」。",
+      "anchorOffscreenTitle": "目标在当前视图之外",
+      "anchorOffscreen": "滚动到该位置",
+      "requiresTitle": "先回到{{where}}",
+      "requiresBody": "这一步要在那里做。点「带我去」，教程会切过去。",
+      "requiresBodyNoAction": "这一步要在那里做。",
+      "modalYield": "关掉对话框后继续",
+      "progressNotSaved": "进度没有保存。教程照常继续，下次可能要从上次保存的位置开始。",
+      "dismissNotice": "关掉提示",
+      "leaveDialog": {
+        "title": "退出教程？",
+        "body": "进度已经保存。下次在欢迎页或设置页点「继续教程」就能接着做。",
+        "bodyNotSaved": "刚才有一次进度没有保存，下次可能要从上次保存的位置开始。在欢迎页或设置页点「继续教程」就能接着做。",
+        "confirm": "退出",
+        "cancel": "留在教程"
+      },
+      "existsDialog": {
+        "title": "教程文件夹已经在了",
+        "body": "{{path}} 里有你上次的教程。继续，还是清空重来？",
+        "continue": "继续",
+        "restart": "重新开始…"
+      },
+      "restartDialog": {
+        "title": "重新开始教程？",
+        "body": "将清空 {{path}} 并重新复制示例。你在教程里写的标注、论证、任务、稿件都会删除，不能恢复。",
+        "confirm": "清空并重新开始"
+      },
+      "restartBrowser": {
+        "title": "浏览器形态要在终端里重新开始",
+        "body": "工作台运行时不能清空自己的数据目录。退出后在终端运行："
+      },
+      "where": {
+        "library": "文献库",
+        "workDetail": "{{work}} 的详情",
+        "reader": "{{work}} 的阅读器",
+        "plan": "计划页",
+        "writer": "稿件编辑器",
+        "settings": "设置页",
+        "argumentGraph": "{{work}} 的论证图",
+        "copilot": "Copilot 面板"
+      }
+    },
+    "entry": {
+      "start": "开始教程",
+      "resume": "继续教程",
+      "restart": "重新开始…",
+      "rowLabel": "教程",
+      "rowHelp": "在一个单独的示例项目里，分章走一遍工作台的主要功能。不会改动你自己的项目。",
+      "rowBrowser": "在终端运行这条命令开始教程：",
+      "sampleMissing": "本安装不含教程示例",
+      "starting": "正在准备教程文件夹…",
+      "failed": {
+        "target_conflict": "没有开始教程：{{path}} 已经存在，而且不是教程文件夹。换一个父文件夹，或把它改名。",
+        "copy_failed": "没有开始教程：示例没有复制到 {{path}}。检查磁盘空间和写入权限后再试；已经写入的部分已清掉。",
+        "not_a_folder": "没有开始教程：{{path}} 不是文件夹。",
+        "shutting_down": "没有开始教程：工作台正在关闭，稍后再试。"
+      },
+      "outdatedSample": "这个教程项目由旧版示例创建，可能无法正常加载。建议重新开始——会删除你在教程里写的标注、论证、任务和稿件。"
+    },
+    "chapters": {
+      "prepare": {
+        "title": "准备"
+      },
+      "tour": {
+        "title": "工作台导览"
+      },
+      "library": {
+        "title": "添加文献"
+      },
+      "reading": {
+        "title": "阅读与标注"
+      },
+      "discovery": {
+        "title": "探索文献"
+      },
+      "argument": {
+        "title": "论证图"
+      },
+      "plan": {
+        "title": "计划"
+      },
+      "writer": {
+        "title": "写作"
+      },
+      "copilot": {
+        "title": "Copilot"
+      },
+      "finish": {
+        "title": "结束"
+      }
+    },
+    "steps": {
+      "prepare": {
+        "settings": {
+          "title": "打开设置页",
+          "body": "点左侧导航最下面的「设置」。设置分成几组：外观、项目、文献服务与凭据、TeX 与环境、Copilot、诊断。教程只用其中三组。",
+          "waiting": "进入设置页后自动前进"
+        },
+        "environment": {
+          "title": "检查 TeX",
+          "body": "在「TeX 与环境」里点「重新检查」，工作台会去找 latexmk、pdflatex 等程序。没找到也没关系，教程会标出哪些步骤需要 TeX。",
+          "waiting": "检查完成后自动前进"
+        },
+        "ads": {
+          "title": "ADS token 填在这里",
+          "body": "「文献服务与凭据」里的 ADS token 用于在线探索文献，教程只在第 4 章用到。想在那章看到真实结果就填你自己的 token；不填也能走完，那几步点「跳过这一步」。"
+        },
+        "agent": {
+          "title": "给你的 agent 装上 skills",
+          "intro": "在「命令行与 agent」里装命令行工具、打开 skills 文件夹，把五个 skill 复制给你的 agent。",
+          "prompt": "读一遍 ArgelanderSpace 的 skills 目录，告诉我每个 skill 能做什么",
+          "skill": "argelander-paper-ingest · argelander-read-paper · argelander-find-papers · argelander-query-paper-library · argelander-argument-graph",
+          "introBrowser": "命令行工具你已经在用：`argelanderspace tutorial` 就是它。skills 在仓库里，克隆或下载后复制到你的 agent 的 skills 目录。",
+          "promptBrowser": "https://github.com/HerculeWu/argelanderspace/tree/main/skills"
+        }
+      },
+      "tour": {
+        "library": {
+          "title": "打开文献库",
+          "body": "左侧导航有六个入口：计划、文献、文档、写作、邮件、设置。点「文献」。",
+          "waiting": "打开文献库后自动前进"
+        },
+        "split": {
+          "title": "向右分屏",
+          "body": "点标题栏的「向右分屏」，右边会多出一个面板。并排的面板能同时看文献、文档和计划。",
+          "waiting": "出现第二个面板后自动前进"
+        },
+        "pane-views": {
+          "title": "一个面板，多种视图",
+          "body": "每个面板顶部的标题可以切换视图。同一个面板随时能从文献切到文档或计划，不用回导航。"
+        },
+        "close-pane": {
+          "title": "合上分屏",
+          "body": "看完后点右边面板的「关闭窗格」，合回一个面板。",
+          "waiting": "只剩一个面板后自动前进"
+        },
+        "palette": {
+          "title": "命令面板",
+          "body": "按 Ctrl+K（Mac 上 ⌘K）打开命令面板，这里能搜命令、文件和文献。按 Esc 关掉。",
+          "waiting": "命令面板出现后自动前进"
+        },
+        "tweaks": {
+          "title": "外观速调",
+          "body": "标题栏右侧的「外观速调」能改主题、强调色、密度和语言。旁边的 Copilot 开关第 8 章再讲。"
+        }
+      },
+      "library": {
+        "list": {
+          "title": "示例文献库",
+          "body": "这里是五篇关于 Hyades 潮汐尾的论文。左边是列表，中间是引用图，点一条会在右边打开详情。"
+        },
+        "work-vs-doc": {
+          "title": "点开 Röser 2019",
+          "body": "点 Röser 等 2019。它有书目信息，「全文」标签里却没有正文：一条文献条目（Work）可以没有正文文档（Doc）。",
+          "waiting": "打开 Röser 2019 的「全文」标签后自动前进"
+        },
+        "add-bibtex": {
+          "title": "用 BibTeX 添加一篇",
+          "body": "先复制下面的 BibTeX，再点「导入文献」→「导入 BibTeX / RIS」，粘进去，点「导入条目」。这一步完全在本机完成。",
+          "waiting": "库中出现 Evans & Oh 2022 后自动前进",
+          "prepared": {
+            "label": "Evans & Oh 2022 的 BibTeX"
+          }
+        },
+        "acquisition": {
+          "title": "四种取正文的方式",
+          "body": "新条目的「全文」标签里点「获取全文…」。从 arXiv 取源码或 PDF 要联网；上传本地源码包或 PDF 不用。教程走上传。"
+        },
+        "upload-source": {
+          "title": "上传源码包摄入",
+          "body": "选「上传 LaTeX 源码包」，选 tutorial-assets 里的 evans-oh-2022-source.zip，点「上传并处理」。摄入（Ingest）把源码变成正文，随后联网补全元数据，不用 ADS token。",
+          "waiting": "摄入完成、正文出现后自动前进",
+          "alt": "没有 TeX 不能摄入。改看 Jerabkova 2021 的「全文」标签里已摄入的正文。"
+        },
+        "cite-key": {
+          "title": "引用键与 BibTeX",
+          "body": "详情里的「复制引用键」给你写作时用的 cite key；「BibTeX」标签能复制整条。每篇文献只有一个引用键。"
+        },
+        "agent": {
+          "title": "也可以让 agent 添加",
+          "intro": "装了命令行工具的 agent 能直接添加并摄入一篇 arXiv 论文。把这句话发给它：",
+          "prompt": "用 argelander-paper-ingest 把 arXiv:2202.06973 加进文献库并摄入正文",
+          "skill": "argelander-paper-ingest（命令行：`argelanderspace ingest arXiv:2202.06973`，之后再运行 `argelanderspace library build`）"
+        }
+      },
+      "argument": {
+        "open": {
+          "title": "打开论证图",
+          "body": "在 Jerabkova 2021 的详情里点「论证图」。论证图（Argument graph）是这篇文献的论证结构，由整理者按 Toulmin 模型写出。",
+          "waiting": "论证图打开后自动前进"
+        },
+        "read": {
+          "title": "论证、边与标记",
+          "body": "每个节点是一个论证（Argument），A→B 表示 A 的 Claim 被 B 使用。底部的 Native 论证依据来自本文之外，顶部的 End 论证是本文结论。"
+        },
+        "detail": {
+          "title": "看一个论证的六个字段",
+          "body": "点顶部的 End 论证。右侧列出 Claim、Grounds、Warrant 和可选的 Backing、Qualifier、Rebuttal。点一条「出处」会跳回正文。",
+          "waiting": "论证详情打开后自动前进"
+        },
+        "audit": {
+          "title": "审计发现",
+          "body": "顶部的审计显示 1 项发现：有一个 Native 论证没有通往 End 的路径。它是故意留下的，接下来由你补上。"
+        },
+        "create": {
+          "title": "新建一个论证",
+          "body": "点「新建论证」，把下面的短标题和三个字段粘进去，保存。审计会变成 2 项：新论证也还没连到 End。",
+          "waiting": "新论证保存后自动前进",
+          "prepared": {
+            "label": "短标题与三个字段",
+            "text": "短标题：尾部延伸到几百 pc 外\nClaim：Hyades 潮汐尾的成员星可以在离星团几百 pc 的地方被找到。\nGrounds：Röser 与 Meingast 已用 Gaia DR2 在星团附近找到尾部；扩大搜索范围后尾部仍在延续。\nWarrant：成员星在速度空间仍与星团一致，位置上离得远不是排除它们的理由。"
+          }
+        },
+        "link-end": {
+          "title": "把它接到 End 论证",
+          "body": "在新论证的详情里点「让另一个论证使用它…」，勾选「显示全部论证」才能找到 End 论证，选它，「作为」选 Grounds。审计回到 1 项。",
+          "waiting": "新增一条边后自动前进"
+        },
+        "link-native": {
+          "title": "补上孤立的 Native",
+          "body": "点那个孤立的 Native 论证，同样让新论证使用它，角色 Grounds。审计显示「审计通过」。",
+          "waiting": "审计通过后自动前进"
+        },
+        "agent": {
+          "title": "也可以让 agent 整理",
+          "intro": "整理一整篇的论证图是 agent 的强项。把这句话发给它：",
+          "prompt": "用 argelander-argument-graph 整理 Jerabkova 2021 的论证图，标出 Native 和 End",
+          "skill": "argelander-argument-graph（`argument get` / `argument put`）"
+        }
+      },
+      "plan": {
+        "open": {
+          "title": "打开计划页",
+          "body": "点导航的「计划」，选左侧的预置计划。计划（Plan）是一组科研任务（Task），每个任务有自己的期限和状态。",
+          "waiting": "打开计划页后自动前进"
+        },
+        "tasks": {
+          "title": "任务按状态分组",
+          "body": "任务分成待办、进行中、受阻、已完成。其中一条是第 8 章里 Copilot 建的。"
+        },
+        "create-task": {
+          "title": "新建一个任务",
+          "body": "先复制下面的任务标题，再点「新建任务」，粘贴进去，选一个截止日期，点「添加任务」。",
+          "waiting": "任务多一条后自动前进",
+          "prepared": {
+            "label": "任务标题",
+            "text": "读 Pflamm-Altenburg 2023 的不对称度量"
+          }
+        },
+        "link-doc": {
+          "title": "给任务挂上文献",
+          "body": "点刚建的任务打开抽屉，点「添加关联文档」，搜 Jerabkova，选它。任务里就能直接打开那份正文。",
+          "waiting": "任务挂上文档后自动前进"
+        },
+        "views": {
+          "title": "三种视图",
+          "body": "左侧「视图」里有列表、看板、今日聚焦和时间线。今日聚焦只看今天和逾期的任务。"
+        },
+        "agent": {
+          "title": "也可以让 Copilot 做",
+          "intro": "计划没有命令行面，但 Copilot 能建任务（第 8 章会看到）。以后可以这样说：",
+          "prompt": "把「读 Pflamm-Altenburg 2023 的不对称度量」加进计划，截止下周",
+          "skill": "Copilot（第 8 章）"
+        }
+      },
+      "writer": {
+        "open": {
+          "title": "打开预置稿件",
+          "body": "点导航的「写作」，点列表里的稿件。稿件（Manuscript）是你自己写的东西，由一个个 cell 组成。",
+          "waiting": "稿件编辑器打开后自动前进"
+        },
+        "structure": {
+          "title": "模板、题头与 cell",
+          "body": "顶栏的「模板」决定排版；「信息」里是标题、作者。每个 cell 有类型，这个模板有 LaTeX、图、表、代码；摘要写在第一个 LaTeX cell 里。"
+        },
+        "add-cell": {
+          "title": "加一段",
+          "body": "在最后一个 cell 下点「添加 cell」，选 LaTeX，粘贴下面的段落，按 Shift+Enter 提交。",
+          "waiting": "cell 多一个后自动前进",
+          "prepared": {
+            "label": "准备好的文字",
+            "text": "两条尾部的成员数并不相等。\\citet{} 认为这种不对称难以用牛顿引力下的 N 体模型解释；Pflamm-Altenburg 等（2023）则给出了随机涨落能产生多大不对称的度量。要分辨两种解释，先要确定不对称的统计显著性。"
+          }
+        },
+        "cite": {
+          "title": "插入引用",
+          "body": "点刚加 cell 的「编辑单元格」，把光标放进 \\citet{} 的花括号里。打开右侧「References」，搜 Kroupa，点「插入 \\cite{key}」。",
+          "waiting": "段落里出现该引用键后自动前进"
+        },
+        "render": {
+          "title": "渲染",
+          "body": "按 Shift+Enter 或点顶栏「渲染」。工作台用本机 TeX 编译整篇稿件，预览里的引用会变成作者和年份；没做第 2 章的导入时引用无法解析，显示为问号。",
+          "waiting": "渲染完成后自动前进",
+          "alt": "没有 TeX 时预览只显示源码。装好后回到这一步再渲染。"
+        },
+        "export": {
+          "title": "导出与便签",
+          "body": "「导出」会下载一个带 references.bib 的源码 zip。每个 cell 的「添加评论」是单元便签，给协作者或 agent 看。"
+        },
+        "agent": {
+          "title": "也可以让 Copilot 写",
+          "intro": "写作没有命令行面，但 Copilot 能加段落、插引用（第 8 章会看到）。以后可以这样说：",
+          "prompt": "在综述稿件里加一段，比较 Kroupa 2022 与 Pflamm-Altenburg 2023 对尾部不对称的解释",
+          "skill": "Copilot（第 8 章）"
+        }
+      },
+      "copilot": {
+        "open": {
+          "title": "打开 Copilot",
+          "body": "点标题栏右侧的 Copilot 开关。面板里已经选中一段预置会话。注意：在这里发送消息会真的调用模型、花费 token，不属于教程。",
+          "waiting": "Copilot 面板打开后自动前进"
+        },
+        "context": {
+          "title": "它看得到你的页面",
+          "body": "展开第一条消息下以论文标题开头的折叠块，看 Copilot 收到了哪些页面上下文。发送时用户正在 Jerabkova 2021 的阅读器里，Copilot 拿到的是同一页面的结构化内容。"
+        },
+        "operations": {
+          "title": "操作卡",
+          "body": "后两次往返各有一张操作卡：一张建了任务，一张给稿件加了段落，状态「已应用」。那条任务在第 6 章的计划里，那一段在第 7 章的稿件里。（卡上「带我去」切到计划页）"
+        },
+        "conversations": {
+          "title": "会话独立保存",
+          "body": "点顶部的「会话」打开列表，再关上。每段会话单独保存，切换页面不会丢，随时能新建或切回。"
+        },
+        "provider": {
+          "title": "模型 key 填在这里",
+          "body": "点面板的设置图标打开模型设置：以后在这里选 provider、填 API key。本教程不填。"
+        },
+        "agent": {
+          "title": "Copilot 与外部 agent",
+          "intro": "Copilot 内置两个只读 skill：读一篇、跨库检索。添加文献、整理论证图、找论文交给装了随包 skills 的外部 agent。设置页「Copilot」组的「文件与命令权限」决定 Copilot 能否读写文件、跑命令。",
+          "prompt": "读一下当前这篇，总结它的 End 论证",
+          "skill": "argelander-read-paper · argelander-query-paper-library"
+        }
+      },
+      "finish": {
+        "page": {
+          "title": "教程走完了",
+          "body": "你已经在教程项目里过了一遍工作台：添加、阅读、探索、论证、计划、写作，还有 Copilot。这个项目会留着，随时能回来。",
+          "openOwn": "打开自己的项目",
+          "openOwnBrowser": "在终端运行 `argelanderspace serve` 打开自己的项目",
+          "review": "回看任一章",
+          "close": "关闭教程",
+          "settingsNote": "外观、语言和日志级别都在设置页改。",
+          "troubleNote": "出了问题：设置页「诊断」里的「导出诊断包…」能打包日志，「显示日志文件夹」能找到它们。"
+        }
+      },
+      "reading": {
+        "open": {
+          "title": "打开一篇正文",
+          "body": "回到文献库，点 Jerabkova 等 2021，再点「阅读全文」。正文会在文档面板里打开。",
+          "waiting": "阅读器打开后自动前进"
+        },
+        "outline": {
+          "title": "按目录跳转",
+          "body": "点工具栏的「展开目录」，再点任意一节，正文会跳过去。",
+          "waiting": "跳到某一节后自动前进"
+        },
+        "annotations": {
+          "title": "预置的三条标注",
+          "body": "点「展开引用与标注」，切到「标注」。这里有三条预先写好的标注（Annotation）：一条针对整篇，一条针对一张图，一条针对一段文字。"
+        },
+        "open-annotation": {
+          "title": "点开一条标注",
+          "body": "点列表里任意一条，正文会跳到它指的位置；再点正文里高亮的文字（或页边的数字）弹出标注内容。标注属于这份正文，不属于文献条目。",
+          "waiting": "标注弹出后自动前进"
+        },
+        "annotate": {
+          "title": "给一段文字加标注",
+          "body": "在正文里选中一句话，点浮出的「添加标注」，把下面的文字粘进去，按 ⌘↵ 或点保存。",
+          "waiting": "标注列表多一条后自动前进",
+          "prepared": {
+            "label": "准备好的文字",
+            "text": "尾长 800 pc 的估计依赖成员选择的方法；换用 Gaia EDR3 后要重算一次。"
+          }
+        },
+        "manage": {
+          "title": "改、删与整篇标注",
+          "body": "悬停一条标注能编辑或删除。「添加文档标注」针对整篇正文，适合写总评。"
+        },
+        "switch-doc": {
+          "title": "多份正文与回退",
+          "body": "一条文献可以挂几份正文，阅读器顶部能切换。跳转后点「撤销文档跳转」回到原位。"
+        },
+        "agent": {
+          "title": "也可以让 agent 读",
+          "intro": "agent 能读同一份正文，也能读你留的标注。把这句话发给它：",
+          "prompt": "用 argelander-read-paper 读 Jerabkova 2021，告诉我 800 pc 尾长是怎么得出的",
+          "skill": "argelander-read-paper（`read` / `show`；`annot <doc_id>` 读你的标注）"
+        }
+      },
+      "discovery": {
+        "library-graph": {
+          "title": "库图",
+          "body": "文献库中间的图是库图（Library graph）：已入库论文之间的引用关系，A→B 表示 A 引用 B。五篇之间的边都在这里。"
+        },
+        "start": {
+          "title": "从 Röser 2019 出发探索",
+          "body": "点开 Röser 等 2019，点「探索相关文献」。文献探索（Discovery）会联网问 ADS 要相关文献，要先在设置里填 ADS token；没填就会报错，点「跳过这一步」。",
+          "waiting": "探索结果出来后自动前进"
+        },
+        "roles": {
+          "title": "相关研究与方法基础",
+          "body": "「相关研究」是 ADS 认为主题相近的论文，「方法与基础」是它们反复引用的论文。结果来自 ADS 实时查询，每次可能不同。"
+        },
+        "graph": {
+          "title": "看引用图视图",
+          "body": "这是引用图视图，探索页默认显示它，旁边的「列表视图」可切成列表。图把起点、相关和方法基础论文连起来，边仍然只是引用关系。",
+          "waiting": "图视图出现后自动前进"
+        },
+        "detail": {
+          "title": "看一条候选",
+          "body": "点任意一条候选，右侧显示它的摘要、题录和在本图里的引用。「加入文献库」会把它加进库里，教程不点。",
+          "waiting": "候选详情出现后自动前进"
+        },
+        "back": {
+          "title": "回到文献库",
+          "body": "点「返回文献库」。探索不会自动往库里加东西，之后点「继续上次探索」还能接着看。"
+        },
+        "agent": {
+          "title": "也可以让 agent 找",
+          "intro": "找论文要联网和 ADS token，教程之外再试。把这句话发给你的 agent：",
+          "prompt": "用 argelander-find-papers 从 Röser 2019 出发找 10 篇相关论文",
+          "skill": "argelander-find-papers（ADS key 从 `~/.ads/dev_key` 读取，不读工作台里保存的 token）"
+        }
+      }
+    }
   }
 }

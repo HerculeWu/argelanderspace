@@ -1,0 +1,110 @@
+/* In-app tutorial layer (in-app-tutorial ticket 19): approved prototype B — spotlight, step card, chapter rail,
+   capsule. Values follow the prototype (.scratch/in-app-tutorial/prototype/prototype.css) on the product tokens. */
+
+/* spotlight: four shades around the anchor and a ring on it; the shades let every click through */
+.tut-shade { position: fixed; z-index: 300; background: oklch(0 0 0 / .42); pointer-events: none; transition: top .18s ease, left .18s ease, width .18s ease, height .18s ease; }
+[data-theme="light"] .tut-shade { background: oklch(0.2 0.01 260 / .32); }
+.tut-ring { position: fixed; z-index: 301; pointer-events: none; border-radius: var(--radius); box-shadow: 0 0 0 2px var(--accent), 0 0 0 6px color-mix(in oklch, var(--accent) 35%, transparent); transition: top .18s ease, left .18s ease, width .18s ease, height .18s ease; }
+.tut-ring.pulse { animation: tutPulse 1.6s ease-in-out infinite; }
+@keyframes tutPulse { 0%, 100% { box-shadow: 0 0 0 2px var(--accent), 0 0 0 6px color-mix(in oklch, var(--accent) 35%, transparent); } 50% { box-shadow: 0 0 0 2px var(--accent), 0 0 0 10px color-mix(in oklch, var(--accent) 18%, transparent); } }
+
+/* step card */
+.tut-card { position: fixed; z-index: 320; top: 0; left: 0; width: 340px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); display: flex; flex-direction: column; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-pop); animation: tutCardIn .14s ease; }
+/* the product's popIn on the individual scale / translate properties: they compose with the inline transform that places
+   the card instead of overriding it (popIn animates transform, which left the card at the top left, over the chapter
+   rail, while it played; ticket 28 cleanup) */
+@keyframes tutCardIn { from { opacity: 0; scale: .97; translate: 0 6px; } to { opacity: 1; scale: 1; translate: 0 0; } }
+[data-density="compact"] .tut-card { width: 320px; }
+[data-density="comfy"] .tut-card { width: 360px; }
+.tut-card.docked { top: auto; left: auto; right: 16px; bottom: 16px; transform: none !important; }
+/* a product modal is open: the card steps aside, below the modal's overlay (z 250) */
+.tut-card.yielded { z-index: 240; opacity: .55; width: 300px; }
+.tut-card.yielded .tut-card-body { max-height: 120px; }
+.tut-card.agent { border-color: var(--accent-line); }
+.tut-card-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 8px 0 14px; }
+.tut-crumb { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-faint); letter-spacing: .3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tut-card-body { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 14px 4px; display: flex; flex-direction: column; gap: 10px; }
+.tut-title { font-size: 15px; font-weight: 600; line-height: 1.35; margin: 0; }
+[data-density="comfy"] .tut-title { font-size: 16px; }
+.tut-text { font-size: var(--fs-sm); line-height: 1.6; color: var(--text-dim); margin: 0; overflow-wrap: anywhere; }
+.tut-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+.tut-agent-tag { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); font-weight: 600; color: var(--accent); letter-spacing: .3px; }
+.tut-agent-tag svg { width: 14px; height: 14px; }
+.tut-skills { font-size: var(--fs-xs); color: var(--text-faint); font-family: var(--font-mono); overflow-wrap: anywhere; margin: 0; }
+.tut-prepared { border: 1px solid var(--border-soft); border-radius: var(--radius-sm); background: var(--bg-deep); overflow: hidden; }
+.tut-prepared-head { display: flex; align-items: center; gap: 8px; padding: 5px 6px 5px 10px; border-bottom: 1px solid var(--border-soft); font-size: var(--fs-xs); color: var(--text-faint); }
+.tut-prepared-head > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tut-prepared-head .btn { height: 24px; padding: 0 8px; }
+.tut-prepared-head .btn.ok { color: var(--ok); }
+.tut-prepared pre { margin: 0; padding: 8px 10px; max-height: 132px; overflow: auto; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.5; color: var(--text-dim); white-space: pre-wrap; overflow-wrap: anywhere; }
+[data-density="compact"] .tut-prepared pre { max-height: 110px; font-size: 11px; }
+.tut-prepared-error { padding: 6px 10px; font-size: var(--fs-xs); color: var(--danger); border-top: 1px solid var(--border-soft); }
+.tut-card-foot { flex: none; display: flex; align-items: center; gap: 6px; padding: 10px 14px 12px; border-top: 1px solid var(--border-soft); margin-top: 4px; }
+.tut-card-foot .spacer { flex: 1; }
+.tut-wait { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-faint); padding: 0 14px 10px; }
+.tut-wait svg { width: 12px; height: 12px; color: var(--accent); animation: cgspin 1.4s linear infinite; }
+.tut-wait.passed svg { animation: none; color: var(--ok); }
+.tut-skip-link { font-size: var(--fs-xs); color: var(--text-faint); text-decoration: underline; text-underline-offset: 2px; background: none; border: 0; padding: 0; cursor: pointer; }
+.tut-skip-link:hover { color: var(--text); }
+
+/* chapter rail: covers the workbench beside the navigation, never pushes its layout */
+.tut-rail { position: fixed; z-index: 310; top: 0; bottom: 0; left: 62px; width: 232px; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--border); box-shadow: var(--shadow-2); animation: viewIn .18s ease; }
+.tut-rail.collapsed { width: 44px; }
+/* a product modal is open: the rail steps below the modal's overlay (z 250) and takes no input, as the card does */
+.tut-rail.yielded { z-index: 240; pointer-events: none; }
+/* the folded rail is over the step's highlighted element: hidden for that step (still laid out, so it can be measured) */
+.tut-rail.concealed { visibility: hidden; pointer-events: none; animation: none; }
+.tut-rail-list > div > .ui-tooltip-anchor { display: flex; width: 100%; }
+.tut-rail-head { flex: none; display: flex; align-items: center; gap: 6px; height: 31px; padding: 0 4px 0 12px; border-bottom: 1px solid var(--border-soft); background: var(--bg-deep); position: relative; }
+.tut-rail.collapsed .tut-rail-head { padding: 0 4px; justify-content: center; }
+.tut-rail-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase; color: var(--text-faint); white-space: nowrap; overflow: hidden; }
+.tut-rail-menu { position: absolute; top: 30px; right: 4px; z-index: 2; min-width: 156px; padding: 5px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-2); }
+.tut-rail-menu button { display: flex; width: 100%; align-items: center; gap: 8px; padding: 6px 8px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--text-dim); font-size: var(--fs-sm); text-align: left; cursor: pointer; }
+.tut-rail-menu button:hover:not([aria-disabled="true"]) { background: var(--hover); color: var(--text); }
+.tut-rail-menu button[aria-disabled="true"] { color: var(--text-faint); cursor: default; }
+.tut-rail-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tut-rail-list { flex: 1; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 1px; }
+.tut-rail.collapsed .tut-rail-list { padding: 6px 4px; }
+.tut-ch { display: flex; align-items: center; gap: 8px; width: 100%; min-height: var(--row-h); padding: 4px 8px; border-radius: var(--radius-sm); color: var(--text-dim); font-size: var(--fs-sm); text-align: left; border: 0; background: none; cursor: pointer; }
+.tut-rail.collapsed .tut-ch { justify-content: center; padding: 4px 0; }
+.tut-ch:hover { background: var(--hover); color: var(--text); }
+.tut-ch.active { background: var(--accent-soft); color: var(--text); }
+.tut-ch.notStarted { color: var(--text-faint); }
+.tut-ch-n { flex: none; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; font-family: var(--font-mono); font-size: 10.5px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-dim); }
+.tut-ch.done .tut-ch-n { background: var(--ok); border-color: transparent; color: oklch(0.15 0.02 158); }
+.tut-ch.active .tut-ch-n { background: var(--accent); border-color: transparent; color: var(--accent-fg); }
+.tut-ch.skipped .tut-ch-n { border-style: dashed; }
+.tut-ch-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.tut-ch-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tut-ch-state { font-size: 10px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tut-ch.active .tut-ch-state { color: var(--accent); }
+.tut-ch-state .warn { color: var(--warn); }
+.tut-ch-state .warn::before { content: " · "; color: var(--text-faint); }
+.tut-steps { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 6px 20px; padding-left: 14px; border-left: 1px solid var(--border-soft); }
+.tut-step-row { display: flex; align-items: center; gap: 6px; min-height: 24px; padding: 0 6px; border-radius: 4px; font-size: var(--fs-xs); color: var(--text-faint); background: none; border: 0; text-align: left; cursor: pointer; }
+.tut-step-row:hover { background: var(--hover); color: var(--text); }
+.tut-step-row.cur { color: var(--text); font-weight: 500; }
+.tut-step-row.done svg { color: var(--ok); }
+.tut-step-row svg { width: 12px; height: 12px; flex: none; }
+.tut-step-row span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tut-rail-foot { flex: none; padding: 8px; border-top: 1px solid var(--border-soft); }
+.tut-rail-foot .btn { width: 100%; justify-content: center; }
+.tut-rail-tex { margin-left: 4px; font-size: 10px; color: var(--accent); background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; }
+
+/* capsule: what the rail folds into after leaving */
+.tut-capsule-dock { position: fixed; z-index: 310; left: 70px; bottom: 12px; }
+.tut-capsule { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--accent-line); background: var(--surface); color: var(--text); font-size: var(--fs-xs); box-shadow: var(--shadow-2); cursor: pointer; animation: popIn .14s ease; }
+.tut-capsule:hover { background: var(--accent-soft); }
+.tut-capsule svg { width: 14px; height: 14px; color: var(--accent); }
+
+/* the one-time "progress not saved" notice in the card, with its dismiss button */
+.tut-not-saved { display: flex; align-items: flex-start; gap: 4px; }
+.tut-not-saved > .ui-inline-message { flex: 1; min-width: 0; }
+
+/* the user asked for less motion: no endless pulse or spin (the ring and the waiting icon still show the state) */
+@media (prefers-reduced-motion: reduce) {
+  .tut-ring.pulse { animation: none; box-shadow: 0 0 0 2px var(--accent), 0 0 0 8px color-mix(in oklch, var(--accent) 28%, transparent); }
+  .tut-wait svg { animation: none; }
+  .tut-card, .tut-rail, .tut-capsule { animation: none; }
+  .tut-shade, .tut-ring { transition: none; }
+}

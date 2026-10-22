@@ -63,6 +63,11 @@ export const PlanWriteOperationSchema = z.discriminatedUnion("action", [
       status: TaskStatusSchema.optional(),
       /** Defaults to the Plan's deadline, like the Task modal. */
       due: Due.optional(),
+      /**
+       * Markdown+math, same rules as update_task's note (trimmed; blank stores none). The Task modal has no
+       * note field (the page writes it in the drawer afterwards); the tool may set it at creation (copilot ticket 62).
+       */
+      note: z.string().optional(),
     })
     .strict(),
   z

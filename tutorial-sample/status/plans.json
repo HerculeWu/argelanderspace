@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "rev": 1,
+  "plans": [
+    {
+      "id": "p_4e7a1c90",
+      "name": "潮汐尾不对称：随机涨落还是引力定律",
+      "desc": "Jerabkova 等（2021）确认 Hyades 的前导尾明显强于拖尾。Pflamm-Altenburg 等（2023）估计纯随机蒸发能产生多大的不对称，Hyades 的观测偏离约 6.7σ；Kroupa 等（2022）发现牛顿引力下的模型尾部近乎对称，而 Milgrom 动力学（MOND）能达到观测值。弄清 Hyades 的不对称是随机涨落，还是指向引力定律。",
+      "due": "2027-06-30",
+      "icon": "target",
+      "created_at": "2026-10-21T00:00:00.000Z",
+      "tasks": [
+        {
+          "id": "t_1b3d5f70",
+          "title": "核对 Jerabkova 2021 的前导尾与拖尾计数",
+          "status": "doing",
+          "due": "2026-11-06",
+          "note": "3.1 节：DR2 前导尾 411 / 拖尾 331，eDR3 前导尾 293 / 拖尾 166，都按 9 pc 潮汐半径划分。确认这些数和 Pflamm-Altenburg 2023 用的是不是同一口径。",
+          "links": [
+            {
+              "doc_id": "arxiv-2103.12080"
+            }
+          ],
+          "focused": true,
+          "created_at": "2026-10-21T00:00:00.000Z"
+        },
+        {
+          "id": "t_2c4e6a81",
+          "title": "汇总有潮汐尾数据的疏散星团",
+          "status": "todo",
+          "due": "2026-11-27",
+          "note": "Kroupa 等 2022：Hyades、Praesepe、Coma Berenices、COIN-Gaia 13、NGC 752；Pflamm-Altenburg 等 2023 分析了其中四个（不含 COIN-Gaia 13）。",
+          "links": [],
+          "focused": false,
+          "created_at": "2026-10-21T00:00:00.000Z"
+        },
+        {
+          "id": "t_9bca269c",
+          "title": "用 Gaia EDR3 复核 800 pc 尾长",
+          "status": "todo",
+          "due": "2026-11-30",
+          "links": [],
+          "focused": false,
+          "created_at": "2026-10-21T18:46:38.611Z"
+        }
+      ]
+    }
+  ]
+}

@@ -35,7 +35,11 @@
 // manifest names; the package's bin.js is byte for byte packages/app/dist/bin.js (the same build) and its `--version`
 // equals the app version and the npm build's `--version`; then smoke-dep-dir.mjs runs the unpacked sidecar IN PLACE
 // with the package's Node (page resources, keychain module, PDFium, Copilot, argelander.sty via a CLI ingest, the
-// ready line's address), with a recording `node` first on PATH so any use of a system node fails.
+// ready line's address), with a recording `node` first on PATH so any use of a system node fails; the resource
+// directory's tutorial/ (in-app-tutorial ticket 27) is loadable: the package's Node and bin.js serve a temp copy of it
+// (`--data-dir <copy>/literatures`) and list the five Works and give Jerabkova's three annotations without archiving
+// them, NOTICE.md and the upload zip are there, and the app dist carries no second copy (sidecar/app/dist/tutorial);
+// its size is reported, not gated (tutorial-smoke-lib.mjs).
 //
 // Isolation (the smoke-dep-dir convention): children get an env allowlist -- temp HOME / XDG_* / XDG_RUNTIME_DIR,
 // DBUS_SESSION_BUS_ADDRESS pointing at a socket that does not exist (the keychain is never reached), PATH = the
@@ -70,7 +74,10 @@ import {
   nodeSignatureFromManifest,
   parseStrictArgs,
   sidecarRequiredFiles,
+  TUTORIAL_RESOURCE_DIR,
+  tutorialCacheEntries,
 } from "./desktop-package-lib.mjs";
+import { checkTutorialLoadable, tutorialSize } from "./tutorial-smoke-lib.mjs";
 
 const appRoot = fileURLToPath(new URL("..", import.meta.url));
 let args;
@@ -231,6 +238,8 @@ for (const rel of removeList) {
 // ---- static: required files, licenses, budget --------------------------------------------------------------------- //
 const missing = sidecarRequiredFiles(target).filter((f) => !existsSync(join(resources, f)));
 check(missing.length === 0, "every required resource file is in the package", missing.join(", "));
+const cached = tutorialCacheEntries(resources, (dir) => readdirSync(dir, { recursive: true }));
+check(cached.length === 0, "the package's tutorial/ carries no library cache", cached.join(", "));
 const sidecar = join(resources, "sidecar");
 const sidecarManifestPath = join(sidecar, "sidecar-manifest.json");
 let sidecarManifest = null;
@@ -298,6 +307,7 @@ for (const [k, p] of [
   ["node_runtime_bytes", join(sidecar, "node")],
   ["app_dist_bytes", join(sidecar, "app/dist")],
   ["skills_bytes", join(resources, "skills")],
+  ["tutorial_bytes", join(resources, TUTORIAL_RESOURCE_DIR)],
   ["shell_bytes", shellBin],
 ])
   if (existsSync(p)) sizes[k] = du(p);
@@ -305,7 +315,7 @@ const duK = spawnSync("du", ["-sk", root], { encoding: "utf8" }).stdout.split(/\
 sizes.unpacked_disk_kib = Number(duK);
 sizes.installed_size_kib = Number(control["Installed-Size"] ?? Number.NaN);
 log(
-  `sizes: ${isAppImage ? "AppImage" : "deb"} ${mb(sizes.deb_bytes)}; unpacked ${mb(sizes.unpacked_bytes)} of file content, ${(sizes.unpacked_disk_kib / 1024).toFixed(1)} MiB on disk here; control Installed-Size ${sizes.installed_size_kib} KiB; node ${mb(sizes.node_runtime_bytes ?? 0)}, app dist ${mb(sizes.app_dist_bytes ?? 0)}, dependency directory ${mb(sizes.dependency_directory_bytes ?? 0)}, skills ${mb(sizes.skills_bytes ?? 0)}, shell ${mb(sizes.shell_bytes ?? 0)}`
+  `sizes: ${isAppImage ? "AppImage" : "deb"} ${mb(sizes.deb_bytes)}; unpacked ${mb(sizes.unpacked_bytes)} of file content, ${(sizes.unpacked_disk_kib / 1024).toFixed(1)} MiB on disk here; control Installed-Size ${sizes.installed_size_kib} KiB; node ${mb(sizes.node_runtime_bytes ?? 0)}, app dist ${mb(sizes.app_dist_bytes ?? 0)}, dependency directory ${mb(sizes.dependency_directory_bytes ?? 0)}, skills ${mb(sizes.skills_bytes ?? 0)}, tutorial ${mb(sizes.tutorial_bytes ?? 0)}, shell ${mb(sizes.shell_bytes ?? 0)}`
 );
 
 // ---- isolated environment ------------------------------------------------------------------------------------------- //
@@ -395,6 +405,49 @@ if (existsSync(nodeExe) && existsSync(binJs)) {
   );
 } else
   check(false, "the unpacked sidecar runs with the package's Node", "node or bin.js is missing");
+
+// ---- the tutorial sample (in-app-tutorial ticket 27) --------------------------------------------------------------- //
+{
+  const tutorialDir = join(resources, TUTORIAL_RESOURCE_DIR);
+  check(
+    !existsSync(join(sidecar, "app/dist", TUTORIAL_RESOURCE_DIR)),
+    "the sample is in the package once: no sidecar/app/dist/tutorial next to the resource tutorial/"
+  );
+  if (!existsSync(tutorialDir)) check(false, "the resource directory has tutorial/");
+  else if (!existsSync(nodeExe) || !existsSync(binJs))
+    check(false, "the package's tutorial/ is loadable", "node or bin.js is missing");
+  else {
+    const size = tutorialSize(tutorialDir);
+    log(
+      `size: tutorial/ holds ${size.files} files, ${size.bytes} bytes (${mb(size.bytes)}; reported, not gated)`
+    );
+    // A home of its own, the env allowlist otherwise (the recording node first on PATH).
+    const tHome = join(work, "tutorial-home");
+    mkdirSync(join(tHome, "runtime"), { recursive: true, mode: 0o700 });
+    const loaded = await checkTutorialLoadable({
+      tutorialDir,
+      node: nodeExe,
+      binJs,
+      env: {
+        ...env,
+        HOME: tHome,
+        XDG_CONFIG_HOME: join(tHome, ".config"),
+        XDG_DATA_HOME: join(tHome, ".local/share"),
+        XDG_CACHE_HOME: join(tHome, ".cache"),
+        XDG_STATE_HOME: join(tHome, ".local/state"),
+        XDG_RUNTIME_DIR: join(tHome, "runtime"),
+      },
+      work: join(work, "tutorial-check"),
+    });
+    check(
+      loaded.problems.length === 0,
+      "the package's tutorial/ is loadable: the package's server on a temp copy lists 5 Works and gives Jerabkova's 3 annotations, no archive; NOTICE.md and the upload zip are there",
+      loaded.problems.length
+        ? loaded.problems.join("; ")
+        : `${loaded.works} Works, ${loaded.annotations} annotations`
+    );
+  }
+}
 
 // ---- the shell (optional; needs a display) ------------------------------------------------------------------------ //
 async function freePort() {

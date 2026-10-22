@@ -12,7 +12,7 @@
  * (Python's `data/output`).
  */
 
-import { realpathSync, statSync, writeFileSync } from "node:fs";
+import { statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DEFAULT_PORT } from "@argelanderspace/contracts";
 import {
@@ -30,6 +30,7 @@ import {
 } from "@argelanderspace/core";
 import {
   bundledSkillsDir,
+  bundledTutorialDir,
   type CliLauncherTarget,
   cliLauncherUnavailable,
   ingestTexSource,
@@ -44,11 +45,12 @@ import {
 import { Command } from "commander";
 import { registerAgentCommands } from "./agent.js";
 import { registerArgumentCommands } from "./argument.js";
-import { DATA_DIR_HELP, fail, resolveDataDir, withDataDir } from "./common.js";
+import { DATA_DIR_HELP, fail, realpathOr, resolveDataDir, withDataDir } from "./common.js";
 import { detectSource } from "./detect.js";
 // The app package's version, written into the source at build time (scripts/app-version.mjs; desktop-app ticket 16).
 import { APP_VERSION } from "./generated/app-version.js";
 import { formatPlanRow, formatTexIngestSummary, planSortKey } from "./summary.js";
+import { registerTutorialCommand } from "./tutorial.js";
 
 // re-exported: the resolution chain now lives in ./common.js (shared with the
 // agent subcommands), but the public import path stays stable
@@ -282,9 +284,12 @@ async function runServe(opts: ServeOpts, globalDataDir: string | undefined): Pro
   // skills from there and nowhere else.
   const entry = process.argv[1] === undefined ? null : realpathOr(resolve(process.argv[1]));
   const skillsDir = entry === null ? null : bundledSkillsDir(entry);
+  // The tutorial sample that ships with the program (in-app-tutorial ticket 18): `GET /api/tutorial` reads its marker.
+  const tutorialSampleDir = entry === null ? null : bundledTutorialDir(entry);
   const srv = await startServer(argv, {
     version: APP_VERSION,
     ...(skillsDir === null ? {} : { skillsDir }),
+    ...(tutorialSampleDir === null ? {} : { tutorialSampleDir }),
   });
   const shutdown = () => {
     void srv.close().then(
@@ -309,6 +314,7 @@ async function runDesktopHostCommand(opts: { project?: string; webDist?: string 
   // desktop package the app's Node on the app's CLI — and where the bundled skills are found from (next to it).
   const entry = process.argv[1] === undefined ? null : realpathOr(resolve(process.argv[1]));
   const skillsDir = entry === null ? null : bundledSkillsDir(entry);
+  const tutorialSampleDir = entry === null ? null : bundledTutorialDir(entry);
   if (opts.project !== undefined) {
     const project = resolve(opts.project);
     let isDir = false;
@@ -339,6 +345,7 @@ async function runDesktopHostCommand(opts: { project?: string; webDist?: string 
     stopDeadline: { onExpired: () => process.exit(1) },
     ...(webDist === undefined ? {} : { webDist }),
     ...(skillsDir === null ? {} : { skillsDir }),
+    ...(tutorialSampleDir === null ? {} : { tutorialSampleDir }),
     ...(entry === null ? {} : cliOffer({ node: process.execPath, cli: entry })),
   });
   await host.stopped;
@@ -356,15 +363,6 @@ function cliOffer(
 ): { cliLauncher: CliLauncherTarget } | { cliUnavailable: "appimage" } {
   const reason = cliLauncherUnavailable(target, process.env);
   return reason === null ? { cliLauncher: target } : { cliUnavailable: reason };
-}
-
-/** The path with its symbolic links resolved; the path itself when that fails. */
-function realpathOr(path: string): string {
-  try {
-    return realpathSync(path);
-  } catch {
-    return path;
-  }
 }
 
 /**
@@ -474,6 +472,9 @@ export function buildProgram(): Command {
         fail(e);
       }
     });
+
+  // In-app-tutorial ticket 26: the tutorial for the browser form
+  registerTutorialCommand(program);
 
   program
     .command("desktop-host", { hidden: true })

@@ -1,10 +1,11 @@
 /**
  * Shared CLI helpers: the `--data-dir` resolution chain (decisions 3 + 23),
- * the per-command `--data-dir` option, and the error printer. Extracted from
+ * the per-command `--data-dir` option, the error printer, and `realpathOr`. Extracted from
  * `program.ts` so the agent subcommands (`agent.ts`) share the exact same
  * chain without an import cycle; `program.ts` re-exports `resolveDataDir`.
  */
 
+import { realpathSync } from "node:fs";
 import { type AppConfig, dataDirOf, getConfig } from "@argelanderspace/infra";
 import type { Command } from "commander";
 
@@ -35,4 +36,13 @@ export function errorMessage(e: unknown): string {
 export function fail(e: unknown): void {
   console.error(`error: ${errorMessage(e)}`);
   process.exitCode = 1;
+}
+
+/** The path with its symbolic links resolved; the path itself when that fails. */
+export function realpathOr(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
 }

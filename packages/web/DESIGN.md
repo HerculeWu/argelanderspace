@@ -10,6 +10,7 @@ ArgelanderSpace Web is a dense, independently operable research workbench. Prese
 - Use one filled primary action per local task area by default. Danger communicates irreversible risk; it is not a second primary hierarchy.
 - A visible `:focus-visible` outline, an accessible name, and non-color state copy are baseline behavior.
 - For the UI-does-not-teach and icon-first rules, follow the authoritative [frontend interaction guidance](../../docs/engineering.md#前端交互规范); essential risk, failure, and recovery copy still belongs in the interface.
+- The in-app tutorial layer (`src/tutorial/`) is the one stated exception to UI-does-not-teach, and only for its own cards ([ADR 0012](../../docs/adr/0012-in-app-tutorial-in-its-own-project.md)). It sits on top of the product without changing it: it reuses the shared `Dialog`, `ActionButton`, `InlineMessage` and `Tooltip`, places its card with the same `@floating-ui/dom` setup as `Tooltip` (no shared wrapper yet), anchors on ordinary product `data-ui` identifiers (a product modal is recognized by `dialog-overlay`), and never puts teaching copy into product UI. Its entry points (welcome page, Settings) are ordinary product controls. Its anchoring contract is in [architecture](../../docs/architecture.md)「教程层」.
 
 ## Preserve unaffected appearance and behavior
 

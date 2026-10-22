@@ -81,6 +81,8 @@ import {
   isHostInfo,
   type SETTINGS_UI_LANGUAGES,
   switchAcknowledged,
+  type WsHostSwitchConfirmation,
+  type WsHostTutorialResult,
 } from "@argelanderspace/contracts";
 import {
   CLI_COMMAND,
@@ -100,8 +102,10 @@ import {
   readRecentProjects,
   recordRecentProject,
   removeRecentProject,
+  TUTORIAL_PROGRESS_FILE,
   uninstallCliLauncher,
 } from "@argelanderspace/infra";
+import { createTutorialEntry } from "./desktop-tutorial.js";
 import type {
   HostBridge,
   HostCli,
@@ -265,6 +269,11 @@ export interface DesktopHostOptions {
    */
   skillsDir?: string;
   /**
+   * The tutorial sample that ships with the app (in-app-tutorial ticket 18; the CLI entry finds it next to its own
+   * bundle, infra `bundledTutorialDir`): whose marker `GET /api/tutorial` reads. Absent: the installation has none.
+   */
+  tutorialSampleDir?: string;
+  /**
    * The app's own Node and CLI entry, which the command-line tool's launcher runs (desktop-app ticket 24; the CLI entry
    * gives its `process.execPath` and its bundle). Absent: the host interface answers that the tool is unavailable.
    */
@@ -387,7 +396,7 @@ function canonical(path: string): string {
 }
 
 const WELCOME_REASONS = ["no_recent", "last_missing"] as const;
-const LEAVE_SOURCES = ["picked", "recent"] as const;
+const LEAVE_SOURCES = ["picked", "recent", "tutorial"] as const;
 /** Why a picked path is not left for (the path itself is never written). */
 const PICK_REJECT_REASONS = ["not_a_folder", "current_project", "shutting_down"] as const;
 
@@ -483,8 +492,26 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
   // What a switch would interrupt: handed over by the server of an open project (none in the welcome state).
   let workbench: HostWorkbench | null = null;
   const impactNow = (): HostSwitchImpact => workbench?.impact() ?? EMPTY_SWITCH_IMPACT;
-  /** The folder the shell picked while a switch would interrupt work, waiting for the user's confirmation. */
-  let held: { id: string; path: string; source: (typeof LEAVE_SOURCES)[number] } | null = null;
+  /**
+   * The folder the shell picked while a switch would interrupt work, waiting for the user's confirmation. A tutorial
+   * entry (in-app-tutorial ticket 25) may add what to do once the server has closed (`afterClose`) and what to undo
+   * when the switch is given up (`onDrop`).
+   */
+  let held: {
+    id: string;
+    path: string;
+    source: (typeof LEAVE_SOURCES)[number];
+    afterClose?: () => void;
+    onDrop?: () => void;
+  } | null = null;
+  /** Ends the hold (giving up what it carried), or replaces it. */
+  function setHeld(next: typeof held): void {
+    const before = held;
+    held = next;
+    if (before !== null && before !== next) before.onDrop?.();
+  }
+  /** Tells the pages of the server: given by the server of an open project, or by the welcome state's. */
+  let pages: ((message: WsHostSwitchConfirmation | WsHostTutorialResult) => void) | null = null;
 
   /** Where a switch goes, as the page shows it. */
   function targetOf(path: string): HostSwitchTarget {
@@ -531,7 +558,7 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
     if (isCurrent(path)) return "current_project";
     const ask = mayLeave(path, acknowledged, "recent");
     if (ask !== null) return ask;
-    held = null;
+    setHeld(null);
     return leave(path, "recent") ? "leaving" : "shutting_down";
   }
 
@@ -540,14 +567,14 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
     if (stopping !== null) return "shutting_down";
     if (held === null || held.id !== id) return "unknown_switch";
     if (!isFolder(held.path)) {
-      held = null;
+      setHeld(null);
       return "folder_missing";
     }
     const ask = mayLeave(held.path, acknowledged, held.source);
     if (ask !== null) return ask;
-    const { path, source } = held;
+    const { path, source, afterClose } = held;
     held = null;
-    return leave(path, source) ? "leaving" : "shutting_down";
+    return leave(path, source, afterClose) ? "leaving" : "shutting_down";
   }
 
   /**
@@ -577,17 +604,30 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
       });
       return;
     }
+    holdOrLeave(path, source, {});
+  }
+
+  /**
+   * Leaves for the folder now when nothing would be interrupted (or no project is open); otherwise holds it and asks
+   * the pages to confirm (`host.switch-confirmation`). A newer hold replaces an older one still waiting: confirming the
+   * older id then finds nothing.
+   */
+  function holdOrLeave(
+    path: string,
+    source: (typeof LEAVE_SOURCES)[number],
+    extra: { afterClose?: () => void; onDrop?: () => void }
+  ): void {
     const ask = mayLeave(path, null, source);
     if (ask === null) {
-      held = null;
-      leave(path, source);
+      setHeld(null);
+      leave(path, source, extra.afterClose);
       return;
     }
-    // A newer pick replaces an older one still waiting: confirming the older id then finds nothing.
-    held = { id: randomUUID(), path, source };
-    workbench?.broadcast({
+    const id = randomUUID();
+    setHeld({ id, path, source, ...extra });
+    pages?.({
       type: "host.switch-confirmation",
-      id: held.id,
+      id,
       target: ask.confirm.target,
       impact: ask.confirm.impact,
     });
@@ -596,6 +636,28 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
   // Bound once the server listens; a request before that (there can be none: nothing listens) is refused.
   let own: { port: number; logDir: string; log: ServerLog } | null = null;
   const pending = new Set<string>();
+  /** The id of the last `pick_folder` line written. */
+  let lastPickId: string | null = null;
+  /** Run once the server has closed, before `stopped` (a restart of the open tutorial project). */
+  let afterClose: (() => void) | null = null;
+  // The tutorial's entry (in-app-tutorial ticket 25): desktop-tutorial.ts.
+  const tutorial = createTutorialEntry({
+    sampleDir: options.tutorialSampleDir ?? null,
+    progressFile: join(atStart.globalDirs.dataDir, TUTORIAL_PROGRESS_FILE),
+    appVersion: options.version ?? "unknown",
+    log: () => own?.log ?? null,
+    stopping: () => stopping !== null,
+    isCurrent: (path) => isCurrent(path),
+    canonical,
+    shownPath,
+    requestPick: () => (request("pick_folder", "page") ? lastPickId : null),
+    record: (path) => record(path),
+    go: (path, extra) => {
+      if (project === "open") holdOrLeave(path, "tutorial", extra);
+      else leave(path, "tutorial", extra.afterClose);
+    },
+    broadcast: (message) => pages?.(message),
+  });
   const bridge: HostBridge = {
     get portFallback() {
       return portFallback;
@@ -619,12 +681,21 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
       confirm: (id, acknowledged) => confirmHeld(id, acknowledged),
       cancel: (id) => {
         if (held?.id !== id) return;
-        held = null;
+        setHeld(null);
         own?.log.info("desktop.switch_cancelled", {});
       },
     },
     useWorkbench(given) {
       workbench = given;
+      pages = (message) => given.broadcast(message);
+    },
+    usePages(broadcast) {
+      pages = broadcast;
+    },
+    tutorial: {
+      pick: () => tutorial.pick(),
+      continue: () => tutorial.continue(),
+      restart: () => tutorial.restart(),
     },
     requests: HOST_REQUEST_KINDS.filter(
       (kind) => kind !== "open_skills_folder" || options.skillsDir !== undefined
@@ -694,6 +765,7 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
       () => {
         const id = randomUUID();
         pending.add(id);
+        lastPickId = id;
         return id;
       }
     );
@@ -759,6 +831,9 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
       ...(options.version === undefined ? {} : { version: options.version }),
       ...(options.keychainProbe ? { keychainProbe: options.keychainProbe } : {}),
       ...(options.skillsDir === undefined ? {} : { skillsDir: options.skillsDir }),
+      ...(options.tutorialSampleDir === undefined
+        ? {}
+        : { tutorialSampleDir: options.tutorialSampleDir }),
       desktop: {
         host: bridge,
         listenPort,
@@ -832,6 +907,15 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
       } finally {
         clearTimeout(deadline);
       }
+      // A switch still held is given up.
+      setHeld(null);
+      if (afterClose !== null) {
+        try {
+          afterClose();
+        } catch {
+          /* it records its own failure */
+        }
+      }
       menuWatcher.stop();
       if (options.signals) {
         process.off("SIGTERM", onSignal);
@@ -859,13 +943,21 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
     }
   }
 
-  /** Leaves for another project: recorded, then the host stops and tells its shell (`stopped`'s `next`). */
-  function leave(openedAs: string, source: (typeof LEAVE_SOURCES)[number]): boolean {
+  /**
+   * Leaves for another project: recorded, then the host stops and tells its shell (`stopped`'s `next`). `then` runs
+   * once the server has closed, before `stopped` (in-app-tutorial ticket 25: the restart of the open tutorial project).
+   */
+  function leave(
+    openedAs: string,
+    source: (typeof LEAVE_SOURCES)[number],
+    then?: () => void
+  ): boolean {
     if (stopping !== null) return false;
     const path = canonical(openedAs);
     record(path, openedAs);
     log.info("desktop.leaving", { source: f.oneOf(LEAVE_SOURCES, source) });
     next = path;
+    afterClose = then ?? null;
     void stop("switch");
     return true;
   }
@@ -908,6 +1000,8 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
           outcome: f.oneOf(["picked", "cancelled"], path === null ? "cancelled" : "picked"),
         });
         options.onFolderPicked?.(path);
+        // The tutorial's pick (in-app-tutorial ticket 25): the folder is the parent of the tutorial, not a project.
+        if (tutorial.picked(m.id, path)) return;
         if (path === null) return;
         // The welcome state leaves for the folder; with a project open, only once nothing would be interrupted or the
         // user confirmed it (desktop-app ticket 19).

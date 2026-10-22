@@ -87,6 +87,8 @@ function bridge(): HostBridge {
     useWorkbench(given) {
       workbench = given;
     },
+    usePages: () => {},
+    tutorial: { pick: () => "no_sample", continue: () => "no_sample", restart: () => "no_sample" },
   };
 }
 

@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "rev": 0,
+  "content_fingerprint": "4313bc799b87f61217ffe58422f14a20cc97ec8be5069ddca98ea007e76d1e8a",
+  "annotations": [
+    {
+      "id": "a_3c1e7a20",
+      "target": {
+        "type": "document"
+      },
+      "body": "**读这篇的要点**：作者用真实银河势中的 N 体模型（AMUSE）推出 compact convergent point（CCP）方法，在 Gaia DR2 和 eDR3 里找回了 Hyades 潮汐尾在预期全长约 800 pc 上的候选成员，并在 eDR3 中报告了两处与 epicyclic overdensity 吻合的空间 overdensity。\n\n读的时候留意两点：选择依赖模型（DR2 用 M1，eDR3 用 M5），找到的都是「候选」，成员身份还要靠化学标记和自转周期确认（5.4、5.5 节）。",
+      "created_at": "2026-10-21T00:00:00.000Z",
+      "updated_at": "2026-10-21T00:00:00.000Z"
+    },
+    {
+      "id": "a_5f0b9d41",
+      "target": {
+        "type": "structure",
+        "id": "fig-10",
+        "kind": "figure",
+        "snapshot": {
+          "number": "10",
+          "label": "Figure 10",
+          "caption": "Tidal tails in Galactic Cartesian coordinates. The large yellow point at (0,0) in all panels marks the Sun. The black arrow shows the velocity vector in the given coordinate system, and the grey arrow points to the GC. See Fig. 8 and text for the detailed description. The black points are the M1 model points, the open orange circles show the remaining points after the S1+S2 selection was applied, and the filled orange circles show the objects after the S1+S2+S3 selection.",
+          "asset_hash": "c5c71a9e8ed2637f3842ac3919c5c8d7d3aa5665a8e8dc399a1488d52b4e93eb"
+        }
+      },
+      "body": "图 10 是选出的成员在银河直角坐标里的分布：黑点是 M1 模型，空心橙圈是 S1+S2 之后剩下的源，实心橙点是再加 S3 后的 DR2 最终候选（3.1 节说 eDR3 用 M5 选出的结果以蓝色画在同一张图里）。候选沿模型的尾迹一直铺到远处，「约 800 pc」的尾长就是这样读出来的。",
+      "created_at": "2026-10-21T00:00:00.000Z",
+      "updated_at": "2026-10-21T00:00:00.000Z"
+    },
+    {
+      "id": "a_8a62c4e3",
+      "target": {
+        "type": "text",
+        "block": "p-51",
+        "container": {
+          "type": "content"
+        },
+        "start": 326,
+        "end": 413,
+        "quote": "contains 1109 objects, 411 of which belong to a leading tail and 331 to a trailing tail"
+      },
+      "body": "DR2 最终 1109 个候选里，前导尾 411、拖尾 331（按 9 pc 潮汐半径划分）；同一段里 eDR3 是 293 对 166。前导尾更强的这种不对称，就是计划「潮汐尾不对称」要追的问题。",
+      "created_at": "2026-10-21T00:00:00.000Z",
+      "updated_at": "2026-10-21T00:00:00.000Z"
+    }
+  ]
+}

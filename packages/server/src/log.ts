@@ -233,6 +233,12 @@ export const SERVER_LOG_EVENTS = {
   "desktop.switch_cancelled": {},
   // Desktop-app ticket 24: the command-line tool's launcher installed or removed (action and outcome only, no path).
   "desktop.cli_launcher": { action: f.oneOf, outcome: f.oneOf, error: f.error },
+  // In-app-tutorial ticket 25 (desktop-tutorial.ts): a tutorial entry taken or failed (action and category, no path).
+  "desktop.tutorial_entered": { action: f.oneOf, outcome: f.oneOf },
+  "desktop.tutorial_failed": { action: f.oneOf, reason: f.oneOf },
+  // In-app-tutorial ticket 18 (tutorial-routes.ts): `tutorial.json` could not be used (reason only), or not written.
+  "tutorial.unreadable": { reason: f.oneOf },
+  "tutorial.write_failed": { error: f.error },
   // Desktop-app tickets 20 and 21: the shell's own events, from its table.
   ...SHELL_LOG_EVENTS,
 } as const satisfies LogEventTable;

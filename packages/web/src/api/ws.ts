@@ -1,4 +1,4 @@
-import type { WsHostSwitchConfirmation, WsArgumentGraphChanged, WsWriterChanged, WsTextSourceChanged, WsTextDocPublished, WsMailChanged } from "@argelanderspace/contracts";
+import type { WsHostSwitchConfirmation, WsHostTutorialResult, WsArgumentGraphChanged, WsWriterChanged, WsTextSourceChanged, WsTextDocPublished, WsMailChanged } from "@argelanderspace/contracts";
 import { type CopilotSubscription, type JobListener, createWsBus } from "./ws-bus";
 
 // Minimal WebSocket client for the server's /ws progress channel (M4). One
@@ -97,3 +97,7 @@ export const subscribeCopilot = (subscription: CopilotSubscription): (() => void
 /** The desktop host holds a folder the shell picked until the user confirms the switch (desktop-app ticket 19). */
 export const onHostSwitchConfirmation = (cb: (msg: WsHostSwitchConfirmation) => void): (() => void) =>
   bus.on("host.switch-confirmation", cb);
+
+/** A tutorial entry the desktop host took failed (in-app-tutorial ticket 25): why, and the folder it was about. */
+export const onHostTutorialResult = (cb: (msg: WsHostTutorialResult) => void): (() => void) =>
+  bus.on("host.tutorial-result", cb);

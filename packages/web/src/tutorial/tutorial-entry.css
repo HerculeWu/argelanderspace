@@ -1,0 +1,5 @@
+/* The tutorial's entry (in-app-tutorial ticket 25): on the welcome page beside "Open folder…", in the settings page's
+   "Tutorial" row, and its restart dialog. */
+.tut-entry { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.tut-entry-note { font-size: var(--fs-sm); color: var(--text-faint); }
+.wl-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }

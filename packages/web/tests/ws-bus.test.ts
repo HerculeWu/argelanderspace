@@ -68,6 +68,7 @@ const FRAMES: Record<WsServerMessage["type"], WsServerMessage> = {
   "mail.changed": { type: "mail.changed" } as unknown as WsServerMessage,
   "settings.changed": { type: "settings.changed", cause: "external", at: "2026-10-14T00:00:00Z" },
   "host.switch-confirmation": { type: "host.switch-confirmation", id: "s1" } as unknown as WsServerMessage,
+  "host.tutorial-result": { type: "host.tutorial-result", reason: "copy_failed", path: { path: "/t", display: "/t" } },
 };
 const TYPES = Object.keys(FRAMES) as WsServerMessage["type"][];
 

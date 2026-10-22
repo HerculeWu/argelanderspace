@@ -63,7 +63,7 @@ describe("Project", () => {
     settings = fakeSettings({ ...EN, data_dir: "papers" });
     await open();
     await group("project");
-    expect(qa('[data-ui="setting-row"]').map((el) => el.getAttribute("data-ui-key"))).toEqual(["project-root", "data_dir", "auto_ingest_arxiv"]);
+    expect(qa('[data-ui="setting-row"]').map((el) => el.getAttribute("data-ui-key"))).toEqual(["project-root", "tutorial", "data_dir", "auto_ingest_arxiv"]);
     // The project root: shown (with ~ as the server wrote it), not stored in the file, nothing to change here.
     expect(q('[data-ui="project-root-path"]')!.textContent).toBe("~/project");
     expect(row("project-root").textContent).toContain("Not stored in the config file");

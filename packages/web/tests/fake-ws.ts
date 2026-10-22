@@ -30,6 +30,7 @@ export function wsModule() {
     },
     onHostSwitchConfirmation: (cb: Parameters<typeof fakeBus.on<"host.switch-confirmation">>[1]) =>
       fakeBus.on("host.switch-confirmation", cb),
+    onHostTutorialResult: (cb: Parameters<typeof fakeBus.on<"host.tutorial-result">>[1]) => fakeBus.on("host.tutorial-result", cb),
   };
 }
 

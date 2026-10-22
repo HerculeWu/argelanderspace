@@ -85,3 +85,58 @@ test("the vendored license texts ship with the npm package (desktop-app ticket 2
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
   assert.ok(pkg.files.includes("licenses"));
 });
+
+test("the tutorial sample ships under dist/tutorial: its marker and notice are required (in-app-tutorial ticket 16)", () => {
+  assert.ok(REQUIRED_FILES.includes("dist/tutorial/argelanderspace-tutorial.json"));
+  assert.ok(REQUIRED_FILES.includes("dist/tutorial/NOTICE.md"));
+  // the sample is a project folder: its literature data, Doc and upload zip are allowed there
+  const sample = [
+    "dist/tutorial/literatures/library/library.json",
+    "dist/tutorial/literatures/output/arxiv-2103.12080/arxiv-2103.12080.json",
+    "dist/tutorial/literatures/output/arxiv-2103.12080/assets/YX_D__pdf.svg",
+    "dist/tutorial/status/plans.json",
+    "dist/tutorial/tutorial-assets/evans-oh-2022-source.zip",
+  ];
+  assert.deepEqual(checkPackContents([...good, ...sample]), []);
+});
+
+test("the tutorial sample's preset Copilot conversation is allowed, only at its own place (in-app-tutorial ticket 17)", () => {
+  const conversation = [
+    "dist/tutorial/literatures/copilot/conversations/a2cd3c11-c2c5-45fc-96b2-aa5db1637d5a.json",
+    "dist/tutorial/literatures/copilot/sessions/e4c084f5-c49f-4d6d-856e-0e225d6c3910.jsonl",
+  ];
+  assert.deepEqual(checkPackContents([...good, ...conversation]), []);
+});
+
+for (const forbidden of [
+  // literature data is allowed only inside the sample
+  "dist/literatures/library/library.json",
+  "dist/tutorial-sample/literatures/library/library.json",
+  // every other rule still holds inside the sample
+  "dist/tutorial/literatures/.env",
+  "dist/tutorial/auth.json",
+  "dist/tutorial/literatures/output/x/x.pdf",
+  "dist/tutorial/.scratch/notes.md",
+  "dist/tutorial/node_modules/x/index.js",
+  // the Copilot exemption covers the sample's conversation record and session file and nothing else
+  "dist/copilot/conversations/x.json",
+  "dist/tutorial/copilot/sessions/x.jsonl",
+  "dist/tutorial/literatures/copilot/runtime/x.json",
+  "dist/tutorial/literatures/copilot/agent/auth.json",
+  "dist/tutorial/literatures/copilot/sessions/x.json",
+  "dist/tutorial/literatures/copilot/conversations/x.jsonl",
+  "dist/tutorial/literatures/copilot/sessions/nested/x.jsonl",
+  "dist/tutorial/literatures/jobs/x.jsonl",
+  // the sample carries no library cache: ADS API terms forbid redistributing ADS data (2026-10-21)
+  "dist/tutorial/literatures/library/cache/ads-discovery/0a1b.json",
+  "dist/tutorial/literatures/library/cache/openalex/x.json",
+  "dist/tutorial/literatures/library/cache/",
+]) {
+  test(`forbidden ${forbidden} is reported even next to the tutorial sample`, () => {
+    const problems = checkPackContents([...good, forbidden]);
+    assert.ok(
+      problems.some((p) => p.includes(forbidden)),
+      problems.join("\n")
+    );
+  });
+}

@@ -3,13 +3,16 @@
 // assembly (desktop-sidecar.mjs) and the smoke (smoke-desktop-package.mjs) are run by hand; see their headers.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import {
   PROD_LICENSE_ALLOWED,
   SHELL_CRATE_LICENSE_ALLOWED,
   WITH_LICENSE_ALLOWED,
 } from "../../../scripts/license-allowlist.mjs";
+import { bundledTutorialDir, TUTORIAL_MARKER_FILE } from "../../infra/dist/index.js";
 import {
   cargoLicenseExpression,
   crateLicenseFiles,
@@ -23,6 +26,7 @@ import {
   linkedCrates,
   listInstalledPackages,
   lockfileVersions,
+  missingRequiredFiles,
   NODE_RELEASE_KEYS,
   nodeDist,
   nodeExtractCommand,
@@ -36,7 +40,10 @@ import {
   rustTargetTriple,
   shaFromShasums,
   shellNotices,
+  sidecarAppDistFilter,
   sidecarRequiredFiles,
+  TUTORIAL_RESOURCE_DIR,
+  tutorialCacheEntries,
   vendoredLicense,
   verifyNodeSignature,
 } from "./desktop-package-lib.mjs";
@@ -99,6 +106,133 @@ test("the sidecar's required files name what the four resource classes need", ()
     keyringNativeFile("win32-x64"),
     "@napi-rs/keyring-win32-x64-msvc/keyring.win32-x64-msvc.node"
   );
+});
+
+test("the tutorial sample is a required resource: its marker and its notice (in-app-tutorial ticket 27)", () => {
+  assert.equal(TUTORIAL_RESOURCE_DIR, "tutorial");
+  for (const target of ["linux-x64", "darwin-arm64", "darwin-x64", "win32-x64"]) {
+    const files = sidecarRequiredFiles(target);
+    assert.ok(files.includes("tutorial/argelanderspace-tutorial.json"), target);
+    assert.ok(files.includes("tutorial/NOTICE.md"), target);
+  }
+});
+
+test("infra's bundledTutorialDir finds the packaged sample at TUTORIAL_RESOURCE_DIR, by infra's marker name", () => {
+  const res = mkdtempSync(join(tmpdir(), "aspace-desktop-tutorial-res-"));
+  try {
+    const entry = join(res, "sidecar", "app", "dist", "bin.js");
+    const sample = join(res, TUTORIAL_RESOURCE_DIR);
+    mkdirSync(sample, { recursive: true });
+    writeFileSync(join(sample, TUTORIAL_MARKER_FILE), '{"version":1,"sample":1}');
+    assert.equal(bundledTutorialDir(entry), sample);
+    assert.ok(
+      sidecarRequiredFiles("linux-x64").includes(`${TUTORIAL_RESOURCE_DIR}/${TUTORIAL_MARKER_FILE}`)
+    );
+  } finally {
+    rmSync(res, { recursive: true, force: true });
+  }
+});
+
+test("the assembly fails when either tutorial file is missing: missingRequiredFiles names it", () => {
+  const all = new Set(sidecarRequiredFiles("linux-x64"));
+  const root = "/res";
+  const exists = (present) => (p) => present.has(p.slice(root.length + 1));
+  assert.deepEqual(missingRequiredFiles(root, "linux-x64", exists(all)), []);
+  for (const f of ["tutorial/argelanderspace-tutorial.json", "tutorial/NOTICE.md"]) {
+    const without = new Set([...all].filter((g) => g !== f));
+    assert.deepEqual(missingRequiredFiles(root, "linux-x64", exists(without)), [f]);
+  }
+});
+
+test("the tutorial resource must not carry a library cache (as the npm package's pack-contents rule): the check names it", () => {
+  const root = "/res";
+  // `list` is readdirSync(dir, { recursive: true }): every entry below dir, relative to it.
+  const lister = (entries) => (dir) => {
+    assert.equal(dir, `${root}/tutorial`);
+    return entries;
+  };
+  const clean = [
+    "argelanderspace-tutorial.json",
+    "NOTICE.md",
+    "literatures",
+    "literatures/library",
+    "literatures/library/library.json",
+    "literatures/annotations/arxiv-2103.12080/current.json",
+  ];
+  assert.deepEqual(tutorialCacheEntries(root, lister(clean)), []);
+  assert.deepEqual(tutorialCacheEntries(root, lister([...clean, "literatures/library/cache"])), [
+    "tutorial/literatures/library/cache",
+  ]);
+  assert.deepEqual(
+    tutorialCacheEntries(
+      root,
+      lister([
+        ...clean,
+        "literatures/library/cache",
+        "literatures/library/cache/ads-discovery/0a1b.json",
+      ])
+    ),
+    [
+      "tutorial/literatures/library/cache",
+      "tutorial/literatures/library/cache/ads-discovery/0a1b.json",
+    ]
+  );
+  // Windows separators count too; a name that only starts the same does not.
+  assert.deepEqual(
+    tutorialCacheEntries(root, lister(["literatures\\library\\cache\\openalex\\x.json"])),
+    ["tutorial/literatures/library/cache/openalex/x.json"]
+  );
+  assert.deepEqual(tutorialCacheEntries(root, lister(["literatures/library/cached.json"])), []);
+  // No tutorial/ at all: nothing to report here (the required-files check reports the missing sample).
+  assert.deepEqual(
+    tutorialCacheEntries(root, () => {
+      throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    }),
+    []
+  );
+});
+
+test("the assembly and the package smoke both run the cache check", () => {
+  for (const script of ["desktop-sidecar.mjs", "smoke-desktop-package.mjs"]) {
+    const text = readFileSync(new URL(`./${script}`, import.meta.url), "utf8");
+    assert.match(text, /tutorialCacheEntries\(/, script);
+  }
+});
+
+test("tauri.package.conf.json maps every top-level part the required files live in, tutorial/ included", () => {
+  const conf = JSON.parse(
+    readFileSync(new URL("../../desktop/tauri.package.conf.json", import.meta.url), "utf8")
+  );
+  const mapped = Object.entries(conf.bundle.resources);
+  for (const top of new Set(sidecarRequiredFiles("linux-x64").map((f) => f.split("/")[0]))) {
+    const isDir = sidecarRequiredFiles("linux-x64").some((f) => f.startsWith(`${top}/`));
+    const want = isDir
+      ? [`target/package-resources/${top}/`, `${top}/`]
+      : [`target/package-resources/${top}`, top];
+    assert.ok(
+      mapped.some(([from, to]) => from === want[0] && to === want[1]),
+      `${want[0]} -> ${want[1]}`
+    );
+  }
+});
+
+test("the sidecar's app dist leaves out dist/tutorial: the package carries the sample once, at tutorial/", () => {
+  const dist = "/repo/packages/app/dist";
+  const keep = sidecarAppDistFilter(dist);
+  for (const p of [
+    dist,
+    `${dist}/bin.js`,
+    `${dist}/web`,
+    `${dist}/web/index.html`,
+    `${dist}/tutorials.txt`,
+  ])
+    assert.equal(keep(p), true, p);
+  for (const p of [
+    `${dist}/tutorial`,
+    `${dist}/tutorial/NOTICE.md`,
+    `${dist}/tutorial/literatures/x.json`,
+  ])
+    assert.equal(keep(p), false, p);
 });
 
 test("SPDX expressions: OR takes an allowed branch, AND needs both, WITH and unknown ids are not allowed", () => {

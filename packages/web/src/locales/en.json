@@ -2752,5 +2752,478 @@
     "confirm": "Switch anyway",
     "close": "Close",
     "gone": "This switch is no longer waiting for confirmation; nothing was switched."
+  },
+  "tutorial": {
+    "ui": {
+      "title": "Tutorial",
+      "cardHeader": "Chapter {{chapter}} · {{index}}/{{count}} · {{title}}",
+      "back": "Back",
+      "next": "Next",
+      "nextChapter": "Next chapter",
+      "finish": "Finish tutorial",
+      "skip": "Skip this step",
+      "leave": "Leave tutorial",
+      "takeMeThere": "Take me there",
+      "preparedText": "Prepared text",
+      "copy": "Copy",
+      "copied": "Copied",
+      "copyFailed": "Not copied: the browser does not allow writing to the clipboard",
+      "agentCard": "An agent can do this too",
+      "agentSkill": "skill: {{name}}",
+      "needsTex": "Needs TeX",
+      "noTexTitle": "No TeX found on this machine",
+      "noTexBody": "You can skip this step; after installing TeX, click “Check again”. {{alt}}",
+      "recheck": "Check again",
+      "recheckBusy": "Checking…",
+      "rail": {
+        "heading": "Tutorial · Chapters",
+        "title": "Chapters",
+        "collapse": "Collapse the chapter rail",
+        "expand": "Expand the chapter rail",
+        "more": "More",
+        "chapterLabel": "{{n}} {{title}} · {{state}}",
+        "chapterLabelNeedsTex": "{{n}} {{title}} · {{state}} · Needs TeX",
+        "stepRow": "{{number}} {{title}}",
+        "stepRowSkipped": "{{number}} {{title}} · Skipped",
+        "status": {
+          "notStarted": "Not started",
+          "inProgress": "In progress",
+          "done": "Done",
+          "skipped": "Skipped",
+          "needsTex": "Needs TeX"
+        },
+        "summary": "{{done}}/{{total}} done, {{skipped}} skipped"
+      },
+      "capsule": "Tutorial · Chapter {{chapter}}",
+      "capsuleResume": "Resume tutorial",
+      "anchorWaiting": "Waiting for the interface…",
+      "anchorMissingTitle": "The interface has changed",
+      "anchorMissingBody": "The place this step points to cannot be found. You can do the step yourself, then click “Next”.",
+      "anchorOffscreenTitle": "The target is outside the current view",
+      "anchorOffscreen": "Scroll to it",
+      "requiresTitle": "First go back to {{where}}",
+      "requiresBody": "This step happens there. Click “Take me there” and the tutorial switches to it.",
+      "requiresBodyNoAction": "This step happens there.",
+      "modalYield": "Continue after closing the dialog",
+      "progressNotSaved": "Progress was not saved. The tutorial goes on; next time it may start from the last saved place.",
+      "dismissNotice": "Dismiss",
+      "leaveDialog": {
+        "title": "Leave the tutorial?",
+        "body": "Your progress is saved. Next time, click “Resume tutorial” on the welcome page or in Settings to pick it up.",
+        "bodyNotSaved": "Some progress was not saved just now; next time it may start from the last saved place. Click “Resume tutorial” on the welcome page or in Settings to pick it up.",
+        "confirm": "Leave",
+        "cancel": "Stay in the tutorial"
+      },
+      "existsDialog": {
+        "title": "The tutorial folder is already there",
+        "body": "{{path}} holds your earlier tutorial. Continue, or empty it and start over?",
+        "continue": "Continue",
+        "restart": "Restart…"
+      },
+      "restartDialog": {
+        "title": "Restart the tutorial?",
+        "body": "{{path}} will be emptied and the sample copied again. The annotations, arguments, tasks and manuscripts you wrote in the tutorial will all be deleted and cannot be recovered.",
+        "confirm": "Empty and restart"
+      },
+      "restartBrowser": {
+        "title": "In the browser, restart from a terminal",
+        "body": "The workbench cannot empty its own data folder while it runs. Quit it, then run in a terminal:"
+      },
+      "where": {
+        "library": "the library",
+        "workDetail": "the details of {{work}}",
+        "reader": "the reader of {{work}}",
+        "plan": "the Plan page",
+        "writer": "the manuscript editor",
+        "settings": "Settings",
+        "argumentGraph": "the argument graph of {{work}}",
+        "copilot": "the Copilot panel"
+      }
+    },
+    "entry": {
+      "start": "Start tutorial",
+      "resume": "Resume tutorial",
+      "restart": "Restart…",
+      "rowLabel": "Tutorial",
+      "rowHelp": "Walk through the workbench’s main features, chapter by chapter, in a separate sample project. Your own projects are not changed.",
+      "rowBrowser": "Run this command in a terminal to start the tutorial:",
+      "sampleMissing": "This installation does not include the tutorial sample",
+      "starting": "Preparing the tutorial folder…",
+      "failed": {
+        "target_conflict": "The tutorial did not start: {{path}} already exists and is not a tutorial folder. Pick another parent folder, or rename it.",
+        "copy_failed": "The tutorial did not start: the sample was not copied to {{path}}. Check the free disk space and the write permission, then try again; what had been written was removed.",
+        "not_a_folder": "The tutorial did not start: {{path}} is not a folder.",
+        "shutting_down": "The tutorial did not start: the workbench is closing. Try again later."
+      },
+      "outdatedSample": "This tutorial project was made from an older sample and may not load correctly. Restarting is recommended — it deletes the annotations, arguments, tasks and manuscripts you wrote in the tutorial."
+    },
+    "chapters": {
+      "prepare": {
+        "title": "Prepare"
+      },
+      "tour": {
+        "title": "Workbench tour"
+      },
+      "library": {
+        "title": "Add literature"
+      },
+      "reading": {
+        "title": "Read and annotate"
+      },
+      "discovery": {
+        "title": "Explore literature"
+      },
+      "argument": {
+        "title": "Argument graph"
+      },
+      "plan": {
+        "title": "Plan"
+      },
+      "writer": {
+        "title": "Writing"
+      },
+      "copilot": {
+        "title": "Copilot"
+      },
+      "finish": {
+        "title": "Finish"
+      }
+    },
+    "steps": {
+      "prepare": {
+        "settings": {
+          "title": "Open Settings",
+          "body": "Click “Settings” at the bottom of the navigation on the left. Settings come in groups: Appearance, Project, Literature services & credentials, TeX & environment, Copilot, Diagnostics. The tutorial uses three of them.",
+          "waiting": "Moves on once Settings is open"
+        },
+        "environment": {
+          "title": "Check for TeX",
+          "body": "In “TeX & environment”, click “Check again”: the workbench looks for latexmk, pdflatex and the other programs. If none is found, that is fine; the tutorial marks the steps that need TeX.",
+          "waiting": "Moves on once the check is done"
+        },
+        "ads": {
+          "title": "The ADS token goes here",
+          "body": "The ADS token under “Literature services & credentials” is for exploring literature online; the tutorial uses it only in chapter 4. Enter your own token to see real results there; without one you can still finish: skip those steps."
+        },
+        "agent": {
+          "title": "Give your agent the skills",
+          "intro": "Under “Command line & agents”, install the command-line tool, open the skills folder, and copy the five skills to your agent.",
+          "prompt": "Read through the ArgelanderSpace skills folder and tell me what each skill can do",
+          "skill": "argelander-paper-ingest · argelander-read-paper · argelander-find-papers · argelander-query-paper-library · argelander-argument-graph",
+          "introBrowser": "You already use the command-line tool: `argelanderspace tutorial` is it. The skills are in the repository; clone or download it, then copy them into your agent's skills folder.",
+          "promptBrowser": "https://github.com/HerculeWu/argelanderspace/tree/main/skills"
+        }
+      },
+      "tour": {
+        "library": {
+          "title": "Open the library",
+          "body": "The navigation on the left has six entries: Plan, Literature, Document, Write, Mail, Settings. Click “Literature”.",
+          "waiting": "Moves on once the library is open"
+        },
+        "split": {
+          "title": "Split right",
+          "body": "Click “Split right” in the title bar and a second pane appears on the right. Panes side by side show literature, documents and the plan at once.",
+          "waiting": "Moves on once a second pane appears"
+        },
+        "pane-views": {
+          "title": "One pane, many views",
+          "body": "The title at the top of each pane switches its view. The same pane can go from the library to a document or the plan at any time, without going back to the navigation."
+        },
+        "close-pane": {
+          "title": "Close the split",
+          "body": "When you have looked, click “Close pane” on the right pane to go back to one pane.",
+          "waiting": "Moves on once one pane is left"
+        },
+        "palette": {
+          "title": "Command palette",
+          "body": "Press Ctrl+K (⌘K on a Mac) to open the command palette, where you can search commands, files and literature. Press Esc to close it.",
+          "waiting": "Moves on once the command palette appears"
+        },
+        "tweaks": {
+          "title": "Quick appearance",
+          "body": "“Quick appearance” on the right of the title bar changes the theme, accent color, density and language. The Copilot switch beside it comes in chapter 8."
+        }
+      },
+      "library": {
+        "list": {
+          "title": "The sample library",
+          "body": "Here are five papers on the Hyades tidal tails. The list is on the left, the citation graph in the middle; click an entry to open its details on the right."
+        },
+        "work-vs-doc": {
+          "title": "Open Röser 2019",
+          "body": "Click Röser et al. 2019. It has its bibliographic data, but its “Full text” tab has no text: a library entry (Work) can exist without a full-text document (Doc).",
+          "waiting": "Moves on once Röser 2019’s “Full text” tab is open"
+        },
+        "add-bibtex": {
+          "title": "Add a paper with BibTeX",
+          "body": "Copy the BibTeX below first, then click “Import literature” → “Import BibTeX / RIS”, paste it and click “Import entries”. This step runs entirely on your machine.",
+          "waiting": "Moves on once Evans & Oh 2022 is in the library",
+          "prepared": {
+            "label": "BibTeX of Evans & Oh 2022"
+          }
+        },
+        "acquisition": {
+          "title": "Four ways to a full text",
+          "body": "In the new entry's “Full text” tab, click “Get full text…”. Getting the source or the PDF from arXiv needs the network; uploading a local source archive or PDF does not. The tutorial uploads."
+        },
+        "upload-source": {
+          "title": "Upload and ingest the source",
+          "body": "Choose “Upload LaTeX source”, pick evans-oh-2022-source.zip in tutorial-assets, and click “Upload and process”. Ingest turns the source into the full text; the metadata is then completed online, no ADS token needed.",
+          "waiting": "Moves on once ingested and the document appears",
+          "alt": "Without TeX it cannot be ingested. Look at the full text already ingested in the “Full text” tab of Jerabkova 2021 instead."
+        },
+        "cite-key": {
+          "title": "Citation key and BibTeX",
+          "body": "“Copy citation key” in the details gives you the cite key for writing; the “BibTeX” tab copies the whole entry. Each paper has exactly one citation key."
+        },
+        "agent": {
+          "title": "An agent can add it too",
+          "intro": "An agent with the command-line tool can add and ingest an arXiv paper directly. Send it this:",
+          "prompt": "Use argelander-paper-ingest to add arXiv:2202.06973 to the library and ingest its full text",
+          "skill": "argelander-paper-ingest (command line: `argelanderspace ingest arXiv:2202.06973`, then `argelanderspace library build`)"
+        }
+      },
+      "argument": {
+        "open": {
+          "title": "Open the argument graph",
+          "body": "In the details of Jerabkova 2021, click “Argument graph”. An argument graph is the argument structure of this paper, written out by its curator after the Toulmin model.",
+          "waiting": "Moves on once the argument graph is open"
+        },
+        "read": {
+          "title": "Arguments, edges and marks",
+          "body": "Each node is an argument; A→B means that B uses A's Claim. The Native arguments at the bottom rest on sources outside this paper; the End argument at the top is its conclusion."
+        },
+        "detail": {
+          "title": "The six fields of an argument",
+          "body": "Click the End argument at the top. The panel on the right lists Claim, Grounds, Warrant and the optional Backing, Qualifier and Rebuttal. Clicking one of its “Sources” takes you back to the text.",
+          "waiting": "Moves on once an argument's details open"
+        },
+        "audit": {
+          "title": "Audit findings",
+          "body": "The audit at the top shows 1 finding: one Native argument has no path to the End. It was left on purpose; you fix it next."
+        },
+        "create": {
+          "title": "Create an argument",
+          "body": "Click “New argument”, paste the short title and the three fields below, and save. The audit becomes 2 findings: the new argument is not linked to the End yet either.",
+          "waiting": "Moves on once the new argument is saved",
+          "prepared": {
+            "label": "Short title and three fields",
+            "text": "Short title: The tails reach hundreds of pc out\nClaim: Members of the Hyades tidal tails can be found hundreds of pc away from the cluster.\nGrounds: Röser and Meingast found the tails near the cluster with Gaia DR2; with a wider search the tails keep going.\nWarrant: The members still agree with the cluster in velocity space; being far away in position is no reason to exclude them."
+          }
+        },
+        "link-end": {
+          "title": "Link it to the End argument",
+          "body": "In the new argument's details, click “Let another argument use it…”, tick “Show all arguments” to find the End argument, choose it, and set “As” to Grounds. The audit goes back to 1 finding.",
+          "waiting": "Moves on once a new edge is added"
+        },
+        "link-native": {
+          "title": "Link the orphan Native",
+          "body": "Click the orphan Native argument and, the same way, let the new argument use it, as Grounds. The audit says “Audit passed”.",
+          "waiting": "Moves on once the audit passes"
+        },
+        "agent": {
+          "title": "An agent can curate it too",
+          "intro": "Curating the argument graph of a whole paper is what an agent does well. Send it this:",
+          "prompt": "Use argelander-argument-graph to curate the argument graph of Jerabkova 2021 and mark the Native and End arguments",
+          "skill": "argelander-argument-graph (`argument get` / `argument put`)"
+        }
+      },
+      "plan": {
+        "open": {
+          "title": "Open the Plan page",
+          "body": "Click “Plan” in the navigation and choose the preset plan on the left. A plan is a set of research tasks; each task has its own deadline and status.",
+          "waiting": "Moves on once the Plan page is open"
+        },
+        "tasks": {
+          "title": "Tasks grouped by status",
+          "body": "Tasks are grouped into To do, In progress, Blocked and Done. One of them was created by the Copilot in chapter 8."
+        },
+        "create-task": {
+          "title": "Create a task",
+          "body": "Copy the task title below first, then click “New task”, paste it, pick a due date, and click “Add task”.",
+          "waiting": "Moves on once there is one more task",
+          "prepared": {
+            "label": "Task title",
+            "text": "Read the asymmetry measure of Pflamm-Altenburg 2023"
+          }
+        },
+        "link-doc": {
+          "title": "Link literature to the task",
+          "body": "Click the task you just created to open its drawer, click “Add linked document”, search for Jerabkova and choose it. The task can then open that text directly.",
+          "waiting": "Moves on once the task links the document"
+        },
+        "views": {
+          "title": "Three views",
+          "body": "Under “Views” on the left are list, board, today's focus and timeline. Today's focus shows only tasks due today or overdue."
+        },
+        "agent": {
+          "title": "The Copilot can do this too",
+          "intro": "Plans have no command-line side, but the Copilot can create tasks (you see it in chapter 8). Later you can say:",
+          "prompt": "Add “Read the asymmetry measure of Pflamm-Altenburg 2023” to the plan, due next week",
+          "skill": "Copilot (chapter 8)"
+        }
+      },
+      "writer": {
+        "open": {
+          "title": "Open the sample manuscript",
+          "body": "Click “Write” in the navigation, then the manuscript in the list. A manuscript is something you write yourself, made up of cells.",
+          "waiting": "Moves on once the manuscript editor is open"
+        },
+        "structure": {
+          "title": "Template, header and cells",
+          "body": "The “Template” in the top bar sets the layout; “Info” holds the title and authors. Every cell has a type: this template has LaTeX, figure, table and code, and the abstract is in the first LaTeX cell."
+        },
+        "add-cell": {
+          "title": "Add a paragraph",
+          "body": "Under the last cell, click “Add cell”, choose LaTeX, paste the paragraph below and press Shift+Enter to commit it.",
+          "waiting": "Moves on once there is one more cell",
+          "prepared": {
+            "label": "Prepared text",
+            "text": "The two tails do not hold equal numbers of members. \\citet{} argue that this asymmetry is hard to explain with N-body models under Newtonian gravity; Pflamm-Altenburg et al. (2023) quantified how much asymmetry random fluctuations can produce. To tell the two explanations apart, the statistical significance of the asymmetry has to be established first."
+          }
+        },
+        "cite": {
+          "title": "Insert a citation",
+          "body": "Click “Edit cell” on the cell you just added and put the cursor inside the braces of \\citet{}. Open “References” on the right, search for Kroupa and click “Insert \\cite{key}”.",
+          "waiting": "Moves on once the paragraph has the cite key"
+        },
+        "render": {
+          "title": "Render",
+          "body": "Press Shift+Enter or click “Render” in the top bar. The workbench compiles the whole manuscript with your local TeX, and the citations in the preview become authors and years; without chapter 2's import they cannot be resolved and show as question marks.",
+          "waiting": "Moves on once rendering finishes",
+          "alt": "Without TeX the preview shows only the source. Come back to this step to render once TeX is installed."
+        },
+        "export": {
+          "title": "Export and notes",
+          "body": "“Export” downloads a source zip with references.bib. Each cell's “Add comment” is a note on that cell, for collaborators or agents."
+        },
+        "agent": {
+          "title": "The Copilot can write too",
+          "intro": "Writing has no command-line side, but the Copilot can add paragraphs and insert citations (you will see it in chapter 8). Later you can say:",
+          "prompt": "Add a paragraph to the review manuscript comparing how Kroupa 2022 and Pflamm-Altenburg 2023 explain the asymmetry of the tails",
+          "skill": "Copilot (chapter 8)"
+        }
+      },
+      "copilot": {
+        "open": {
+          "title": "Open the Copilot",
+          "body": "Click the Copilot switch on the right of the title bar. A preset conversation is already selected in the panel. Note: sending a message here really calls a model and spends tokens; that is not part of the tutorial.",
+          "waiting": "Moves on once the Copilot panel is open"
+        },
+        "context": {
+          "title": "It sees your page",
+          "body": "Expand the fold under the first message that starts with the paper's title to see what page context the Copilot received. When it was sent, the user was in the reader of Jerabkova 2021; the Copilot got the structured content of that same page."
+        },
+        "operations": {
+          "title": "Operation cards",
+          "body": "The last two exchanges each have an operation card: one created a task, one added a paragraph to the manuscript, both “Applied”. That task is in the plan of chapter 6, that paragraph in the manuscript of chapter 7. (“Take me there” on the card switches to the Plan page.)"
+        },
+        "conversations": {
+          "title": "Conversations are saved",
+          "body": "Click “Conversations” at the top to open the list, then close it. Each conversation is saved on its own and survives switching pages; you can start a new one or switch back at any time."
+        },
+        "provider": {
+          "title": "Model keys go here",
+          "body": "Click the panel's settings icon to open the model settings: later you choose a provider and enter an API key there. The tutorial does not."
+        },
+        "agent": {
+          "title": "The Copilot and external agents",
+          "intro": "The Copilot has two read-only skills built in: reading one paper and searching across the library. Adding literature, curating argument graphs and finding papers go to an external agent with the bundled skills. “File and command permission” in the “Copilot” group of Settings decides whether the Copilot may read and write files and run commands.",
+          "prompt": "Read the current paper and summarize its End arguments",
+          "skill": "argelander-read-paper · argelander-query-paper-library"
+        }
+      },
+      "finish": {
+        "page": {
+          "title": "You have finished the tutorial",
+          "body": "You have been through the workbench in the tutorial project: adding, reading, exploring, arguments, planning, writing, and the Copilot. This project stays, and you can come back to it any time.",
+          "openOwn": "Open your own project",
+          "openOwnBrowser": "Run `argelanderspace serve` in a terminal to open your own project",
+          "review": "Review any chapter",
+          "close": "Close the tutorial",
+          "settingsNote": "Appearance, language and log level are changed in Settings.",
+          "troubleNote": "If something goes wrong: “Export diagnostics…” under “Diagnostics” in Settings packs the logs, and “Show the log folder” finds them."
+        }
+      },
+      "reading": {
+        "open": {
+          "title": "Open a full text",
+          "body": "Go back to the library, click Jerabkova et al. 2021, then “Read full text”. The text opens in the document pane.",
+          "waiting": "Moves on once the reader is open"
+        },
+        "outline": {
+          "title": "Jump by the outline",
+          "body": "Click “Expand outline” in the toolbar, then click any section: the text jumps there.",
+          "waiting": "Moves on once you jump to a section"
+        },
+        "annotations": {
+          "title": "Three preset annotations",
+          "body": "Click “Expand references and annotations” and switch to “Annotations”. Three annotations were written in advance: one on the whole paper, one on a figure, one on a passage of text."
+        },
+        "open-annotation": {
+          "title": "Open an annotation",
+          "body": "Click any one in the list: the text jumps to the place it points at. Then click the highlighted words (or the number in the margin) to open it. An annotation belongs to this full text, not to the Work.",
+          "waiting": "Moves on once the annotation opens"
+        },
+        "annotate": {
+          "title": "Annotate a passage",
+          "body": "Select a sentence in the text, click “Add annotation” when it pops up, paste the text below, then press ⌘↵ or click Save.",
+          "waiting": "Moves on once the list has one more",
+          "prepared": {
+            "label": "Prepared text",
+            "text": "The 800 pc tail length estimate depends on how members are selected; recompute it with Gaia EDR3."
+          }
+        },
+        "manage": {
+          "title": "Edit, delete, whole-text notes",
+          "body": "Hover over an annotation to edit or delete it. “Add document annotation” covers the whole text, good for an overall comment."
+        },
+        "switch-doc": {
+          "title": "Several texts, and going back",
+          "body": "A Work can hold several full texts; switch between them at the top of the reader. After a jump, click “Undo document navigation” to go back."
+        },
+        "agent": {
+          "title": "An agent can read it too",
+          "intro": "An agent can read the same text, and the annotations you leave. Send it this:",
+          "prompt": "Use argelander-read-paper to read Jerabkova 2021 and tell me how the 800 pc tail length was derived",
+          "skill": "argelander-read-paper (`read` / `show`; `annot <doc_id>` reads your annotations)"
+        }
+      },
+      "discovery": {
+        "library-graph": {
+          "title": "The library graph",
+          "body": "The graph in the middle of the library is the library graph: citations between the papers in your library, A→B meaning A cites B. The links among the five papers are all here."
+        },
+        "start": {
+          "title": "Explore from Röser 2019",
+          "body": "Open Röser et al. 2019 and click “Explore related papers”. Discovery asks ADS online for related literature and needs your ADS token in Settings; without one it shows an error: click “Skip this step”.",
+          "waiting": "Moves on once the results appear"
+        },
+        "roles": {
+          "title": "Related and useful papers",
+          "body": "“Related” are papers ADS finds close in topic; “Useful” are the papers they keep citing. The results come live from ADS and may differ each time."
+        },
+        "graph": {
+          "title": "The citation graph view",
+          "body": "This is the citation graph view, which the exploration shows by default; “List view” next to it switches to a list. The graph links the starting paper with the related and useful ones; the links are still only citations.",
+          "waiting": "Moves on once the graph view shows"
+        },
+        "detail": {
+          "title": "Look at a candidate",
+          "body": "Click any candidate: the right side shows its abstract, record and citations within this graph. “Add to library” adds it to the library; the tutorial leaves it.",
+          "waiting": "Moves on once the candidate's details show"
+        },
+        "back": {
+          "title": "Back to the library",
+          "body": "Click “Back to library”. Exploring never adds anything to the library by itself; click “Resume exploration” later to pick it up again."
+        },
+        "agent": {
+          "title": "An agent can search too",
+          "intro": "Finding papers needs the network and an ADS token; try it outside the tutorial. Send this to your agent:",
+          "prompt": "Use argelander-find-papers to find 10 related papers starting from Röser 2019",
+          "skill": "argelander-find-papers (reads the ADS key from `~/.ads/dev_key`, not the token saved in the workbench)"
+        }
+      }
+    }
   }
 }

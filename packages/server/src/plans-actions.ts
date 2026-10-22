@@ -146,11 +146,13 @@ export async function applyPlanOperation(
       case "create_task": {
         const id = newTaskId();
         const due = op.due ?? plan.due;
+        const note = op.note?.trim();
         rawTasks().push({
           id,
           title: op.title,
           status: op.status ?? "todo",
           due,
+          ...(note ? { note } : {}),
           links: [],
           focused: false,
           created_at: new Date().toISOString(),

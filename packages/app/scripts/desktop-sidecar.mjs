@@ -36,6 +36,9 @@
 //   sidecar/app/licenses/                              packages/app/licenses (vendored texts and their manifest)
 //   sidecar/sidecar-manifest.json                      versions, checksums, sizes, the budget
 //   skills/                                            the repository's skills/ (desktop-app ticket 24 opens it)
+//   tutorial/                                          the repository's tutorial-sample/, unpacked (in-app-tutorial
+//                                                      ticket 27; infra bundledTutorialDir finds it here); the npm
+//                                                      build's dist/tutorial is left out of sidecar/app/dist
 //   THIRD-PARTY-SHELL-NOTICES.txt                      the shell's Rust crates (shell-notices.mjs; needs cargo)
 //
 // Exit: 0 assembled and checked; 1 an error or a failed check (required file missing, license problem); 3 the
@@ -64,13 +67,16 @@ import {
   DESKTOP_NODE_VERSION,
   licenseProblems,
   listInstalledPackages,
+  missingRequiredFiles,
   nodeDist,
   nodeExtractCommand,
   nodeSignaturePlan,
   parseStrictArgs,
   SHELL_NOTICES_FILE,
   shaFromShasums,
-  sidecarRequiredFiles,
+  sidecarAppDistFilter,
+  TUTORIAL_RESOURCE_DIR,
+  tutorialCacheEntries,
   verifyNodeSignature,
 } from "./desktop-package-lib.mjs";
 
@@ -208,7 +214,11 @@ chmodSync(join(sidecar, "node", dist.binary), 0o755);
 copyFileSync(join(work, dist.base, "LICENSE"), join(sidecar, "node/LICENSE"));
 
 // ---- the app build ------------------------------------------------------------------------------------------------ //
-cpSync(join(appRoot, "dist"), join(sidecar, "app/dist"), { recursive: true });
+// Without dist/tutorial: the sample goes to the resource directory's tutorial/ below, once.
+cpSync(join(appRoot, "dist"), join(sidecar, "app/dist"), {
+  recursive: true,
+  filter: sidecarAppDistFilter(join(appRoot, "dist")),
+});
 copyFileSync(join(appRoot, "package.json"), join(sidecar, "app/package.json"));
 copyFileSync(join(repoRoot, "LICENSE"), join(sidecar, "app/LICENSE"));
 
@@ -249,6 +259,11 @@ cpSync(join(appRoot, "licenses"), join(sidecar, "app/licenses"), { recursive: tr
 // ---- skills (desktop-app ticket 24 opens this folder) ------------------------------------------------------------- //
 cpSync(join(repoRoot, "skills"), join(out, "skills"), { recursive: true });
 
+// ---- the tutorial sample (in-app-tutorial ticket 27): unpacked, as committed --------------------------------------- //
+// A sample without its marker or notice is caught by the required-files check below (the assembly then fails).
+if (existsSync(join(repoRoot, "tutorial-sample")))
+  cpSync(join(repoRoot, "tutorial-sample"), join(out, TUTORIAL_RESOURCE_DIR), { recursive: true });
+
 // ---- the shell's Rust crates: their notices (desktop-app ticket 26) ---------------------------------------------- //
 const notices = run(
   process.execPath,
@@ -277,6 +292,9 @@ const sizes = {
   app_dist_bytes: du(join(sidecar, "app/dist")),
   dependency_directory_bytes: budget.bytes,
   skills_bytes: du(join(out, "skills")),
+  tutorial_bytes: existsSync(join(out, TUTORIAL_RESOURCE_DIR))
+    ? du(join(out, TUTORIAL_RESOURCE_DIR))
+    : 0,
 };
 const manifest = {
   app: { name: appPkg.name, version: appPkg.version },
@@ -301,9 +319,12 @@ const manifest = {
 };
 writeFileSync(join(sidecar, "sidecar-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 
-const missing = sidecarRequiredFiles(target).filter((f) => !existsSync(join(out, f)));
+const missing = missingRequiredFiles(out, target, existsSync);
 for (const f of missing) console.error(`MISSING ${f}`);
 if (missing.length) failed = true;
+const cached = tutorialCacheEntries(out, (dir) => readdirSync(dir, { recursive: true }));
+for (const f of cached) console.error(`FORBIDDEN ${f} (a library cache in the tutorial sample)`);
+if (cached.length) failed = true;
 const vendored = JSON.parse(
   readFileSync(join(sidecar, "app/licenses/runtime-licenses.json"), "utf8")
 );
@@ -319,7 +340,7 @@ if (problems.length) failed = true;
 const mb = (n) => `${(n / 1e6).toFixed(1)} MB`;
 console.log(`desktop package resources for ${target}: ${out}`);
 console.log(
-  `  node ${mb(sizes.node_runtime_bytes)}, app dist ${mb(sizes.app_dist_bytes)}, dependency directory ${mb(sizes.dependency_directory_bytes)}, skills ${mb(sizes.skills_bytes)}`
+  `  node ${mb(sizes.node_runtime_bytes)}, app dist ${mb(sizes.app_dist_bytes)}, dependency directory ${mb(sizes.dependency_directory_bytes)}, skills ${mb(sizes.skills_bytes)}, tutorial ${mb(sizes.tutorial_bytes)}`
 );
 console.log(
   `  license check: ${problems.length} problem(s); required files missing: ${missing.length}`
