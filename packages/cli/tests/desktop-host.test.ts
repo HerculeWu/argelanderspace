@@ -311,12 +311,13 @@ describe("the built desktop host", () => {
     expect(await h.exited).toBe(0);
   }, 60_000);
 
-  test("its input closed and its shutdown held up: after its limit the host exits anyway, port free", async () => {
+  test("its input closed with a request half sent: the socket does not hold the stop — exit 0 after the 2 s grace, port free", async () => {
     const w = world();
     writeConfig(w, "port = 0\n");
     const h = startHost(w);
     const ready = await h.out.next("ready");
-    // A request the server has begun to read and never sees the end of: the server's close waits for it.
+    // A request the server has begun to read and never sees the end of (desktop-app ticket 31): the server's close
+    // cuts it after the grace (server http-close.ts) instead of waiting for it.
     const socket = connect({ host: "127.0.0.1", port: Number(ready.port) });
     await new Promise<void>((r) => socket.once("connect", () => r()));
     socket.on("error", () => {});
@@ -324,25 +325,15 @@ describe("the built desktop host", () => {
     const started = Date.now();
     h.child.stdin?.end();
     try {
-      expect(await h.exited).toBe(1);
+      expect(await h.exited).toBe(0);
     } finally {
       socket.destroy();
     }
     const took = Date.now() - started;
-    expect(took).toBeGreaterThanOrEqual(9_500);
-    expect(took).toBeLessThan(30_000);
-    expect(h.out.lines.slice(-1)).toEqual([{ type: "stopping", reason: "input_closed" }]);
+    expect(took).toBeGreaterThanOrEqual(1_500);
+    expect(took).toBeLessThan(8_000);
     expect(alive(h.child.pid as number)).toBe(false);
     expect(await portFree(Number(ready.port))).toBe(true);
-    const files = readdirSync(w.logDir);
-    const records = readFileSync(join(w.logDir, files[0] as string), "utf8")
-      .trimEnd()
-      .split("\n")
-      .map((line) => JSON.parse(line) as Record<string, unknown>);
-    expect(records.find((r) => r.event === "desktop.stop_timed_out")).toMatchObject({
-      level: "warn",
-      ms: 10_000,
-    });
   }, 60_000);
 
   test("its configured port held by another ArgelanderSpace: the second host falls back and says whose the port is", async () => {
