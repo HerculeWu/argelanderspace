@@ -14,7 +14,8 @@ export { jobMergeNotes } from "./merge-notices";
 /*
  * The jobs a Work's full-text tab follows (ticket 48): the LaTeX zip upload, the local PDF upload, the arXiv source
  * fetch and the arXiv PDF acquisition. One WS subscription feeds every kind; each kind is a policy table read by one
- * pure reducer, so the four flows differ only where they always did (hello adoption, dismissal, error wording).
+ * pure reducer. Adoption (a hello replay shows the newest failure) and dismissal (remembered per failed job id) are
+ * the same for every kind; the kinds differ in routing, error wording, and whether one submission per Work is guarded.
  */
 
 export type { StartResult };
@@ -48,10 +49,6 @@ export interface WorkJobKind<Extra = undefined, Args extends unknown[] = []> {
   rejectMessage(status: number, detail: string): string;
   /** Kind-specific detail kept with a failure (arXiv source: the server's machine-readable `errorCode`). */
   extra?(job: Job): Extra;
-  /** hello replay of an untracked failure: `once` per Work, or `every` one (the last wins). */
-  adopt: "once" | "every";
-  /** `none`: the error cannot be dismissed; `flag`: until the next failure; `per-job`: remembered per failed job id. */
-  dismiss: "none" | "flag" | "per-job";
   /** Whether a finished job also clears a standing error line. */
   doneClearsError: boolean;
   /** Whether a POST whose job already failed (the WS frame beat the response) still counts as an accepted submit. */
@@ -82,8 +79,6 @@ const zip: WorkJobKind<undefined, [File]> = {
   start: (workId, file) => uploadLatexZip(workId, file),
   failMessage: zipFailMessage,
   rejectMessage: (status, detail) => (isDocumentBusy(status, detail) ? i18n.t("library.detail.upload.busy") : zipFailMessage(null)),
-  adopt: "once",
-  dismiss: "none",
   doneClearsError: false,
   fastFailureAccepted: true,
   oneSubmissionPerWork: false,
@@ -94,8 +89,6 @@ const pdf: WorkJobKind<undefined, [File]> = {
   start: (workId, file) => uploadPdf(workId, file),
   failMessage: (job) => job?.error ?? i18n.t("library.detail.pdfUpload.failedGeneric"),
   rejectMessage: (status, detail) => (status === 409 ? i18n.t("library.detail.pdfUpload.busy") : detail),
-  adopt: "once",
-  dismiss: "flag",
   doneClearsError: true,
   fastFailureAccepted: false,
   oneSubmissionPerWork: true,
@@ -108,8 +101,6 @@ const arxiv: WorkJobKind<string | null> = {
   rejectMessage: (status, detail) =>
     isDocumentBusy(status, detail) ? i18n.t("library.detail.arxiv.busy") : arxivFailMessage(null),
   extra: (job) => job.errorCode ?? null,
-  adopt: "once",
-  dismiss: "none",
   doneClearsError: false,
   fastFailureAccepted: true,
   oneSubmissionPerWork: false,
@@ -121,8 +112,6 @@ const arxivPdf: WorkJobKind = {
   failMessage: (job) => job?.error ?? i18n.t("library.detail.arxivPdf.failedGeneric"),
   rejectMessage: (status, detail) =>
     i18n.t(isDocumentBusy(status, detail) ? "library.detail.arxivPdf.busy" : "library.detail.arxivPdf.submitFailed"),
-  adopt: "every",
-  dismiss: "per-job",
   doneClearsError: true,
   fastFailureAccepted: true,
   oneSubmissionPerWork: false,
@@ -141,6 +130,8 @@ export interface WorkJobError<Extra = unknown> {
   extra?: Extra;
   /** The failed job, or null when the submission itself was rejected. */
   jobId: string | null;
+  /** When the failed job was created; a replayed older failure never replaces a newer one on show. */
+  createdAt?: string;
 }
 
 export interface WorkJobState<Extra = unknown> {
@@ -148,11 +139,9 @@ export interface WorkJobState<Extra = unknown> {
   job: Job | null;
   error: WorkJobError<Extra> | null;
   dismissed: boolean;
-  /** `adopt: "once"`: a replayed failure was already adopted for this Work. */
-  adopted: boolean;
   /** A local submission is in flight (for `oneSubmissionPerWork`, also one this Work started before a switch). */
   submitting: boolean;
-  /** `dismiss: "per-job"`: failed job ids the user dismissed; kept across Work switches. */
+  /** Failed job ids the user dismissed (every kind); kept across Work switches. */
   dismissedJobs: ReadonlySet<string>;
 }
 
@@ -170,6 +159,8 @@ export type WorkJobAction =
   | { type: "accepted"; job: Job; seen?: Job }
   | { type: "rejected"; status: number; detail: string }
   | { type: "dismiss" }
+  /** The kind's job for this Work reached a terminal frame, so no submission of it is in flight any more. */
+  | { type: "submission-settled" }
   /** The detail now shows another Work. */
   | { type: "reset"; submitting: boolean };
 
@@ -178,7 +169,6 @@ export function initialWorkJobState<Extra = unknown>(): WorkJobState<Extra> {
     job: null,
     error: null,
     dismissed: false,
-    adopted: false,
     submitting: false,
     dismissedJobs: new Set(),
   };
@@ -186,23 +176,14 @@ export function initialWorkJobState<Extra = unknown>(): WorkJobState<Extra> {
 
 type Policy<Extra> = Pick<
   WorkJobKind<Extra, never[]>,
-  "failMessage" | "rejectMessage" | "extra" | "adopt" | "dismiss" | "doneClearsError"
+  "failMessage" | "rejectMessage" | "extra" | "doneClearsError"
 >;
 
-/**
- * Write a job failure. `resetFlag` is false only for the fast failure seen at submit time, which (as before) leaves
- * a PDF upload's dismissal flag alone; every other failure shows the new error expanded.
- */
-function writeFailure<E>(kind: Policy<E>, state: WorkJobState<E>, job: Job, resetFlag = true): WorkJobState<E> {
-  const error: WorkJobError<E> = { message: kind.failMessage(job), jobId: job.id };
+/** Write a job failure; it shows expanded unless the user already dismissed that very job. */
+function writeFailure<E>(kind: Policy<E>, state: WorkJobState<E>, job: Job): WorkJobState<E> {
+  const error: WorkJobError<E> = { message: kind.failMessage(job), jobId: job.id, createdAt: job.createdAt };
   if (kind.extra) error.extra = kind.extra(job);
-  const dismissed =
-    kind.dismiss === "per-job"
-      ? state.dismissedJobs.has(job.id)
-      : kind.dismiss === "flag" && resetFlag
-        ? false
-        : state.dismissed;
-  return { ...state, error, dismissed };
+  return { ...state, error, dismissed: state.dismissedJobs.has(job.id) };
 }
 
 export function reduceWorkJob<E>(kind: Policy<E>, state: WorkJobState<E>, action: WorkJobAction): WorkJobState<E> {
@@ -212,9 +193,12 @@ export function reduceWorkJob<E>(kind: Policy<E>, state: WorkJobState<E>, action
       if (state.job) return state.job.id === job.id ? { ...state, job } : state;
       if (isActive(job)) return { ...state, job };
       if (!isFailure(job)) return state;
-      // An untracked terminal failure, typically a hello replay of the persisted job table (newest first).
-      if (kind.adopt === "every") return writeFailure(kind, state, job);
-      return state.adopted ? state : writeFailure(kind, { ...state, adopted: true }, job);
+      // An untracked terminal failure, typically a hello replay of the persisted job table (newest first): the strip
+      // shows the newest failure, whatever the order the frames arrive in.
+      const shown = state.error;
+      if (shown?.jobId === null) return state; // a rejected local submission outranks a replay
+      if (shown?.createdAt !== undefined && shown.createdAt > job.createdAt) return state;
+      return writeFailure(kind, state, job);
     }
     case "settle": {
       const { job } = state;
@@ -228,7 +212,7 @@ export function reduceWorkJob<E>(kind: Policy<E>, state: WorkJobState<E>, action
       const settled = { ...state, submitting: false };
       const { seen } = action;
       // The terminal frame beat the fetch response: surface it, don't resurrect the stale 202 body.
-      if (seen && isFailure(seen)) return writeFailure(kind, settled, seen, false);
+      if (seen && isFailure(seen)) return writeFailure(kind, settled, seen);
       if (seen?.status === "done") return settled; // the caller reloads the Library
       return { ...settled, job: seen ?? action.job }; // prefer the newer event snapshot
     }
@@ -237,21 +221,23 @@ export function reduceWorkJob<E>(kind: Policy<E>, state: WorkJobState<E>, action
         ...state,
         submitting: false,
         error: { message: kind.rejectMessage(action.status, action.detail), jobId: null },
-        dismissed: kind.dismiss === "none" ? state.dismissed : false,
+        dismissed: false,
       };
     case "dismiss":
-      if (kind.dismiss === "none") return state;
-      if (kind.dismiss === "per-job" && state.error?.jobId) {
-        return { ...state, dismissed: true, dismissedJobs: new Set(state.dismissedJobs).add(state.error.jobId) };
-      }
-      return { ...state, dismissed: true };
+      if (!state.error) return state;
+      return {
+        ...state,
+        dismissed: true,
+        dismissedJobs: state.error.jobId ? new Set(state.dismissedJobs).add(state.error.jobId) : state.dismissedJobs,
+      };
+    case "submission-settled":
+      return state.submitting ? { ...state, submitting: false } : state;
     case "reset":
       return {
         ...state,
         job: null,
         error: null,
         dismissed: false,
-        adopted: false,
         submitting: action.submitting,
       };
   }
@@ -339,9 +325,10 @@ export function useWorkJobs(workId: string, options: { onReload?: () => void } =
 
   useEffect(
     () =>
-      onJobEvent((job) => {
+      onJobEvent((job, eventType) => {
         const targetWorkId = jobTarget(job).workId || null;
-        if (targetWorkId && isTerminal(job)) {
+        // A hello replay lists old terminal jobs; it never says a submission still in flight is over.
+        if (targetWorkId && isTerminal(job) && eventType !== "hello") {
           for (const name of WORK_JOB_NAMES) {
             if (WORK_JOB_KINDS[name].oneSubmissionPerWork && WORK_JOB_KINDS[name].match(job)) {
               submissions.current[name].delete(targetWorkId);
@@ -354,7 +341,13 @@ export function useWorkJobs(workId: string, options: { onReload?: () => void } =
         if (isJobSnapshotRegression(previous, job)) return;
         seen.current.set(job.id, job);
         const name = WORK_JOB_NAMES.find((candidate) => WORK_JOB_KINDS[candidate].match(job));
-        if (name) dispatch({ type: "event", name, job });
+        if (!name) return;
+        dispatch({ type: "event", name, job });
+        // The guard above was already released by this frame; the shown Work's button follows it (ticket 56). A hello
+        // replay lists old terminal jobs and says nothing about a submission still in flight, so it never settles.
+        if (eventType !== "hello" && isTerminal(job) && WORK_JOB_KINDS[name].oneSubmissionPerWork) {
+          dispatch({ type: "submission-settled", name });
+        }
       }),
     [workId]
   );

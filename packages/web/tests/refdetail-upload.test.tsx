@@ -331,6 +331,30 @@ describe("RefDetail upload tracking", () => {
     ).toBe(false);
   });
 
+  it("a failed LaTeX upload can be dismissed to a summary; the same job replayed stays dismissed", () => {
+    renderDetail();
+    openFilesTab();
+    act(() => {
+      h.listener?.(makeJob({ status: "failed", error: "no .tex file found" }), "job.failed");
+    });
+    screen.getByText(/上传失败：no \.tex file found/);
+    fireEvent.click(document.querySelector('[data-ui="dismiss-latex-upload-error"]') as Element);
+    expect(screen.queryByText(/上传失败：no \.tex file found/)).toBeNull();
+    screen.getByText("LaTeX 上传未完成；已有文档未更改。");
+    expect(document.querySelector('[data-ui="dismiss-latex-upload-error"]')).toBeNull();
+    // a hello replay of the same failed job does not re-expand it
+    act(() => {
+      h.listener?.(makeJob({ status: "failed", error: "no .tex file found" }), "hello");
+    });
+    expect(screen.queryByText(/上传失败：no \.tex file found/)).toBeNull();
+    // a different, newer failure shows expanded again
+    act(() => {
+      h.listener?.(makeJob({ id: "upload-j2", status: "queued" }), "job.created");
+      h.listener?.(makeJob({ id: "upload-j2", status: "failed", error: "second failure" }), "job.failed");
+    });
+    screen.getByText(/上传失败：second failure/);
+  });
+
   it("does not resurrect a terminal upload when late WS queued/running frames arrive", () => {
     renderDetail();
     openFilesTab();

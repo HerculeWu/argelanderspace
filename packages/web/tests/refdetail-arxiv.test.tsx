@@ -363,6 +363,19 @@ describe("docless work with an arXiv id", () => {
     expect(screen.getByTestId("arxiv-retry")).toBeTruthy();
   });
 
+  it("a failed arXiv fetch can be dismissed to a summary that keeps the retry", () => {
+    renderDetail(REF_ARXIV);
+    openFilesTab();
+    act(() => {
+      h.listener?.(makeJob({ status: "failed", error: "compile failed" }), "job.failed");
+    });
+    screen.getByText(/获取 arXiv 正文失败：compile failed/);
+    fireEvent.click(document.querySelector('[data-ui="dismiss-arxiv-source-error"]') as Element);
+    expect(screen.queryByText(/获取 arXiv 正文失败：compile failed/)).toBeNull();
+    screen.getByText("获取 arXiv 正文未完成；已有文档未更改。");
+    expect(screen.getByTestId("arxiv-retry")).toBeTruthy();
+  });
+
   it("does not attach a late arXiv POST response to a later A → B → A Work session", async () => {
     let resolveFetch: (job: StartResult) => void = () => {};
     h.attachArxiv.mockImplementationOnce(
