@@ -203,6 +203,10 @@ function LoadedPdfDocument({
   const positionGeneration = useRef(0);
   const userTookControl = useRef(false);
   const userInputGeneration = useRef(0);
+  // Counts only the user's own navigation (wheel, keys, pointer on the page, toolbar, panels). Unlike userInputGeneration it is
+  // not bumped when an effect is torn down (the position writer's cleanup does that), so the link-landing loop and the `#ann-`
+  // placement stop for the user and for nothing else.
+  const userNavigations = useRef(0);
   const restoringPosition = useRef(false);
   const { provides: viewport } = useViewportCapability();
   const { provides: documentManager } = useDocumentManagerCapability();
@@ -213,7 +217,7 @@ function LoadedPdfDocument({
   const [outlineEntries, setOutlineEntries] = useState<OutlineEntry[]>([]);
   const [pdfLinks, setPdfLinks] = useState<PdfLinkAnnoObject[]>([]);
   const [outlineTargets, setOutlineTargets] = useState<Map<string, PdfLinkTarget>>(new Map());
-  const markUserNavigation = useCallback(() => { userTookControl.current = true; restoringPosition.current = false; }, []);
+  const markUserNavigation = useCallback(() => { userTookControl.current = true; restoringPosition.current = false; userNavigations.current++; }, []);
   const recoverPosition = useCallback((file: PdfReadingPosition) => {
     const saved = file.position;
     let anchor = pendingAnchor;
@@ -377,28 +381,52 @@ function LoadedPdfDocument({
       let cancelLayoutWait = () => undefined;
       if (explicitPage !== null && explicitPage >= 0 && explicitPage < pages.length) {
         const targetPageNumber = explicitPage + 1;
-        const generationForLinkedPage = positionGeneration.current;
-        const userGeneration = userInputGeneration.current;
+        const navigationsAtLink = userNavigations.current;
         const scope = scroll.forDocument(docId);
-        let unsubscribeLayout: (() => void) | undefined;
-        let layoutTimer: number | undefined;
+        let landingFrame = 0;
         let cancelled = false;
-        cancelLayoutWait = () => { cancelled = true; unsubscribeLayout?.(); window.clearTimeout(layoutTimer); };
-        const navigateToLinkedPage = () => {
-          if (cancelled) return;
-          if (generationForLinkedPage !== positionGeneration.current || userGeneration !== userInputGeneration.current) { cancelLayoutWait(); return; }
-          const layout = scope.getLayout();
-          if (scope.getTotalPages() !== pages.length || layout.totalContentSize.height <= 0) return;
-          cancelLayoutWait();
-          scope.scrollToPage({ pageNumber: targetPageNumber, behavior: "instant" });
+        cancelLayoutWait = () => { cancelled = true; cancelAnimationFrame(landingFrame); };
+        const guardsHold = () => navigationsAtLink === userNavigations.current;
+        // scrollToPage moves the plugin's own current page at once, but the DOM move is a request the Viewport element
+        // honours only after it has subscribed: one sent before that is lost and the page stays at the top (arch-19).
+        // So the link is consumed until the page is really in view, asking again while it is not. The wait is counted in
+        // painted frames, not seconds: a tab opened in the background paints none, and a wall-clock budget would have
+        // given the link up before the user ever saw the page.
+        let framesLeft = 900;
+        // Landed means the page covers the viewport's top edge (a little slack for the viewport gap), not merely that some of it
+        // shows: at scroll 0 page 2 already peeks in. The last pages cannot reach the top; there the scroller at its end counts.
+        const pageInView = () => {
+          const root = layoutRef.current ?? document;
+          const scroller = root.querySelector<HTMLElement>(".pdf-viewport");
+          const page = root.querySelector<HTMLElement>(`.pdf-area-layer[data-pdf-page-index="${explicitPage}"]`);
+          if (!scroller || !page) return false;
+          const view = scroller.getBoundingClientRect();
+          const rect = page.getBoundingClientRect();
+          if (rect.height <= 0 || rect.bottom <= view.top || rect.top >= view.bottom) return false;
+          const atEnd = scroller.scrollHeight > scroller.clientHeight + 1 && scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2;
+          return rect.top <= view.top + 24 || atEnd;
         };
-        unsubscribeLayout = scope.onLayoutChange(navigateToLinkedPage);
-        layoutTimer = window.setTimeout(cancelLayoutWait, 5_000);
-        requestAnimationFrame(navigateToLinkedPage);
+        let requested = false;
+        let framesSinceRequest = 0;
+        let framesInView = 0;
+        const step = () => {
+          if (cancelled) return;
+          if (!guardsHold() || --framesLeft < 0) { cancelLayoutWait(); return; }
+          if (!requested) {
+            const layout = scope.getLayout();
+            if (scope.getTotalPages() === pages.length && layout.totalContentSize.height > 0) { requested = true; scope.scrollToPage({ pageNumber: targetPageNumber, behavior: "instant" }); }
+          } else if (pageInView()) {
+            if (++framesInView >= 6) { cancelLayoutWait(); return; }
+          } else if (++framesSinceRequest >= 3) {
+            framesInView = 0; framesSinceRequest = 0;
+            scope.scrollToPage({ pageNumber: targetPageNumber, behavior: "instant" });
+          }
+          landingFrame = requestAnimationFrame(step);
+        };
+        landingFrame = requestAnimationFrame(step);
         const targetLocation = linkedAnnotation ? pdfAnnotationLocation(linkedAnnotation) : null;
         if (targetLocation) {
-          const userGeneration = userInputGeneration.current;
-          placeReaderAtLocation(targetLocation, () => userInputGeneration.current === userGeneration);
+          placeReaderAtLocation(targetLocation, guardsHold);
         }
         requestAnimationFrame(() => document.getElementById(`pdf-annotation-${CSS.escape(annotationId ?? "")}`)?.scrollIntoView({ block: "nearest" }));
       } else if (!pageMatch && annotationId && linkedAnnotation?.kind === "document_comment") {
@@ -419,8 +447,9 @@ function LoadedPdfDocument({
     const started = performance.now();
     const place = () => {
       if (generation !== positionGeneration.current || userTookControl.current || frames++ > 90) { restoringPosition.current = false; return; }
-      const scroller = document.querySelector<HTMLElement>(".pdf-viewport");
-      const page = document.querySelector<HTMLElement>(`.pdf-area-layer[data-pdf-page-index="${saved.page_index}"]`);
+      const root = layoutRef.current ?? document;
+      const scroller = root.querySelector<HTMLElement>(".pdf-viewport");
+      const page = root.querySelector<HTMLElement>(`.pdf-area-layer[data-pdf-page-index="${saved.page_index}"]`);
       if (scroller && page && page.getBoundingClientRect().height > 0) {
         const pageRect = page.getBoundingClientRect();
         if (previousTop !== null && Math.abs(previousTop - pageRect.top) < 0.5) stableFrames++;
@@ -445,8 +474,9 @@ function LoadedPdfDocument({
     let attempts = 0;
     let detach: (() => void) | null = null;
     const attach = () => {
-      const scroller = document.querySelector<HTMLElement>(".pdf-scroller");
-      const viewportElement = document.querySelector<HTMLElement>(".pdf-viewport");
+      const root = layoutRef.current ?? document;
+      const scroller = root.querySelector<HTMLElement>(".pdf-scroller");
+      const viewportElement = root.querySelector<HTMLElement>(".pdf-viewport");
       if (!scroller || !viewportElement) {
         if (attempts++ < 120) frame = requestAnimationFrame(attach);
         return;
@@ -456,7 +486,7 @@ function LoadedPdfDocument({
         const viewRect = viewportElement.getBoundingClientRect();
         const centerX = viewRect.left + viewRect.width / 2;
         const centerY = viewRect.top + viewRect.height / 2;
-        const candidates = [...document.querySelectorAll<HTMLElement>(".pdf-area-layer[data-pdf-page-index]")]
+        const candidates = [...root.querySelectorAll<HTMLElement>(".pdf-area-layer[data-pdf-page-index]")]
           .map((element) => ({ element, rect: element.getBoundingClientRect(), pageIndex: Number(element.dataset.pdfPageIndex) }))
           .filter((candidate) => candidate.rect.width > 0 && candidate.rect.height > 0);
         const visible = candidates.find(({ rect }) => centerX >= rect.left && centerX <= rect.right && centerY >= rect.top && centerY <= rect.bottom);
@@ -472,7 +502,7 @@ function LoadedPdfDocument({
           if (latest) persistPosition(latest);
         }, 650);
       };
-      const takeControl = () => { userInputGeneration.current++; userTookControl.current = true; restoringPosition.current = false; };
+      const takeControl = () => { userInputGeneration.current++; userNavigations.current++; userTookControl.current = true; restoringPosition.current = false; };
       const onKey = (event: KeyboardEvent) => { if (["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End", " "].includes(event.key)) { takeControl(); requestAnimationFrame(saveFromScroll); } };
       const onWheel = () => { takeControl(); requestAnimationFrame(saveFromScroll); };
       const onPointer = (event: PointerEvent) => { if (event.target instanceof Element && event.target.closest(".pdf-scroller, .pdf-viewport")) takeControl(); };
@@ -575,7 +605,7 @@ function LoadedPdfDocument({
           session={session}
           currentPage={currentPageIndex}
           blocked={sessionState.blocked}
-          onNavigatePage={(pageIndex) => scroll?.forDocument(docId).scrollToPage({ pageNumber: pageIndex + 1 })}
+          onNavigatePage={(pageIndex) => { markUserNavigation(); scroll?.forDocument(docId).scrollToPage({ pageNumber: pageIndex + 1 }); }}
           commentRequest={commentRequest}
         /></div>
       </aside>
