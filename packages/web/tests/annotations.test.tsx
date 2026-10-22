@@ -314,6 +314,67 @@ describe("right-panel tabs", () => {
     }
   });
 
+  describe("long comment expand / collapse", () => {
+    // happy-dom has no layout: fake the clamped preview's overflow per body.
+    const LONG = "很长的正文\n".repeat(12);
+    // Only `.ann-entry-preview` elements are faked; every other element keeps
+    // the original getter. Restored after each test.
+    beforeEach(() => {
+      // The getters live on different prototypes in different DOMs: find the owner.
+      const owner = (prop: string) => {
+        for (let p: object | null = HTMLElement.prototype; p; p = Object.getPrototypeOf(p)) {
+          if (Object.getOwnPropertyDescriptor(p, prop)?.get) return p;
+        }
+        throw new Error(`${prop} getter not found`);
+      };
+      const scrollOwner = owner("scrollHeight");
+      const clientOwner = owner("clientHeight");
+      const realScroll = Object.getOwnPropertyDescriptor(scrollOwner, "scrollHeight")!.get!;
+      const realClient = Object.getOwnPropertyDescriptor(clientOwner, "clientHeight")!.get!;
+      vi.spyOn(scrollOwner, "scrollHeight" as never, "get" as never).mockImplementation(function (this: Element) {
+        if (!this.classList.contains("ann-entry-preview")) return realScroll.call(this);
+        return this.textContent && this.textContent.length > 20 ? 200 : 20;
+      } as never);
+      vi.spyOn(clientOwner, "clientHeight" as never, "get" as never).mockImplementation(function (this: Element) {
+        if (!this.classList.contains("ann-entry-preview")) return realClient.call(this);
+        return this.classList.contains("expanded") ? 200 : 36;
+      } as never);
+    });
+    afterEach(() => vi.restoreAllMocks());
+    const toggle = (c: HTMLElement, id: string) =>
+      c.querySelector<HTMLButtonElement>(`[data-ann-id='${id}'] [data-ui="toggle-latex-annotation-body"]`);
+
+    it("shows the control only on an overflowing body; each entry opens on its own; the click does not jump", async () => {
+      serverFile.annotations = [
+        mkAnn("a_00000001", structTarget("p-1", "paragraph"), LONG),
+        mkAnn("a_00000002", structTarget("p-6", "paragraph"), "短"),
+        mkAnn("a_00000003", structTarget("p-10", "paragraph"), LONG),
+      ];
+      const { container } = renderDocPane();
+      await ready(container);
+      fireEvent.click(tabButton(container, "标注"));
+      await waitFor(() => expect(annEntryIds(container)).toHaveLength(3));
+      await waitFor(() => expect(toggle(container, "a_00000001")).toBeTruthy());
+      expect(toggle(container, "a_00000002")).toBeNull();
+      const preview = (id: string) => container.querySelector(`[data-ann-id='${id}'] .ann-entry-preview`)!;
+      expect(preview("a_00000001").classList.contains("expanded")).toBe(false);
+      expect(toggle(container, "a_00000001")!.getAttribute("aria-label")).toBe("展开全文");
+      expect(toggle(container, "a_00000001")!.getAttribute("aria-expanded")).toBe("false");
+
+      scrolled.length = 0;
+      fireEvent.click(toggle(container, "a_00000001")!);
+      await waitFor(() => expect(preview("a_00000001").classList.contains("expanded")).toBe(true));
+      expect(toggle(container, "a_00000001")!.getAttribute("aria-label")).toBe("收起全文");
+      expect(toggle(container, "a_00000001")!.getAttribute("aria-expanded")).toBe("true");
+      expect(preview("a_00000003").classList.contains("expanded")).toBe(false);
+      expect(scrolled).toHaveLength(0); // no jump, no activation
+      expect(container.querySelector("[data-ann-id='a_00000001']")!.classList.contains("active")).toBe(false);
+
+      fireEvent.click(toggle(container, "a_00000001")!);
+      await waitFor(() => expect(preview("a_00000001").classList.contains("expanded")).toBe(false));
+    });
+  });
+
   it("lists annotations document-level first, then in document order", async () => {
     serverFile.annotations = [
       mkAnn("a_00000010", structTarget("p-10", "paragraph"), "P10"),
