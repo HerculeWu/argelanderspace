@@ -198,7 +198,7 @@ export async function createWorks(req: ManualWorkRequest): Promise<ManualWorkRes
 /** Persist a per-reference state change (color label, read flag, note, tags, main doc). */
 export async function patchRef(
   id: string,
-  patch: Partial<Pick<LibraryRef, "label" | "read" | "star" | "tags" | "doc_id">>
+  patch: Partial<Pick<LibraryRef, "label" | "read" | "star" | "note" | "tags" | "doc_id">>
 ): Promise<boolean> {
   // work ids contain slashes/colons → id rides in the body, not the path
   const r = await tryJson<unknown>("/api/library/refs", { method: "PATCH", json: { id, ...patch } });
