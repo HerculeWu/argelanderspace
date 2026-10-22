@@ -61,6 +61,7 @@ import { ingestFailureLog, sweepIngestPartials } from "./compile-failure-log.js"
 import { CopilotHost } from "./copilot.js";
 import { realDiscoverySource, realPipelines, realSources, statusDirFor } from "./deps.js";
 import type { HostBridge } from "./host-routes.js";
+import { closeHttpServer } from "./http-close.js";
 import { JobRunner } from "./jobs.js";
 import {
   applyLogLevel,
@@ -432,7 +433,8 @@ export function createServer(opts: ServerOptions): RunningServer {
         providerSettings.close();
         // Connections and timers of the mail watcher end before the server is reported closed.
         void Promise.all([mailWatcher?.stop(), copilot.close()]).then(
-          () => server.close((err) => (err ? rejectClose(err) : resolveClose())),
+          // Every graceful step above has run; what is left is the sockets (http-close.ts).
+          () => closeHttpServer(server).then(resolveClose, rejectClose),
           rejectClose
         );
       }),

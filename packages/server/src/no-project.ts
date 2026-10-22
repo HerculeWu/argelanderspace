@@ -25,6 +25,7 @@ import { serve } from "@hono/node-server";
 import type { Hono } from "hono";
 import { mountWebDist } from "./app.js";
 import { type HostBridge, mountHostRoutes } from "./host-routes.js";
+import { closeHttpServer } from "./http-close.js";
 import { applyLogLevel, type ServerLog, silentLog } from "./log.js";
 import { mountPageErrorRoute, type PageErrorOptions } from "./page-errors.js";
 import { createProtectedApp, listeningPort } from "./protected-app.js";
@@ -158,7 +159,7 @@ export function createNoProjectServer(opts: NoProjectServerOptions): NoProjectSe
         writePendingPageErrorCounts();
         releaseGlobalDirs();
         hub.close();
-        server.close((err) => (err ? rejectClose(err) : resolveClose()));
+        closeHttpServer(server).then(resolveClose, rejectClose);
       }),
   };
 }
