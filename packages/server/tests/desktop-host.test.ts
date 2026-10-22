@@ -541,7 +541,11 @@ describe("native requests", () => {
       headers: ORIGIN(h.url),
     });
     const req = (await h.next("request")) as { id: string };
-    // An unknown id and a relative path: the line protocol's corpus (desktop-line-protocol.test.ts).
+    // A relative path under the request's own id is refused and the request keeps waiting: the real answer below is
+    // still taken (an unknown id: the line protocol's corpus, desktop-line-protocol.test.ts).
+    h.input.write(
+      `${JSON.stringify({ type: "folder_picked", id: req.id, path: "relative/dir" })}\n`
+    );
     h.input.write(
       `${JSON.stringify({ type: "folder_picked", id: req.id, path: "/somewhere/picked" })}\n`
     );
@@ -554,7 +558,7 @@ describe("native requests", () => {
       { outcome: "picked" },
     ]);
     expect(log.filter((r) => r.event === "desktop.protocol_rejected").map((r) => r.reason)).toEqual(
-      ["unknown_id"]
+      ["bad_shape", "unknown_id"]
     );
     // The picked path is not in the log.
     expect(JSON.stringify(log)).not.toContain("somewhere");

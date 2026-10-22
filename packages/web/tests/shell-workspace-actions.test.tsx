@@ -8,6 +8,7 @@ import type { CopilotViewAction, PageContext, PlansFile } from "@argelanderspace
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StrictMode } from "react";
 import { PageContextSchema } from "@argelanderspace/contracts";
+import type { CopilotProps } from "./shell-stubs";
 import { Shell } from "../src/argelander/Shell";
 import { registerWorkspaceLeaveGuard } from "../src/argelander/workspace";
 import i18n from "../src/i18n";
@@ -20,6 +21,7 @@ const h = vi.hoisted(() => ({
   openPanel: null as null | (() => void),
   open: false,
   ready: true,
+  props: null as null | CopilotProps,
   writerApply: null as null | ((action: unknown) => Promise<{ ok: boolean; detail?: string }>),
 }));
 vi.mock("../src/api/ws", async () => (await import("./shell-stubs")).quietWs());
@@ -383,5 +385,45 @@ describe("Writer view actions go through the Writer pane (ticket 37)", () => {
     expect(await run({ action: "open_manuscript", manuscriptId: "m_00000001" })).toEqual({ ok: false, detail: "unavailable" });
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(apply).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the Shell's two lines of wiring for a Doc (architecture-deepening ticket 15, item 2)", () => {
+  it("open_task_doc reaches the workspace: the Doc pane shows, the current Doc and the address follow", async () => {
+    await boot();
+    expect(await run({ action: "open_task_doc", taskId: "t_00000001", docId: "d2" })).toEqual({ ok: true });
+    await waitFor(() => expect(q('[data-ui="doc-stub"]')).not.toBeNull());
+    expect(window.location.pathname).toBe("/doc/d2");
+    expect(await run({ action: "open_task_doc", taskId: "t_00000001", docId: "nope" })).toEqual({ ok: false, detail: "not_found" });
+    expect(window.location.pathname).toBe("/doc/d2");
+  });
+
+  it("the Copilot panel's guards.leaveDoc is the workspace's: the open Doc with unsaved work refuses, another Doc does not ask", async () => {
+    await boot();
+    expect(await run({ action: "open_task_doc", taskId: "t_00000001", docId: "d1" })).toEqual({ ok: true });
+    await waitFor(() => expect(q('[data-ui="doc-stub"]')).not.toBeNull());
+    const leaveDoc = h.props!.guards!.leaveDoc!;
+    expect(await leaveDoc("d1")).toBe(true); // nothing unsaved
+    const release = registerWorkspaceLeaveGuard(() => false);
+    try {
+      expect(await leaveDoc("d1")).toBe(false);
+      expect(await leaveDoc("d2")).toBe(true); // not the open Doc: no question
+    } finally { release(); }
+  });
+});
+
+describe("a Copilot-driven close or select never raises a window", () => {
+  it("close_pane and select_pane do not call window.focus", async () => {
+    const focusWindow = vi.spyOn(window, "focus").mockImplementation(() => {});
+    try {
+      await boot();
+      expect(await run({ action: "split_pane" })).toEqual({ ok: true });
+      await waitFor(() => expect(paneIds().length).toBe(2));
+      const [first, second] = paneIds();
+      expect(await run({ action: "select_pane", paneId: first! })).toEqual({ ok: true });
+      expect(await run({ action: "close_pane", paneId: second! })).toEqual({ ok: true });
+      await waitFor(() => expect(paneIds()).toEqual([first]));
+      expect(focusWindow).not.toHaveBeenCalled();
+    } finally { focusWindow.mockRestore(); }
   });
 });

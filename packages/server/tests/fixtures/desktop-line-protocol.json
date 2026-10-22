@@ -170,7 +170,7 @@
     {"id":"not-json","note":"not JSON","valid":false,"raw":"not json at all","host":{"rejected":"not_json"},"shell":null},
     {"id":"unknown-type","note":"a type there is none of","valid":false,"line":{"type":"dance"},"host":{"rejected":"unknown_type"},"shell":null},
     {"id":"not-an-object","note":"JSON, but not an object","valid":false,"line":[1,2,3],"host":{"rejected":"bad_shape"},"shell":null},
-    {"id":"folder-picked-relative","note":"a picked folder that is not an absolute path","valid":false,"line":{"type":"folder_picked","id":"i3","path":"relative/dir"},"host":{"rejected":"bad_shape"},"shell":null},
+    {"id":"folder-picked-relative","note":"a picked folder that is not an absolute path","valid":false,"line":{"type":"folder_picked","id":"i3","path":"relative/dir"},"vary":["id"],"host":{"rejected":"bad_shape"},"shell":null},
     {"id":"folder-picked-no-id","note":"an answer without the request's id","valid":false,"line":{"type":"folder_picked","path":null},"host":{"rejected":"bad_shape"},"shell":null},
     {"id":"folder-picked-unknown-id","note":"an answer to a request the host did not make","valid":false,"line":{"type":"folder_picked","id":"nope","path":"/h/p"},"host":{"rejected":"unknown_id"},"shell":null},
     {"id":"menu-unknown-item","note":"a menu item there is none of","valid":false,"line":{"type":"menu","item":"format_disk"},"host":{"rejected":"bad_shape"},"shell":null},
