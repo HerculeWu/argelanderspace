@@ -27,6 +27,8 @@ export interface MemoryBrowser {
   /** Waits for traversals asked for with `back()` / `forward()` (and the events they fire). */
   settle(): Promise<void>;
   forward(): void;
+  /** A jump of `delta` entries (the Back button's menu): one traversal, as `history.go(delta)`. */
+  go(delta: number): void;
   /** How many listeners are installed (a stopped workspace leaves none). */
   listeners(): number;
 }
@@ -107,6 +109,7 @@ export function memoryBrowser(start = "/"): MemoryBrowser {
       } while (seen !== traversals);
     },
     forward: () => traverse(1),
+    go: (delta) => traverse(delta),
     listeners: () => navs.size,
   };
 }

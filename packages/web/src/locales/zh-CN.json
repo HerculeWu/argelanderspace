@@ -1139,7 +1139,7 @@
     "title": "放弃未保存的修改？",
     "stay": "继续编辑",
     "discard": "放弃修改",
-    "blockedByDialog": "有未保存的内容：请先关闭当前对话框"
+    "blockedByDialog": "有未保存的内容：请先关闭当前对话框。"
   },
   "pdfReader": {
     "loading": "正在校验并打开 PDF…",

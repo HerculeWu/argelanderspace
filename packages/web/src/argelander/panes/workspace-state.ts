@@ -107,9 +107,38 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
   };
   /** Each Library page's selected graph node, kept while a Doc pane has replaced the page (see `Workspace.librarySelection`). */
   const selections = new Map<number, string | null>();
+  /**
+   * Each Doc pane's session: an opaque token minted when a pane becomes a Doc pane and dropped when it stops being one
+   * (another view, closed). A pane switched away by hand and back is a new session; the page-load prefix keeps a token
+   * written into history before a reload (which numbers the panes again) from matching any pane after it. See `LeftRecord`.
+   */
+  const pageLoad = newPageLoadId();
+  let sessionSeq = 0;
+  const sessions = new Map<number, string>();
+  const mintSession = () => `${pageLoad}:${++sessionSeq}`;
+  /**
+   * The session a Back ended by putting the pane's earlier view back (`withLeftView`): the Forward that returns to that Doc
+   * entry makes the pane the same Doc pane again, so a later Back finds its record still applies. Any other way the pane
+   * becomes a Doc pane starts a new session and drops this.
+   */
+  let parked: { paneId: number; session: string; view: string } | null = null;
+  const syncSessions = () => {
+    const panes = manager.getState().panes;
+    const docPanes = new Set(panes.filter((pane) => pane.view === "doc").map((pane) => pane.id));
+    for (const id of [...sessions.keys()]) if (!docPanes.has(id)) sessions.delete(id);
+    for (const id of docPanes)
+      if (!sessions.has(id)) {
+        sessions.set(id, mintSession());
+        if (parked?.paneId === id) parked = null;
+      }
+    // a parked pane that is closed, or switched to another view by hand, is no longer the pane that Back put back
+    if (parked && !panes.some((pane) => pane.id === parked?.paneId && pane.view === parked.view)) parked = null;
+  };
+  syncSessions();
   manager.subscribe(() => {
     const open = new Set(manager.getState().panes.map((pane) => pane.id));
     for (const id of [...selections.keys()]) if (!open.has(id)) selections.delete(id); // a closed pane takes its entry with it
+    syncSessions();
     emit();
   });
   /** A value that is already so is not a change: no new snapshot (an effect that clears the anchor must not loop). */
@@ -174,6 +203,7 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
       if (id === own.currentDoc) return;
       setOwn({ currentDoc: id });
       browser.replace(docRouteUrl(id)); // UI-driven switch: any stale #anchor no longer applies
+      noteDocAddress();
     };
     // the Doc views' guard may answer later (their dialog): the switch waits for a yes, and a no leaves everything as it was
     const verdict = leave.ask(undefined, undefined, "user");
@@ -184,24 +214,83 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
   /**
    * What a pushed Doc entry writes into the history state of the entry it leaves, so Back there can put the pane the Doc
    * took over back as it was: the pane (the Doc pane that already existed, else the active pane), the view it had (`doc`
-   * when it already showed a Doc, then `prevDocId` names that Doc), and the Doc that was opened (`docId`: the record only
-   * applies while that pane still shows it, which also keeps a stale record, or one from before a reload, from touching
-   * a pane that has since become something else).
+   * when it already showed a Doc, then `prevDocId` names that Doc), and the session of the Doc pane this open made or
+   * used (`session`). The record applies while that pane is still that same Doc pane, whichever Doc it shows now (a switch
+   * inside it with `setCurrentDoc` keeps it); a pane switched away by hand, or one numbered again after a reload, is not,
+   * and the record counts as none.
    */
   interface LeftRecord {
     paneId: number;
     view: string;
-    docId: string;
+    session: string;
     prevDocId?: string;
   }
-  const leftRecordOf = (pane: Pane, docId: string): { argelanderReplaced: LeftRecord } => ({
-    argelanderReplaced: { paneId: pane.id, view: pane.view, docId, ...(pane.view === "doc" && own.currentDoc ? { prevDocId: own.currentDoc } : {}) },
+  const leftRecordOf = (pane: Pane, session: string): { argelanderReplaced: LeftRecord } => ({
+    argelanderReplaced: { paneId: pane.id, view: pane.view, session, ...(pane.view === "doc" && own.currentDoc ? { prevDocId: own.currentDoc } : {}) },
   });
-  const leftRecord = (): LeftRecord | null => {
+  /** The current entry's record, when the pane it names is still the Doc pane of that session; else null. */
+  const leftRecord = (): { left: LeftRecord; pane: Pane } | null => {
     const state = browser.state() as { argelanderReplaced?: Partial<LeftRecord> } | null;
     const left = state?.argelanderReplaced;
-    if (!left || typeof left.paneId !== "number" || typeof left.view !== "string" || typeof left.docId !== "string") return null;
-    return { paneId: left.paneId, view: left.view, docId: left.docId, ...(typeof left.prevDocId === "string" ? { prevDocId: left.prevDocId } : {}) };
+    if (!left || typeof left.paneId !== "number" || typeof left.view !== "string" || typeof left.session !== "string") return null;
+    const pane = manager.getState().panes.find((p) => p.id === left.paneId && p.view === "doc");
+    if (!pane || sessions.get(pane.id) !== left.session) return null;
+    return { left: { paneId: left.paneId, view: left.view, session: left.session, ...(typeof left.prevDocId === "string" ? { prevDocId: left.prevDocId } : {}) }, pane };
+  };
+
+  /** The address that last showed the open Doc, its anchor included: what a refused Back/Forward puts back. */
+  let docAddress: { docId: string; url: string } | null = null;
+  const noteDocAddress = () => {
+    const at = browser.location();
+    const route = parseDocRoute(at.pathname, at.hash);
+    if (route && route.docId === own.currentDoc) docAddress = { docId: route.docId, url: at.pathname + at.search + at.hash };
+  };
+  const openDocUrl = (): string | null => {
+    if (!own.currentDoc) return null;
+    return docAddress?.docId === own.currentDoc ? docAddress.url : docRouteUrl(own.currentDoc);
+  };
+  /**
+   * The open Doc's address pushed back over the entry a Back/Forward moved to, which stays as it is with its history state
+   * (a new entry after it, so the forward entries are dropped, as the argument graph does). The rest of that same
+   * traversal (its `hashchange`) then finds the address it was put back to and is ignored (`pushedBack`). Returns the
+   * pushed address, or null with no open Doc.
+   */
+  let pushedBack: { href: string; timer: number } | null = null;
+  const pushDocBack = (): string | null => {
+    const url = openDocUrl();
+    if (!url) return null;
+    browser.push(url);
+    const href = browser.location().href;
+    if (pushedBack) timers.clear(pushedBack.timer);
+    const entry = { href, timer: 0 };
+    entry.timer = timers.set(() => {
+      if (pushedBack === entry) pushedBack = null;
+    }, ALLOW_MS);
+    pushedBack = entry;
+    return href;
+  };
+  const takePushedBack = (href: string): boolean => {
+    if (!pushedBack || pushedBack.href !== href) return false;
+    timers.clear(pushedBack.timer);
+    pushedBack = null;
+    return true;
+  };
+  /**
+   * The late answer to the Doc's question about a Back/Forward that left `href` (the Doc's address was pushed back at
+   * `pushedAt`): still on that pushed address, yes goes back for real and that one traversal is let through (`allowHref`);
+   * at `href` again (a further Back arrived there while the question was open) yes applies here and no pushes the address
+   * back again; anywhere else the address moved on and the answer is void.
+   */
+  const settleDocQuestion = (href: string, pushedAt: string | null, yes: boolean, applyHere: () => void) => {
+    const at = browser.location().href;
+    if (pushedAt && at === pushedAt && at !== href) {
+      if (!yes) return;
+      allowHref("doc", href);
+      browser.back();
+    } else if (at === href) {
+      if (yes) applyHere();
+      else pushDocBack();
+    }
   };
 
   /** Show a Doc (the current one, else the first) in a Doc pane; false when the leave guard keeps things as they are (or has not answered yet). */
@@ -211,6 +300,11 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
     // it (the view is still open, and its URL must still say so).
     const restoreUrl = () => {
       if (own.currentDoc && parseArgumentHash(browser.location().hash) === null) browser.replace(docRouteUrl(own.currentDoc));
+    };
+    // A late no puts the address back only while it is still the one the question was asked at: once a later navigation
+    // (a Back with its own question) moved it, that entry is not this open's to rewrite (as leaveDocPane).
+    const restoreUrlIfAt = (askedAt: string) => {
+      if (browser.location().href === askedAt) restoreUrl();
     };
     const apply = () =>
       batch(() => {
@@ -224,18 +318,32 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
             // the entry being left remembers which view this Doc replaces, so Back to it puts that view back (see onNav)
             const { panes: before, activeId: at0 } = manager.getState();
             const target = before.find((p) => p.view === "doc") ?? before.find((p) => p.id === at0);
-            if (target && nextDoc) browser.setState(leftRecordOf(target, nextDoc));
+            if (target && nextDoc) {
+              // the Doc pane this open uses: the one there already keeps its session, a pane it turns into one starts one
+              let session = target.view === "doc" ? sessions.get(target.id) : undefined;
+              if (!session) {
+                session = mintSession();
+                sessions.set(target.id, session);
+              }
+              browser.setState(leftRecordOf(target, session));
+            }
             browser.push(url);
           }
           // the Doc and its anchor in one change: the Doc pane gets the anchor with the Doc
           setOwn({ currentDoc: nextDoc, pendingAnchor: anchor ?? null });
         } else setOwn({ currentDoc: nextDoc });
+        // Forward back to the Doc entry a Back left: the pane becomes the Doc pane it was again (see `parked`)
+        const { panes: now, activeId: nowActive } = manager.getState();
+        if (opts.urlIsDoc && parked?.paneId === nowActive && !now.some((p) => p.view === "doc")) sessions.set(nowActive, parked.session);
+        parked = null;
         // ensure a pane shows the document: prefer an existing doc pane, else the active one
         manager.update((ps) => {
           if (ps.some((p) => p.view === "doc")) return ps;
           const active = manager.getState().activeId;
           return ps.map((p) => (p.id === active ? { ...p, view: "doc" } : p));
         });
+        syncSessions(); // a session started above for a pane that did not become a Doc pane is dropped
+        noteDocAddress();
       });
     // With no Doc pane the active pane becomes one: if that pane is a Library page, its unsaved argument draft is lost
     // (the page asks, unless the caller already asked about leaving it: the browser's Back).
@@ -243,13 +351,14 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
       const { panes: current, activeId } = manager.getState();
       const replaced = current.some((p) => p.view === "doc") ? undefined : current.find((p) => p.id === activeId);
       if (replaced?.view === "library" && !opts.libraryAsked) {
+        const askedAt = browser.location().href;
         const verdict = leave.ask("library", replaced.id, opts.origin);
         if (verdict !== true) {
           if (verdict === false) restoreUrl();
           else
             void verdict.then((yes) => {
               if (yes) apply();
-              else restoreUrl();
+              else restoreUrlIfAt(askedAt);
             });
           return false;
         }
@@ -264,20 +373,25 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
     // second asks nothing. A later, different navigation asks for itself and the earlier answer is void.
     const href = browser.location().href;
     if (pendingDocOpen?.href === href && pendingDocOpen.docId === nextDoc) return false;
+    // A Back/Forward to another Doc's address (`urlIsDoc`): the browser has moved, and a refusal pushes the open Doc's
+    // address back, as leaveDocPane does, so the entry it arrived at stays; the traversal a late yes lets through asks nothing.
+    if (opts.urlIsDoc && takeAllowed("doc", href)) return afterDocAsked();
     const verdict = leave.ask(undefined, undefined, opts.origin);
     if (verdict === true) return afterDocAsked();
     if (verdict === false) {
-      restoreUrl();
+      if (opts.urlIsDoc) pushDocBack();
+      else restoreUrl();
       return false;
     }
+    const pushedAt = opts.urlIsDoc ? pushDocBack() : null;
     const mine = { href, docId: nextDoc };
     pendingDocOpen = mine;
     void verdict.then((yes) => {
       if (pendingDocOpen !== mine) return;
       pendingDocOpen = null;
-      if (opts.urlIsDoc && browser.location().href !== href) return; // the address moved on while the question was open
+      if (opts.urlIsDoc) return settleDocQuestion(href, pushedAt, yes, afterDocAsked);
       if (yes) afterDocAsked();
-      else restoreUrl();
+      else restoreUrlIfAt(href);
     });
     return false;
   };
@@ -307,31 +421,34 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
   // ---- the browser's Back/Forward ------------------------------------------------------------------ //
 
   /**
-   * The URL a confirmed Back/Forward is let through to (see onNav): one navigation's worth of permission. It is taken by the
-   * navigation that arrives at that URL (a traversal fires `popstate` and then, when the hash differs, `hashchange`: the
-   * second must not ask again, so a taken permission lingers for a moment), and it is dropped when a graph is entered again
-   * and after a couple of seconds, so it can never excuse a later, different Back.
+   * The URL a confirmed Back/Forward is let through to (see onNav): one navigation's worth of permission, one per guard that
+   * grants it (`graph`: the argument graph's question, `doc`: the Doc's), so one guard's yes never answers another's
+   * question. It is taken by the navigation that arrives at that URL (a traversal fires `popstate` and then, when the hash
+   * differs, `hashchange`: the second must not ask again, so a taken permission lingers for a moment), and it is dropped
+   * when a graph is entered again and after a couple of seconds, so it can never excuse a later, different Back.
    */
-  let allowed: { href: string; timer: number } | null = null;
+  type Grantor = "graph" | "doc";
+  const allowed = new Map<Grantor, { href: string; timer: number }>();
   const dropAllowed = () => {
-    if (allowed) timers.clear(allowed.timer);
-    allowed = null;
+    for (const entry of allowed.values()) timers.clear(entry.timer);
+    allowed.clear();
   };
-  const allowHref = (href: string) => {
-    dropAllowed();
+  const allowHref = (by: Grantor, href: string) => {
+    const old = allowed.get(by);
+    if (old) timers.clear(old.timer);
     const entry = { href, timer: 0 };
     entry.timer = timers.set(() => {
-      if (allowed === entry) allowed = null;
+      if (allowed.get(by) === entry) allowed.delete(by);
     }, ALLOW_MS);
-    allowed = entry;
+    allowed.set(by, entry);
   };
-  /** Whether `href` is the navigation that was let through; taking it shortens the permission to the rest of this navigation. */
-  const takeAllowed = (href: string): boolean => {
-    const entry = allowed;
+  /** Whether `href` is the navigation `by` let through; taking it shortens the permission to the rest of this navigation. */
+  const takeAllowed = (by: Grantor, href: string): boolean => {
+    const entry = allowed.get(by);
     if (!entry || entry.href !== href) return false;
     timers.clear(entry.timer);
     entry.timer = timers.set(() => {
-      if (allowed === entry) allowed = null;
+      if (allowed.get(by) === entry) allowed.delete(by);
     }, TAKEN_MS);
     return true;
   };
@@ -339,6 +456,8 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
   let pendingNav: { href: string } | null = null;
   const onNav = () => {
     const location = browser.location();
+    // the hashchange of a traversal whose popstate already put the open Doc's address back (pushDocBack)
+    if (takePushedBack(location.href)) return;
     const route = parseDocRoute(location.pathname, location.hash);
     const argumentWork = parseArgumentHash(location.hash);
     // The browser's Back/Forward (or a hand-edited hash) away from an open argument graph, to a plain URL, a Doc, an
@@ -351,7 +470,7 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
     const hit = argumentBus.affected(argumentWork);
     const leavingView = hit !== null;
     const href = location.href;
-    if (hit && !takeAllowed(href)) {
+    if (hit && !takeAllowed("graph", href)) {
       if (pendingNav) {
         pendingNav.href = href;
         browser.push(argumentUrl(hit.open));
@@ -366,7 +485,7 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
           void verdict.then((yes) => {
             if (pendingNav === pending) pendingNav = null;
             if (!yes) return;
-            allowHref(pending.href);
+            allowHref("graph", pending.href);
             browser.back();
           });
         }
@@ -420,56 +539,55 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
       then?.();
     };
     if (pane.view !== "doc") return apply();
+    // the traversal the Doc's own late yes let through (settleDocQuestion): asked already
+    if (takeAllowed("doc", href)) return apply();
     if (pendingLeave?.href === href) return;
-    const stillHere = () => browser.location().href === href;
-    const restoreUrl = () => {
-      if (own.currentDoc && stillHere()) browser.replace(docRouteUrl(own.currentDoc));
-    };
+    // Until the answer is yes the open Doc's address is pushed back over the entry the browser moved to: that entry, and
+    // the record it carries, stay for a later Back.
     const verdict = leave.ask("doc", pane.id, "user");
-    if (verdict === true) apply();
-    else if (verdict === false) restoreUrl();
-    else {
-      const mine = { href };
-      pendingLeave = mine;
-      void verdict.then((yes) => {
-        if (pendingLeave !== mine) return; // a newer navigation has its own question
-        pendingLeave = null;
-        if (!stillHere()) return;
-        if (yes) apply();
-        else restoreUrl();
-      });
-    }
+    if (verdict === true) return apply();
+    if (verdict === false) return void pushDocBack();
+    const pushedAt = pushDocBack();
+    const mine = { href };
+    pendingLeave = mine;
+    void verdict.then((yes) => {
+      if (pendingLeave !== mine) return; // a newer navigation has its own question
+      pendingLeave = null;
+      settleDocQuestion(href, pushedAt, yes, apply);
+    });
   };
   const paneTo = (pane: Pane, view: string) => () => manager.update((ps) => ps.map((p) => (p.id === pane.id && p.view === pane.view ? { ...p, view } : p)));
 
   /**
    * The entry Back/Forward arrived at may carry the record a pushed Doc entry wrote (`LeftRecord`): the pane the Doc took
-   * over gets its view back (a Doc it showed before: that Doc), but only while it still shows the Doc the record names;
-   * otherwise the record is stale and no pane is touched. `then` runs afterwards in every case (also after a late answer).
-   * Returns whether the entry had a record.
+   * over gets its view back (a Doc it showed before: that Doc), while it is still the Doc pane that open made or used. A
+   * record whose pane is not (switched away by hand, numbered again after a reload) counts as none. `then` runs afterwards
+   * in every case (also after a late answer). Returns whether the entry had a record that applied.
    */
   const withLeftView = (then: () => void): boolean => {
-    const left = leftRecord();
-    if (!left) {
+    const found = leftRecord();
+    if (!found) {
       then();
       return false;
     }
-    const pane = manager.getState().panes.find((p) => p.id === left.paneId && p.view === "doc");
-    if (!pane || own.currentDoc !== left.docId) {
-      then();
-      return true;
-    }
+    const { left, pane } = found;
     const prev = left.prevDocId;
-    const change = left.view === "doc" ? () => prev && setOwn({ currentDoc: prev, pendingAnchor: null }) : paneTo(pane, left.view);
+    const change =
+      left.view === "doc"
+        ? () => prev && setOwn({ currentDoc: prev, pendingAnchor: null })
+        : () => {
+            paneTo(pane, left.view)();
+            if (!manager.getState().panes.some((p) => p.id === pane.id && p.view === "doc")) parked = { paneId: pane.id, session: left.session, view: left.view };
+          };
     leaveDocPane(pane, change, then);
     return true;
   };
 
   /**
    * Back/Forward arrived at a URL that names neither a Doc nor an exploration nor an argument graph (`/`). With a record on
-   * that entry the Doc's pane is put back as it was (see `withLeftView`) and nothing else changes. With no record (a boot
-   * deep link, an older entry) the Library page is what is there: when no pane shows it, the Doc pane (the active pane if
-   * it is one) turns into it.
+   * that entry that still applies the Doc's pane is put back as it was (see `withLeftView`) and nothing else changes. With
+   * no record (a boot deep link, an older entry, or a record that no longer applies) the Library page is what is there:
+   * when no pane shows it, the Doc pane (the active pane if it is one) turns into it.
    */
   const libraryForPlainUrl = () => {
     if (withLeftView(() => {})) return;
@@ -659,4 +777,10 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
     runWorkspaceAction,
     openDocAction,
   };
+}
+
+/** A token unique to this page load (history state outlives a reload; the pane ids and sessions do not). */
+function newPageLoadId(): string {
+  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  return c?.randomUUID ? c.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
