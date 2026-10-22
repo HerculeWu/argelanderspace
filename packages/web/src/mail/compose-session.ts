@@ -937,13 +937,13 @@ export function createComposeSession(deps: ComposeSessionDeps): ComposeSession {
   };
 
   /** The server accepted a send of this window: it closes into a countdown (or the "sending" bar). */
-  const accepted = (c: ComposeState, st: MailSendStatus) => {
+  const accepted = (c: ComposeState, st: MailSendStatus, requestedAt?: number) => {
     // The snapshot is this composer's (by uid); a different window is never closed or rewritten here.
     const mine = state.compose?.uid === c.uid ? state.compose : null;
     const snapshot: ComposeState = { ...(mine ?? c), sending: false, unconfirmed: null, error: null, errorName: null };
     if (mine) setCompose(null);
     sendMeta.set(st.sendId, { subject: st.subject || c.draft.subject, snapshot });
-    tracker.track(st.accountId || c.accountId, st.sendId, st);
+    tracker.track(st.accountId || c.accountId, st.sendId, st, requestedAt);
   };
 
   /**
@@ -995,6 +995,7 @@ export function createComposeSession(deps: ComposeSessionDeps): ComposeSession {
       // An earlier send of this window never got an answer. Ask what became of it before sending again:
       // it may be in its window right now, and a second send id would send the message twice.
       let earlier: MailSendStatus | null = null;
+      const askedAt = clock.now();
       try {
         earlier = await api.fetchMailSendStatus(unconfirmed.accountId, unconfirmed.sendId);
       } catch (e) {
@@ -1012,7 +1013,7 @@ export function createComposeSession(deps: ComposeSessionDeps): ComposeSession {
         if (earlier.state === "pending" || earlier.state === "sending") {
           // It did arrive: this click joins it. Edits made since then are not in it (undo brings them back).
           if (unconfirmed.sig !== sig) notify({ tone: "warning", kind: "earlierAccepted", params: { subject } });
-          accepted(c, earlier);
+          accepted(c, earlier, askedAt);
           return;
         }
         // A failure whose SMTP outcome cannot be known may have gone out: it counts as unknown (ticket 43), never
@@ -1053,10 +1054,11 @@ export function createComposeSession(deps: ComposeSessionDeps): ComposeSession {
     const sendId =
       unconfirmed && unconfirmed.sig === sig && unconfirmed.accountId === c.accountId ? unconfirmed.sendId : newId();
     try {
+      const requestedAt = clock.now();
       const st = await api.startMailSend(c.accountId, sendId, c.draft);
       // Gone from Mail meanwhile: the server holds the send and reports it when Mail opens again.
       if (!alive) return;
-      accepted(c, { ...st, sendId: st.sendId || sendId });
+      accepted(c, { ...st, sendId: st.sendId || sendId }, requestedAt);
     } catch (e) {
       const code = mailErrorCode(e);
       // No answer at all: the request may have reached the server. Bind its id to this window.
@@ -1177,6 +1179,7 @@ export function createComposeSession(deps: ComposeSessionDeps): ComposeSession {
       outboxCancelled = false;
       // Shown, not taken: the records stay until opened or explicitly dropped.
       storage.viewer = viewer;
+      const outboxAt = clock.now();
       const outbox = api.fetchMailOutbox();
       for (const e of storage.get()) showLeft(e);
       // On opening Mail: anything the server still holds from before (in its window, finished, or ended without a send).
@@ -1190,14 +1193,14 @@ export function createComposeSession(deps: ComposeSessionDeps): ComposeSession {
           if (st.state === "pending" || st.state === "sending") {
             if (sendMeta.has(st.sendId)) continue;
             sendMeta.set(st.sendId, { subject: st.subject, snapshot: null });
-            tracker.track(st.accountId, st.sendId, st);
+            tracker.track(st.accountId, st.sendId, st, outboxAt);
           } else
             settle(
               {
                 accountId: st.accountId,
                 sendId: st.sendId,
                 subject: st.subject,
-                endsAt: clock.now() + (st.remainingMs ?? 0),
+                endsAt: outboxAt + (st.remainingMs ?? 0),
                 phase: "sending",
                 unreachable: false,
                 snapshot: null,

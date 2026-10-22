@@ -144,13 +144,13 @@ function fakeClock(step = 0) {
 function fakeTracker() {
   const listeners = new Set<(v: SendView[]) => void>();
   let views: SendView[] = [];
-  const tracked: Array<{ accountId: string; sendId: string; initial?: MailSendStatus }> = [];
+  const tracked: Array<{ accountId: string; sendId: string; initial?: MailSendStatus; requestedAt?: number }> = [];
   const untracked: string[] = [];
   let undoResult: () => Promise<UndoResult> = async () => "settled";
   const undoCalls: string[] = [];
   const tracker: SendTracker = {
-    track(accountId, sendId, initial) {
-      tracked.push({ accountId, sendId, ...(initial ? { initial } : {}) });
+    track(accountId, sendId, initial, requestedAt) {
+      tracked.push({ accountId, sendId, ...(initial ? { initial } : {}), ...(requestedAt !== undefined ? { requestedAt } : {}) });
       views = [
         ...views.filter((v) => v.sendId !== sendId),
         {
@@ -762,18 +762,22 @@ test.each([
   [0, 1500],
   [7, 300],
 ])(
-  "web-test-flake 02: a window found in the outbox with 5 s left shows 5 s however long the outbox took (clock step %i ms, outbox %i ms)",
+  "web-test-flake 05: a window found in the outbox with 5 s left counts from when the outbox was asked, so a slow answer never shows more (clock step %i ms, outbox %i ms)",
   async (step, loadMs) => {
     const r = rig({ realTracker: { step } });
     const outbox = deferred<{ sends: MailSendStatus[] }>();
     r.api.fetchMailOutbox.mockReturnValueOnce(outbox.promise);
+    const t0 = r.clk.clock.now();
     const started = r.s.start();
     await r.clk.advance(loadMs);
     outbox.resolve({ sends: [status({ sendId: "o-1", remainingMs: 5000, subject: "Counting" })] });
     await started;
     expect(r.st().pendings).toMatchObject([{ sendId: "o-1", phase: "window", subject: "Counting" }]);
-    expect(r.shownSeconds[0]).toBe(5);
-    expect(Math.max(...r.shownSeconds)).toBe(5);
+    // The page's end is the request time + 5 s, so the time the outbox took is not added (the clock only moves by `step` per reading).
+    const endsAt = r.st().pendings[0]!.endsAt;
+    expect(endsAt).toBeGreaterThanOrEqual(t0 + 5000);
+    expect(endsAt).toBeLessThanOrEqual(t0 + 5000 + step * 4);
+    expect(Math.max(...r.shownSeconds)).toBeLessThanOrEqual(5);
   }
 );
 
@@ -863,6 +867,20 @@ test("unconfirmed, earlier pending: the click joins it (no second send) and says
   expect(r.kinds()).toEqual(["earlierAccepted"]);
   expect(r.c()).toBeNull();
   expect(r.tr.tracked.map((x) => x.sendId)).toEqual(["id-3"]);
+});
+
+test("unconfirmed, earlier pending: the window counts from when the earlier send was asked about, not from the slow answer", async () => {
+  const r = rig();
+  await r.writing("Twice", "Body");
+  r.api.startMailSend.mockRejectedValueOnce(down());
+  await r.s.send();
+  r.api.fetchMailSendStatus.mockImplementationOnce(async () => {
+    await r.clk.advance(700);
+    return status({ sendId: "id-3", subject: "Twice", remainingMs: 6000 });
+  });
+  const askedAt = r.clk.clock.now();
+  await r.s.send();
+  expect(r.tr.tracked.map((x) => x.requestedAt)).toEqual([askedAt]);
 });
 
 test("unconfirmed, earlier sending with the same text: joined silently", async () => {
