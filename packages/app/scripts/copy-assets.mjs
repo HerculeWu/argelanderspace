@@ -175,12 +175,16 @@ const embedPdfNoticeText =
 // the core and web dependency trees, so a version bump re-reads the license; the same rule as above: fail, never omit.
 const bundledNotices = new Map();
 // bin.js gets its copies through core, the SPA through web: each tree is read, so a version split keeps both notices.
+// marked-cjk-friendly (CJK bold/italic next to CJK punctuation) is web-only and inlined into the SPA bundle.
 const bundledRequires = [
-  createRequire(join(repoRoot, "packages/core/package.json")),
-  createRequire(join(repoRoot, "packages/web/package.json")),
+  [createRequire(join(repoRoot, "packages/core/package.json")), ["katex", "marked"]],
+  [
+    createRequire(join(repoRoot, "packages/web/package.json")),
+    ["katex", "marked", "marked-cjk-friendly"],
+  ],
 ];
-for (const req of bundledRequires)
-  for (const name of ["katex", "marked"]) {
+for (const [req, names] of bundledRequires)
+  for (const name of names) {
     const root = dirname(req.resolve(`${name}/package.json`));
     const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
     const key = `${pkg.name}@${pkg.version}`;

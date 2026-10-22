@@ -1,9 +1,10 @@
 import { Marked } from "marked";
 import { renderMathToString } from "../lib/math";
 import { safeLink } from "../lib/safe-link";
+import { cjkEmphasis } from "../lib/markedCjk";
 
 const escape = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]!));
-const markdown = new Marked({ gfm: true, breaks: true,
+const markdown = new Marked(cjkEmphasis(), { gfm: true, breaks: true,
   renderer: {
     html({ text }) { return escape(text); },
     image({ text }) { return escape(text); },
