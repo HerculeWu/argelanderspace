@@ -1698,4 +1698,18 @@ describe("local PDF upload lifecycle", () => {
     expect(job.error).toMatch(/valid, readable PDF/);
     expect(LibraryStore.load(libraryPaths(dataDir)).get(workId)?.doc_ids).toEqual(before);
   });
+
+  test("an arXiv PDF acquisition whose new Doc id is being deleted answers 409 document busy", async () => {
+    const { app, runner, workId, dataDir, docMutations } = appForNewWork({
+      fetchArxivPdf: async () => Buffer.from("never fetched"),
+    });
+    updateWork(dataDir, workId, (work) => {
+      work.arxiv_id = "2601.01234";
+    });
+    docMutations.isDeleting = () => true;
+    const response = await acquireArxivPdf(app, workId);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ detail: "document busy" });
+    expect(runner.list()).toEqual([]);
+  });
 });

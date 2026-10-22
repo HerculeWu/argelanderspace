@@ -2465,6 +2465,10 @@ export function createApp(deps: AppDeps): Hono {
     try {
       // The same start the Copilot `library` tool calls (acquire_arxiv_pdf).
       const started = acquisition.startPdf(workId);
+      if (started.kind === "busy") {
+        const e = detail(DOCUMENT_BUSY, 409);
+        return c.json(e.body, e.status);
+      }
       if (started.kind !== "queued")
         return c.json(detail("could not queue arXiv PDF acquisition", 409).body, 409);
       return c.json({ job: started.job }, 202);

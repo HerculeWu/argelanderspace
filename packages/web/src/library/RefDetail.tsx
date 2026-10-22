@@ -789,8 +789,9 @@ export function RefDetail({
                 )}
                 {uploadErr && (
                   <InlineMessage uiId="latex-upload-error" tone="danger" title={t("library.detail.jobs.uploadFailed")}>
-                    <p>{uploadErr}</p>
-                    {mainDoc && <p>{t("library.detail.jobs.existingDocumentLink")}</p>}
+                    {!zipUpload.dismissed && <ActionButton mode="icon" iconName="x" data-ui="dismiss-latex-upload-error" variant="ghost" label={t("library.detail.upload.dismiss")} tooltip={t("library.detail.upload.dismiss")} onClick={zipUpload.dismiss} />}
+                    <p>{zipUpload.dismissed ? t("library.detail.upload.failedSummary") : uploadErr}</p>
+                    {!zipUpload.dismissed && mainDoc && <p>{t("library.detail.jobs.existingDocumentLink")}</p>}
                   </InlineMessage>
                 )}
                 {arxivErr && (
@@ -804,11 +805,12 @@ export function RefDetail({
                           : "library.detail.jobs.fetchFailed"
                     )}
                   >
-                    <p>{arxivErr}</p>
-                    {arxivErrCode === "arxiv_pdf_only" && (
+                    {!arxivSource.dismissed && <ActionButton mode="icon" iconName="x" data-ui="dismiss-arxiv-source-error" variant="ghost" label={t("library.detail.arxiv.dismiss")} tooltip={t("library.detail.arxiv.dismiss")} onClick={arxivSource.dismiss} />}
+                    <p>{arxivSource.dismissed ? t("library.detail.arxiv.failedSummary") : arxivErr}</p>
+                    {!arxivSource.dismissed && arxivErrCode === "arxiv_pdf_only" && (
                       <p>{t("library.detail.arxiv.pdfOnlyHint")}</p>
                     )}
-                    {mainDoc && <p>{t("library.detail.jobs.existingDocumentLink")}</p>}
+                    {!arxivSource.dismissed && mainDoc && <p>{t("library.detail.jobs.existingDocumentLink")}</p>}
                     <ActionButton
                       mode="text"
                       variant="ghost"

@@ -564,6 +564,8 @@
         "failedGeneric": "Failed to fetch the arXiv full text; please retry",
         "busy": "The arXiv full-text document is being processed or deleted; try again shortly",
         "retry": "Retry",
+        "failedSummary": "Getting the arXiv full text did not complete; existing documents were not changed.",
+        "dismiss": "Dismiss arXiv full-text notice",
         "pdfOnlyHint": "This arXiv submission has no LaTeX source (PDF only) — upload a zip above instead"
       },
       "acquisition": {
@@ -615,7 +617,9 @@
         "hintDefault": "You can also manually upload a LaTeX source package zip (automatically ingested and linked to this entry; re-uploading overwrites the same document)",
         "failed": "Upload failed: {{error}}",
         "failedGeneric": "Upload failed; try again",
-        "busy": "This document is being processed or deleted; try again shortly"
+        "busy": "This document is being processed or deleted; try again shortly",
+        "failedSummary": "The LaTeX upload did not complete; existing documents were not changed.",
+        "dismiss": "Dismiss LaTeX upload notice"
       },
       "deleteDoc": {
         "title": "Delete this document?",

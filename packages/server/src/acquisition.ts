@@ -523,7 +523,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
   };
 
   /** Queue an independent immutable PDF acquisition from the current arXiv URL. */
-  const submitArxivPdf = (workId: string, automatic: boolean): Job | null => {
+  const submitArxivPdfOutcome = (workId: string, automatic: boolean): Job | "busy" | null => {
     const work = LibraryStore.load(paths).get(workId);
     const arxivId = work ? normArxiv(work.arxiv_id) : null;
     if (!work || !arxivId) return null;
@@ -540,7 +540,9 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
     });
     if (dupe) return dupe;
     const docId = `pdf-${randomUUID()}`;
-    if (docMutations.isDeleting(docId)) return null;
+    // Defensive: the id is a fresh uuid nothing else knows, so this is not expected to fire in normal use; it keeps the
+    // registry's rule (never start a writer on a Doc being deleted) visible and gives the route a 409 "document busy".
+    if (docMutations.isDeleting(docId)) return "busy";
     docMutations.pinWriter(docId);
     let job: Job;
     try {
@@ -601,17 +603,23 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
     return job;
   };
 
+  const submitArxivPdf = (workId: string, automatic: boolean): Job | null => {
+    const outcome = submitArxivPdfOutcome(workId, automatic);
+    return outcome === "busy" ? null : outcome;
+  };
+
   // ---- shared starts: the acquisition dialog's submits (HTTP routes) and the Copilot `library` tool ---- //
 
   const reusedJob = (job: Job, before: Set<string>) => before.has(job.id);
 
-  /** `POST /api/library/acquire-arxiv-pdf` minus the HTTP shape. Throws when the job could not be queued. */
+  /** `POST /api/library/acquire-arxiv-pdf` minus the HTTP shape. `busy`: the new Doc id is being deleted. Throws when the job could not be queued. */
   const startArxivPdfAcquisition = (workId: string): ArxivStart => {
     const work = LibraryStore.load(paths).get(workId);
     if (!work) return { kind: "not_found" };
     if (!normArxiv(work.arxiv_id)) return { kind: "no_arxiv" };
     const before = new Set(runner.list().map((job) => job.id));
-    const job = submitArxivPdf(workId, false);
+    const job = submitArxivPdfOutcome(workId, false);
+    if (job === "busy") return { kind: "busy" };
     if (!job) return { kind: "not_queued" };
     return { kind: "queued", job, reused: reusedJob(job, before) };
   };

@@ -129,45 +129,62 @@ describe("reduceWorkJob", () => {
     expect(step(zip, initialWorkJobState(), { type: "event", job: zipJob({ status: "done" }) })).toEqual(initialWorkJobState());
   });
 
-  it("zip / PDF / arXiv source adopt one replayed failure per Work ('once')", () => {
+  it("every kind shows the newest replayed failure, whatever order the frames arrive in", () => {
     for (const [kind, make, text] of [
-      [WORK_JOB_KINDS.zip, zipJob, "上传失败：first"],
-      [WORK_JOB_KINDS.pdf, pdfJob, "first"],
-      [WORK_JOB_KINDS.arxiv, arxivJob, "获取 arXiv 正文失败：first"],
+      [WORK_JOB_KINDS.zip, zipJob, "上传失败：second"],
+      [WORK_JOB_KINDS.pdf, pdfJob, "second"],
+      [WORK_JOB_KINDS.arxiv, arxivJob, "获取 arXiv 正文失败：second"],
+      [WORK_JOB_KINDS.arxivPdf, arxivPdfJob, "second"],
     ] as const) {
-      const s = step<unknown>(
-        kind,
-        initialWorkJobState(),
-        { type: "event", job: make({ id: "f1", status: "failed", error: "first" }) },
-        { type: "event", job: make({ id: "f2", status: "interrupted", error: "second" }) }
-      );
-      expect(s.adopted).toBe(true);
-      expect(s.error?.message).toBe(text);
-      expect(s.job).toBeNull();
+      const older = make({ id: "f1", status: "failed", error: "first", createdAt: "2026-10-11T00:00:00.000Z" });
+      const newer = make({ id: "f2", status: "interrupted", error: "second", createdAt: "2026-10-12T00:00:00.000Z" });
+      // hello replays newest first: the older failure that follows must not replace the newer one
+      for (const frames of [[newer, older], [older, newer]]) {
+        const s = step<unknown>(kind, initialWorkJobState(), ...frames.map((job) => ({ type: "event", job }) as const));
+        expect(s.error).toMatchObject({ message: text, jobId: "f2" });
+        expect(s.job).toBeNull();
+      }
     }
   });
 
-  it("arXiv PDF adopts every replayed failure, the last one wins, and a per-job dismissal is remembered", () => {
-    const kind = WORK_JOB_KINDS.arxivPdf;
-    let s = step(
+  it("a replayed failure never replaces a rejected local submission", () => {
+    const kind = WORK_JOB_KINDS.zip;
+    const s = step(
       kind,
       initialWorkJobState(),
-      { type: "event", job: arxivPdfJob({ id: "p1", status: "failed", error: "one" }) },
-      { type: "event", job: arxivPdfJob({ id: "p2", status: "failed", error: "two" }) }
+      { type: "rejected", status: 500, detail: "x" },
+      { type: "event", job: zipJob({ id: "old", status: "failed", error: "old" }) }
     );
-    expect(s.error).toMatchObject({ message: "two", jobId: "p2" });
-    expect(s.dismissed).toBe(false);
-    s = step(kind, s, { type: "dismiss" });
-    expect(s.dismissed).toBe(true);
-    // p1 again: not dismissed; p2 again: still dismissed
-    s = step(kind, s, { type: "event", job: arxivPdfJob({ id: "p1", status: "failed", error: "one" }) });
-    expect(s).toMatchObject({ dismissed: false, error: { message: "one" } });
-    s = step(kind, s, { type: "event", job: arxivPdfJob({ id: "p2", status: "failed", error: "two" }) });
-    expect(s).toMatchObject({ dismissed: true, error: { message: "two" } });
-    // the remembered dismissals survive a Work switch
-    s = step(kind, s, { type: "reset", submitting: false });
-    s = step(kind, s, { type: "event", job: arxivPdfJob({ id: "p2", status: "failed", error: "two" }) });
-    expect(s.dismissed).toBe(true);
+    expect(s.error?.jobId).toBeNull();
+  });
+
+  it("dismissals are remembered per failed job for every kind, and survive a Work switch", () => {
+    for (const [kind, make] of [
+      [WORK_JOB_KINDS.zip, zipJob],
+      [WORK_JOB_KINDS.pdf, pdfJob],
+      [WORK_JOB_KINDS.arxiv, arxivJob],
+      [WORK_JOB_KINDS.arxivPdf, arxivPdfJob],
+    ] as const) {
+      const p1 = (): Job => make({ id: "p1", status: "failed", error: "one", createdAt: "2026-10-11T00:00:00.000Z" });
+      const p2 = (): Job => make({ id: "p2", status: "failed", error: "two", createdAt: "2026-10-12T00:00:00.000Z" });
+      let s = step<unknown>(kind, initialWorkJobState(), { type: "event", job: p2() });
+      expect(s.dismissed).toBe(false);
+      s = step(kind, s, { type: "dismiss" });
+      expect(s.dismissed).toBe(true);
+      // the same job again stays dismissed; a different (newer) job shows expanded
+      s = step(kind, s, { type: "event", job: p2() });
+      expect(s.dismissed).toBe(true);
+      s = step(kind, s, { type: "reset", submitting: false }, { type: "event", job: p2() });
+      expect(s.dismissed).toBe(true);
+      s = step(kind, s, { type: "event", job: make({ id: "p3", status: "failed", error: "three", createdAt: "2026-10-13T00:00:00.000Z" }) });
+      expect(s).toMatchObject({ dismissed: false, error: { jobId: "p3" } });
+      // an older failure the user never dismissed shows expanded when it becomes the shown one
+      s = step(kind, s, { type: "reset", submitting: false }, { type: "event", job: p1() });
+      expect(s.dismissed).toBe(false);
+      // a new submission clears the line and the flag
+      s = step(kind, s, { type: "dismiss" }, { type: "submit" });
+      expect(s).toMatchObject({ dismissed: false, error: null });
+    }
   });
 
   it("a tracked job's failure is settled in a later step: then the job clears and the kind's message and extra are written", () => {
@@ -256,10 +273,7 @@ describe("reduceWorkJob", () => {
     expect(rejected(WORK_JOB_KINDS.pdf, 400)).toBe("server detail");
   });
 
-  it("dismiss: none for zip/arXiv source, a flag for PDF upload that a new failure resets", () => {
-    const failed = { type: "event", job: zipJob({ status: "failed", error: "x" }) } as const;
-    expect(step(WORK_JOB_KINDS.zip, initialWorkJobState(), failed, { type: "dismiss" }).dismissed).toBe(false);
-    expect(step(WORK_JOB_KINDS.arxiv, initialWorkJobState(), { type: "event", job: arxivJob({ status: "failed" }) }, { type: "dismiss" }).dismissed).toBe(false);
+  it("a new failure after a dismissed one shows expanded (PDF upload)", () => {
     let s = step(WORK_JOB_KINDS.pdf, initialWorkJobState(), { type: "event", job: pdfJob({ status: "failed", error: "x" }) }, { type: "dismiss" });
     expect(s.dismissed).toBe(true);
     s = step(WORK_JOB_KINDS.pdf, s, { type: "event", job: pdfJob({ id: "j2" }) }, { type: "event", job: pdfJob({ id: "j2", status: "failed", error: "y" }) }, { type: "settle" });
@@ -335,9 +349,8 @@ describe("useWorkJobs", () => {
   it("409 from a start shows busy and is not accepted", async () => {
     h.uploadLatexZip.mockResolvedValue({ ok: false, status: 409, detail: "document busy" });
     h.attachArxiv.mockResolvedValue({ ok: false, status: 409, detail: "document busy" });
-    // Today `POST /api/library/acquire-arxiv-pdf` answers every non-queued start with 409 "could not queue…", never
-    // "document busy", so `library.detail.arxivPdf.busy` is unreachable for now; this pins the web side for when the
-    // server gains a busy branch.
+    // The server's arXiv PDF route has a defensive "document busy" branch (not expected in normal use); this pins the
+    // web wording for it.
     h.acquireArxivPdf.mockResolvedValue({ ok: false, status: 409, detail: "document busy" });
     const view = renderJobs();
     const results: boolean[] = [];
@@ -381,6 +394,45 @@ describe("useWorkJobs", () => {
     expect(view.result.current.kinds("pdf").submitting).toBe(false);
   });
 
+  it("a PDF terminal frame for the shown Work ends its stuck submission (A → B → A with no POST answer)", async () => {
+    h.uploadPdf.mockReturnValue(new Promise(() => {}));
+    const view = renderJobs(A);
+    act(() => {
+      void view.result.current.kinds("pdf").start(new File(["x"], "a.pdf"));
+    });
+    view.rerender({ id: B });
+    view.rerender({ id: A });
+    expect(view.result.current.kinds("pdf").submitting).toBe(true);
+    emit(pdfJob({ id: "pa", status: "failed", error: "boom", workId: A }), "job.failed");
+    expect(view.result.current.kinds("pdf")).toMatchObject({ submitting: false, error: { message: "boom" } });
+
+    // a hello replay of an old terminal job does not end a submission that is still in flight
+    act(() => {
+      void view.result.current.kinds("pdf").start(new File(["x"], "a.pdf"));
+    });
+    expect(view.result.current.kinds("pdf").submitting).toBe(true);
+    emit(pdfJob({ id: "old", status: "failed", error: "old", workId: A }), "hello");
+    expect(view.result.current.kinds("pdf").submitting).toBe(true);
+    let again = true;
+    await act(async () => {
+      again = await view.result.current.kinds("pdf").start(new File(["x"], "a.pdf"));
+    });
+    expect(again).toBe(false); // the one-submission guard also survives the replay
+    emit(pdfJob({ id: "pa1", status: "failed", error: "real", workId: A }), "job.failed");
+    expect(view.result.current.kinds("pdf").submitting).toBe(false);
+
+    // a done frame ends it too; other kinds' frames and other Works' frames do not touch it
+    act(() => {
+      void view.result.current.kinds("pdf").start(new File(["x"], "a.pdf"));
+    });
+    expect(view.result.current.kinds("pdf").submitting).toBe(true);
+    emit(zipJob({ id: "z", status: "failed", error: "zip" }), "job.failed");
+    emit(pdfJob({ id: "pb", status: "failed", error: "B", workId: B }), "job.failed");
+    expect(view.result.current.kinds("pdf").submitting).toBe(true);
+    emit(pdfJob({ id: "pa2", status: "done", workId: A }), "job.done");
+    expect(view.result.current.kinds("pdf").submitting).toBe(false);
+  });
+
   it("drops a late POST answer after A → B → A and resets every kind on a Work switch", async () => {
     let resolve: (r: StartResult) => void = () => {};
     h.attachArxiv.mockImplementation(() => new Promise((done) => (resolve = done)));
@@ -398,7 +450,7 @@ describe("useWorkJobs", () => {
     await act(async () => resolve({ ok: true, job: arxivJob() }));
     expect(await accepted).toBe(false);
     expect(view.result.current.kinds("arxiv").job).toBeNull();
-    // the one-shot adoption is per Work: A may adopt a replayed failure again
+    // a replayed failure is shown again after the switch back
     emit(zipJob({ id: "z2", status: "failed", error: "again" }), "hello");
     expect(view.result.current.kinds("zip").error?.message).toBe("上传失败：again");
   });
