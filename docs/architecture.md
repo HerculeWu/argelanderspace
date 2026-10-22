@@ -4,6 +4,8 @@ ArgelanderSpace（npm `argelanderspace`，MIT，© Wenjie Wu）是单用户科�
 
 本页记录当前能力和结构，不列待实现任务。产品事实来自 Stage 15 关闭后的记录；阶段结果见 [history](history.md)，新工作由用户决定。
 
+**现阶段开发优先级**（用户 2026-10-22 决定）：正文阅读以本地 PDF 为主要支持路线；LaTeX 摄入与 LaTeX 渲染保持现有能力，但不是当前主要开发方向，其渲染缺陷与解析边界暂缓处理。重新讨论条件：用户明确调整方向。
+
 ## 能力入口
 
 - **文献库与正文**：arXiv LaTeX / 本地源码摄入，条目内 LaTeX zip 挂载；现支持 Work 内不可变本地 PDF 上传、阅读、原件下载、设主与删除。Web 添加时的 arXiv 获取仍只处理 LaTeX 源码。身份、存储规则及获取场景见 [library](library.md)。
