@@ -529,6 +529,12 @@ function ConfirmationCard({ confirmation, viewId, connected, onSettled, onProble
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const guard = useRef(false);
+  // A late answer of the page's guard (its dialog) must not send for a card that is gone (settled or withdrawn: the card
+  // unmounts) or while the panel is disconnected: the decision was made about a state that may no longer exist.
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  const connectedNow = useRef(connected);
+  connectedNow.current = connected;
   // Each card is paired with ONE kind: that kind's `match` picked it, so its `Body`, label and guard receive the card type they expect.
   const kind = kindOf(confirmation);
   // Unreachable within the contracts (every member of the union has a kind; `confirmations/index.ts` checks that at compile time):
@@ -537,7 +543,17 @@ function ConfirmationCard({ confirmation, viewId, connected, onSettled, onProble
   const decide = async (decision: "approve" | "decline", remember = false) => {
     if (guard.current) return;
     // The page's own guard first (the open Doc's leave guard, an open manuscript's unsaved edits); a refusal keeps the card.
-    if (decision === "approve" && kind.beforeApprove && !kind.beforeApprove(confirmation, guards)) return;
+    // The guard may ask with a dialog and answer later: the card waits, and a second press meanwhile does nothing.
+    if (decision === "approve" && kind.beforeApprove) {
+      const verdict = kind.beforeApprove(confirmation, guards);
+      if (verdict === false) return;
+      if (verdict !== true) {
+        guard.current = true;
+        let ok = false;
+        try { ok = await verdict; } finally { guard.current = false; }
+        if (!ok || !alive.current || !connectedNow.current) return;
+      }
+    }
     guard.current = true; setBusy(true); onProblem(null);
     try { await decideConfirmation(confirmation.id, { decision, viewId, action: confirmation.action, objectId: confirmation.object.id, baseRev: confirmation.baseRev, ...(remember ? { remember: true } : {}) }); }
     catch (reason) { onProblem({ kind: reason instanceof CopilotApiError && reason.code === "stale" ? "expired" : reason instanceof CopilotApiError && reason.code === "unreadable" ? "unreadable" : "failed", scope: kind.problemScope }); }

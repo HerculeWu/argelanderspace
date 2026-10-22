@@ -20,7 +20,7 @@ import { docRouteUrl, parseDocRoute } from "../../lib/deeplink";
 import { exploreBus, parseExploreHash } from "../../lib/explore-route";
 import { planResize } from "../layout";
 import type { Tweaks } from "../theme";
-import { applyDocDeletion, type LeaveOrigin } from "../workspace";
+import { applyDocDeletion, type LeaveOrigin, type LeaveVerdict } from "../workspace";
 import type { PaneAdapter, ViewActionOutcome } from "./adapter";
 import type { BrowserPort, LeavePort, TimerPort } from "./browser";
 import { createPaneManager, type Pane, type PaneState } from "./manager";
@@ -170,9 +170,15 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
 
   const setCurrentDoc = (id: string) => {
     if (id === own.currentDoc) return;
-    if (!leave.confirm()) return;
-    setOwn({ currentDoc: id });
-    browser.replace(docRouteUrl(id)); // UI-driven switch: any stale #anchor no longer applies
+    const change = () => {
+      if (id === own.currentDoc) return;
+      setOwn({ currentDoc: id });
+      browser.replace(docRouteUrl(id)); // UI-driven switch: any stale #anchor no longer applies
+    };
+    // the Doc views' guard may answer later (their dialog): the switch waits for a yes, and a no leaves everything as it was
+    const verdict = leave.ask(undefined, undefined, "user");
+    if (verdict === true) change();
+    else if (verdict !== false) void verdict.then((yes) => yes && change());
   };
 
   /**
@@ -206,10 +212,6 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
     const restoreUrl = () => {
       if (own.currentDoc && parseArgumentHash(browser.location().hash) === null) browser.replace(docRouteUrl(own.currentDoc));
     };
-    if (nextDoc !== own.currentDoc && !leave.confirm()) {
-      restoreUrl();
-      return false;
-    }
     const apply = () =>
       batch(() => {
         if (docId) {
@@ -237,23 +239,49 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
       });
     // With no Doc pane the active pane becomes one: if that pane is a Library page, its unsaved argument draft is lost
     // (the page asks, unless the caller already asked about leaving it: the browser's Back).
-    const { panes: current, activeId } = manager.getState();
-    const replaced = current.some((p) => p.view === "doc") ? undefined : current.find((p) => p.id === activeId);
-    if (replaced?.view === "library" && !opts.libraryAsked) {
-      const verdict = leave.ask("library", replaced.id, opts.origin);
-      if (verdict !== true) {
-        if (verdict === false) restoreUrl();
-        else
-          void verdict.then((yes) => {
-            if (yes) apply();
-            else restoreUrl();
-          });
-        return false;
+    const afterDocAsked = (): boolean => {
+      const { panes: current, activeId } = manager.getState();
+      const replaced = current.some((p) => p.view === "doc") ? undefined : current.find((p) => p.id === activeId);
+      if (replaced?.view === "library" && !opts.libraryAsked) {
+        const verdict = leave.ask("library", replaced.id, opts.origin);
+        if (verdict !== true) {
+          if (verdict === false) restoreUrl();
+          else
+            void verdict.then((yes) => {
+              if (yes) apply();
+              else restoreUrl();
+            });
+          return false;
+        }
       }
+      apply();
+      return true;
+    };
+    // Switching the open Doc asks the Doc views' guard (unsaved PDF work, the text source, annotation drafts): the person is
+    // asked with the app's dialog, which answers later; the Copilot (`origin: agent`) is refused instead of asked.
+    if (nextDoc === own.currentDoc) return afterDocAsked();
+    // A traversal fires popstate and then hashchange, and both arrive here: while the question for this address is open the
+    // second asks nothing. A later, different navigation asks for itself and the earlier answer is void.
+    const href = browser.location().href;
+    if (pendingDocOpen?.href === href && pendingDocOpen.docId === nextDoc) return false;
+    const verdict = leave.ask(undefined, undefined, opts.origin);
+    if (verdict === true) return afterDocAsked();
+    if (verdict === false) {
+      restoreUrl();
+      return false;
     }
-    apply();
-    return true;
+    const mine = { href, docId: nextDoc };
+    pendingDocOpen = mine;
+    void verdict.then((yes) => {
+      if (pendingDocOpen !== mine) return;
+      pendingDocOpen = null;
+      if (opts.urlIsDoc && browser.location().href !== href) return; // the address moved on while the question was open
+      if (yes) afterDocAsked();
+      else restoreUrl();
+    });
+    return false;
   };
+  let pendingDocOpen: { href: string; docId: string | null } | null = null;
 
   const clearPendingAnchor = () => setOwn({ pendingAnchor: null });
 
@@ -274,7 +302,7 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
   };
 
   /** The Copilot approval that would take `docId` away: only the open Doc asks the leave guard (unsaved drafts), as the delete dialog does. */
-  const leaveDoc = (docId: string): boolean => docId !== own.currentDoc || leave.confirm();
+  const leaveDoc = (docId: string): LeaveVerdict => (docId !== own.currentDoc ? true : leave.ask(undefined, undefined, "user"));
 
   // ---- the browser's Back/Forward ------------------------------------------------------------------ //
 

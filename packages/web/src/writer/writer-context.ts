@@ -115,8 +115,8 @@ export function writerPageStatus(page: WriterPage | null | undefined): "complete
 export function manuscriptDeleteGuard(
   pages: Iterable<WriterPage | null | undefined>,
   manuscriptId: string,
-  confirm: () => boolean
-): boolean {
+  confirm: () => boolean | Promise<boolean>
+): boolean | Promise<boolean> {
   for (const page of pages) {
     const editor = page?.editor;
     if (editor?.manuscriptId === manuscriptId && (!!editor.draft || editor.saveState !== "saved" || !!editor.modalDraft))

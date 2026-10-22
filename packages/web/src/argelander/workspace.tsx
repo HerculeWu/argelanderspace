@@ -59,15 +59,16 @@ export function applyDocDeletion(
 
 /**
  * A leave guard answers at once (`true` leave / `false` stay) or later: a `Promise` is a decision still pending (the
- * argument graph page asks with its own dialog), and the change it guards waits for it. Only the argument graph page
- * answers late; the Doc views' guards stay synchronous.
+ * guard asks with the app's own dialog: the argument graph page, the PDF Reader, the text source editor, a Reader's
+ * annotation drafts), and the change it guards waits for it. No caller treats a late answer as a refusal: every
+ * change that a guard can hold back (a pane switch, a Doc switch, deleting the open Doc) waits for the answer.
  */
 export type LeaveVerdict = boolean | Promise<boolean>;
 
 /**
  * Who asked to leave: the person (`user`, the default: a dialog may be shown) or the Copilot acting on the view (`agent`: the
  * model is waiting for an answer and the person has not chosen to leave, so a guard that would need a dialog refuses
- * instead; the Doc views' guards ignore the difference).
+ * instead, for every view: the Copilot's request is `leave_blocked` whenever unsaved work is at stake).
  */
 export type LeaveOrigin = "user" | "agent";
 type LeaveGuard = (origin: LeaveOrigin) => LeaveVerdict;
@@ -120,11 +121,6 @@ export function whenWorkspaceMayLeave(proceed: () => void, view?: string, paneId
   }
   if (verdict !== false) void verdict.then((ok) => ok && proceed());
   return false;
-}
-
-/** Synchronous form for callers that cannot wait: a guard that decides later counts as a refusal here. */
-export function confirmWorkspaceLeave(view?: string, paneId?: number): boolean {
-  return askWorkspaceLeave(view, paneId) === true;
 }
 
 const Ctx = createContext<Workspace | null>(null);

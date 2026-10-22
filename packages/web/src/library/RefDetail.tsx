@@ -12,6 +12,7 @@ import { WorkArgumentEntry } from "../argument/ArgumentEntry";
 import { arxivAcquisitionDocId, uploadAcquisitionDocId } from "./acquisitionTargets";
 import { MergeNoteList } from "./MergeNotes";
 import { useTextDocCreation } from "./text-doc-creation";
+import { useLeaveQuestionOpen } from "../argelander/leave-dialog";
 import type { GraphNode, LibraryRef } from "./types";
 import {
   type AcquisitionFlow,
@@ -117,7 +118,7 @@ export function RefDetail({
    *  doc_ids after the deletion (its [0] is the new main). The LibraryView
    *  wires this to the workspace's three-state transition. */
   onDocDeleted?: (docId: string, remaining: string[]) => void;
-  onBeforeDocDelete?: (docId: string) => boolean;
+  onBeforeDocDelete?: (docId: string) => boolean | Promise<boolean>;
   /**
    * Stage 14 (D1/D9): the "explore related papers" entry — enabled only with
    * a usable ADS bibcode AND a live backend (no demo/fixture exploration).
@@ -182,6 +183,12 @@ export function RefDetail({
   const [delBusy, setDelBusy] = useState(false);
   const delBusyRef = useRef(false);
   const delRequestId = useRef(0);
+  /** The leave guard's question about the open Doc is showing: the delete dialog is out of the way meanwhile. */
+  const [leaveAsking, setLeaveAsking] = useState(false);
+  // Also while ANY leave question is open: a question of ours superseded by another one (a browser Back) must not bring
+  // this dialog back underneath the question that now carries the Back.
+  const leaveQuestionOpen = useLeaveQuestionOpen();
+  useEffect(() => () => { delRequestId.current += 1; }, []);
   const [delErr, setDelErr] = useState<{ kind: "busy" | "error"; detail: string } | null>(null);
   const cited = node?.c ?? r.citedBy;
 
@@ -338,9 +345,22 @@ export function RefDetail({
   };
 
   const onConfirmDelete = async (docId: string) => {
-    if (delBusyRef.current || (onBeforeDocDelete && !onBeforeDocDelete(docId))) return;
-    delBusyRef.current = true;
+    if (delBusyRef.current) return;
     const requestId = ++delRequestId.current;
+    // Deleting the open Doc asks the Doc views' leave guard, which may answer later with its own dialog. Two modal
+    // dialogs must never be open at once (focus fights, and Enter/Escape would cancel one while the other stays), so
+    // this delete dialog steps aside while the question is open. Only a "discard" for this same, still pending delete
+    // goes on; "keep editing" brings the delete dialog back, and a Work change or unmount while asking voids it.
+    const verdict = onBeforeDocDelete?.(docId);
+    if (verdict === false) return;
+    if (verdict !== undefined && verdict !== true) {
+      delBusyRef.current = true;
+      setLeaveAsking(true);
+      let ok = false;
+      try { ok = await verdict; } finally { delBusyRef.current = false; setLeaveAsking(false); }
+      if (!ok || requestId !== delRequestId.current) return;
+    }
+    delBusyRef.current = true;
     setDelBusy(true);
     setDelErr(null);
     const res = await deletePaperDoc(docId);
@@ -1025,7 +1045,7 @@ export function RefDetail({
           onSubmit={() => void submitAcquisition()}
         />
       )}
-      {delDoc && (
+      {delDoc && !leaveAsking && !leaveQuestionOpen && (
         <DeleteDocDialog
           docId={delDoc}
           pdf={docProvenance[delDoc] === "pdf"}

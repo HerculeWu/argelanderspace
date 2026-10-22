@@ -38,7 +38,7 @@ beforeEach(async () => {
   }); vi.stubGlobal("fetch", fetchMock);
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
-const open = async (guard?: (docId: string) => boolean) => { const view = render(<Copilot open context={context} onClose={vi.fn()} guards={{ leaveDoc: guard }} />); await screen.findByText("Copilot"); return view; };
+const open = async (guard?: (docId: string) => boolean | Promise<boolean>) => { const view = render(<Copilot open context={context} onClose={vi.fn()} guards={{ leaveDoc: guard }} />); await screen.findByText("Copilot"); return view; };
 const ui = (name: string) => document.querySelector(`[data-ui="${name}"]`) as HTMLElement | null;
 const decisionBody = () => JSON.parse(String((calls("/confirmations/")[0] as [string, RequestInit])[1].body));
 
@@ -117,6 +117,36 @@ test("deleting the open Doc asks the workspace's leave guard first, as the dialo
   fireEvent.click(ui("copilot-confirmation-cancel")!);
   await waitFor(() => expect(calls("/confirmations/")).toHaveLength(1));
   expect(guard).not.toHaveBeenCalled();
+});
+
+test("a leave guard that answers later (its dialog): the card waits for it; a late no sends nothing, a late yes sends once even when approve is pressed meanwhile", async () => {
+  const answers: ((ok: boolean) => void)[] = [];
+  const guard = vi.fn((_docId: string) => new Promise<boolean>((resolve) => answers.push(resolve)));
+  await open(guard);
+  await waitFor(() => expect(ui("copilot-confirmation-confirm")).not.toBeNull());
+  fireEvent.click(ui("copilot-confirmation-confirm")!);
+  fireEvent.click(ui("copilot-confirmation-confirm")!); // while the question is open
+  expect(guard).toHaveBeenCalledTimes(1);
+  answers[0]!(false);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(calls("/confirmations/")).toHaveLength(0);
+  expect(ui("copilot-confirmation")).not.toBeNull();
+  fireEvent.click(ui("copilot-confirmation-confirm")!);
+  answers[1]!(true);
+  await waitFor(() => expect(calls("/confirmations/")).toHaveLength(1));
+});
+
+test("a late yes after the card is gone (the panel went away) sends nothing", async () => {
+  const answers: ((ok: boolean) => void)[] = [];
+  const guard = vi.fn((_docId: string) => new Promise<boolean>((resolve) => answers.push(resolve)));
+  await open(guard);
+  await waitFor(() => expect(ui("copilot-confirmation-confirm")).not.toBeNull());
+  fireEvent.click(ui("copilot-confirmation-confirm")!);
+  expect(guard).toHaveBeenCalledTimes(1);
+  cleanup();
+  answers[0]!(true);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(calls("/confirmations/")).toHaveLength(0);
 });
 
 test("a stale decision says nothing was deleted; a failed one says the outcome is unknown (never claims nothing was deleted), in English and Chinese", async () => {

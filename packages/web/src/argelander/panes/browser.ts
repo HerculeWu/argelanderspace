@@ -3,7 +3,7 @@
  * timers, and the workspace's leave guards. The production adapters below use `window` and workspace.tsx; the tests
  * use an in-memory history with browser semantics (tests/memory-browser.ts), manual timers and a scripted leave guard.
  */
-import { askWorkspaceLeave, confirmWorkspaceLeave } from "../workspace";
+import { askWorkspaceLeave } from "../workspace";
 
 export interface BrowserLocation {
   pathname: string;
@@ -33,10 +33,9 @@ export interface TimerPort {
   clear(handle: number): void;
 }
 
-/** The workspace's leave-draft protection (workspace.tsx), its signatures and meaning unchanged. */
+/** The workspace's leave-draft protection (workspace.tsx): every question may be answered later. */
 export interface LeavePort {
   ask: typeof askWorkspaceLeave;
-  confirm: typeof confirmWorkspaceLeave;
 }
 
 export function windowBrowser(): BrowserPort {
@@ -68,4 +67,4 @@ export function windowTimers(): TimerPort {
   };
 }
 
-export const workspaceLeave: LeavePort = { ask: askWorkspaceLeave, confirm: confirmWorkspaceLeave };
+export const workspaceLeave: LeavePort = { ask: askWorkspaceLeave };

@@ -182,7 +182,7 @@
       "diagnosticDocument": "Document",
       "characters": "{{count}} characters",
       "publishedRev": "Reading version from revision {{rev}}",
-      "unsavedLeave": "The text source has changes that are not saved. Leave anyway?",
+      "unsavedLeave": "The text source has changes that are not saved. Leaving now discards them.",
       "diag": {
         "link_unsupported": "Links are not supported yet. Write the address as plain text.",
         "quote_unsupported": "Block quotes are not supported. Rewrite it as a paragraph.",
@@ -322,6 +322,7 @@
       }
     },
     "drafts": {
+      "unsavedLeave": "Annotation text you typed is not saved. Leaving this document discards it.",
       "summary": "Retained drafts (copyable; re-select a location and reuse the draft text)",
       "createLabel": "Create draft",
       "createAria": "Retained create draft",
@@ -1134,6 +1135,12 @@
       "note": "A → B means A cites B. Position is not a similarity score."
     }
   },
+  "leaveDialog": {
+    "title": "Discard unsaved changes?",
+    "stay": "Keep editing",
+    "discard": "Discard changes",
+    "blockedByDialog": "Unsaved work: close the open dialog first."
+  },
   "pdfReader": {
     "loading": "Verifying and opening PDF…",
     "failed": "The PDF could not be opened safely. The file and user data remain unchanged.",
@@ -1232,7 +1239,7 @@
     "redo": "Redo",
     "changedBlocked": "PDF content changed. Existing annotations are retained but hidden and locked; add a new Doc.",
     "resizeRectangle": "Resize rectangle on page {{page}}",
-    "unsavedLeave": "This PDF has annotation drafts or saves in progress. Leave and discard this page's unsaved work?",
+    "unsavedLeave": "This PDF has annotation drafts or saves in progress. Leaving now discards the unsaved work on this page.",
     "collapseOutline": "Collapse contents panel",
     "expandOutline": "Expand contents panel",
     "collapseAnnotations": "Collapse annotation panel",
@@ -1639,7 +1646,7 @@
       "metaManuscript": "{{id}} · manuscript v{{rev}}",
       "expiredManuscript": "The manuscript changed before your decision. Nothing was deleted.",
       "failedManuscript": "The outcome is not known: your decision may or may not have reached the service. Check the manuscript list before trying again.",
-      "manuscriptDraftGuard": "This manuscript has unsaved edits in the editor. Deleting it discards them. Delete anyway?",
+      "manuscriptDraftGuard": "This manuscript has unsaved edits in the editor. Deleting it discards them.",
       "replaceText": "Replace the reading text of “{{name}}”",
       "unreadableDoc": "The check made when you confirmed could not read this document's data (annotations, text or images). Nothing was replaced and nothing was changed.",
       "unreadablePlan": "The check made when you confirmed could not read the plans' data. This is not a change you made, and nothing was deleted. Try again, or look at the Plan page.",

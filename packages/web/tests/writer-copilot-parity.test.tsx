@@ -229,10 +229,10 @@ describe("fix round 1", () => {
     expect(await state.controller?.apply({ action: "open_manuscript", manuscriptId: ID })).toEqual({ ok: false, detail: "unavailable" });
   });
 
-  it("N2: the delete guard asks (window.confirm) only for an open manuscript with unsaved edits, and obeys the answer", () => {
-    const confirm = vi.spyOn(window, "confirm");
+  it("N2: the delete guard asks (through its confirm callback) only for an open manuscript with unsaved edits, and obeys the answer", async () => {
+    const confirm = vi.fn(() => true);
     const page = (over: object) => ({ mode: "editor", list: null, editor: { manuscriptId: ID, phase: "ready", saved: null, saveState: "saved", draft: null, modalDraft: null, ...over } }) as unknown as WriterPage;
-    const ask = (pages: (WriterPage | null)[], id = ID) => manuscriptDeleteGuard(pages, id, () => window.confirm("discard?"));
+    const ask = (pages: (WriterPage | null)[], id = ID) => manuscriptDeleteGuard(pages, id, confirm);
     expect(ask([page({})])).toBe(true);
     expect(ask([null])).toBe(true);
     expect(confirm).not.toHaveBeenCalled();
@@ -245,7 +245,9 @@ describe("fix round 1", () => {
     expect(confirm).toHaveBeenCalledTimes(4);
     expect(ask([page({ saveState: "error" })], "m_0000ffff")).toBe(true); // another manuscript: no question
     expect(confirm).toHaveBeenCalledTimes(4);
-    confirm.mockRestore();
+    // a confirm that answers later is passed on as the pending answer
+    confirm.mockReturnValue(Promise.resolve(true) as never);
+    expect(await ask([page({ saveState: "error" })])).toBe(true);
   });
 
   it("U1: the side panels fold at the Reader's threshold, outline first", () => {

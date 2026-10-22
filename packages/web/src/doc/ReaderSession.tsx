@@ -39,6 +39,15 @@ export interface ReaderSessionState {
    */
   selection: { fingerprint: string; target: AnnotationTextTarget } | null;
 }
+/**
+ * Whether the session holds annotation text that would be lost with the Reader: a new annotation's body, or an edit whose
+ * body differs from what is stored. An editor opened and left unchanged loses nothing. Drafts do not outlive the Doc pane
+ * (docs/annotations.md), so leaving the Doc view asks about exactly this.
+ */
+export function hasUnsavedDraft(state: Pick<ReaderSessionState, "createDraft" | "editDrafts">): boolean {
+  return state.createDraft.body !== "" || Object.values(state.editDrafts).some((draft) => draft.body !== draft.originalBody);
+}
+
 export interface AssetBinding {
   docId: string;
   generation: number;
@@ -70,6 +79,8 @@ export class ReaderSessionController {
   private invalidationListeners = new Set<() => void>();
   constructor(readonly docId: string) {}
   getSnapshot = () => this.state;
+  /** Unsaved annotation text the Reader holds (see `hasUnsavedDraft`). */
+  hasUnsavedDraft = () => hasUnsavedDraft(this.state);
   subscribe = (fn: () => void) => {
     this.listeners.add(fn);
     return () => {

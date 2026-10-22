@@ -3,7 +3,7 @@ import { type ArgumentViewAction, type CopilotViewActionResult, type DiscoveryPa
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import { ActionButton } from "../ui";
-import { askWorkspaceLeave, confirmWorkspaceLeave, useWorkspace, type Workspace, whenWorkspaceMayLeave } from "../argelander/workspace";
+import { askWorkspaceLeave, useWorkspace, type Workspace, whenWorkspaceMayLeave } from "../argelander/workspace";
 import { fetchLibrary, type LibraryLoad } from "../api/library";
 import { onLibraryChanged } from "../api/ws";
 import { LibraryGraph } from "./LibraryGraph";
@@ -133,7 +133,7 @@ export function LibraryView({
       onArgument={onArgument}
       onController={onController}
       onDocDeleted={ws.docDeleted}
-      onBeforeDocDelete={(docId) => docId !== ws.currentDoc || confirmWorkspaceLeave()}
+      onBeforeDocDelete={(docId) => docId !== ws.currentDoc || askWorkspaceLeave()}
       selectionMemory={ws.librarySelection}
     />
   );
@@ -170,7 +170,7 @@ function LibraryBody({
   /** Stage 8 §8: forwarded to RefDetail — the workspace three-state transition
    *  after a document is physically deleted. */
   onDocDeleted: (docId: string, remaining: string[]) => void;
-  onBeforeDocDelete: (docId: string) => boolean;
+  onBeforeDocDelete: (docId: string) => boolean | Promise<boolean>;
   /** The workspace's memory of this pane's selected Work, for when a Doc pane has replaced the page and Back brings it back. */
   selectionMemory?: Workspace["librarySelection"];
 }) {

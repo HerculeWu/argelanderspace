@@ -4,7 +4,7 @@
  * the Library view (and its pane) and answers with a promise.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { askWorkspaceLeave, confirmWorkspaceLeave, registerWorkspaceLeaveGuard, whenWorkspaceMayLeave } from "../src/argelander/workspace";
+import { askWorkspaceLeave, registerWorkspaceLeaveGuard, whenWorkspaceMayLeave } from "../src/argelander/workspace";
 
 const offs: (() => void)[] = [];
 afterEach(() => {
@@ -36,15 +36,23 @@ describe("which guard speaks", () => {
     expect(library).toHaveBeenCalledTimes(2);
   });
 
-  it("a refusal stops the asking; a synchronous caller treats a late answer as a no", async () => {
+  it("a refusal stops the asking; a late answer is handed on as a promise, never read as a no", async () => {
     const first = guard(() => false);
     const second = guard(() => true);
-    expect(confirmWorkspaceLeave()).toBe(false);
+    expect(askWorkspaceLeave()).toBe(false);
     expect(second).not.toHaveBeenCalled();
     first.mockReturnValue(true);
-    expect(confirmWorkspaceLeave()).toBe(true);
+    expect(askWorkspaceLeave()).toBe(true);
     first.mockReturnValue(Promise.resolve(true) as never);
-    expect(confirmWorkspaceLeave()).toBe(false);
+    const late = askWorkspaceLeave();
+    expect(late).toBeInstanceOf(Promise);
+    expect(await late).toBe(true);
+  });
+
+  it("the origin reaches every guard, the Doc views' included", () => {
+    const doc = guard(() => true);
+    askWorkspaceLeave(undefined, undefined, "agent");
+    expect(doc).toHaveBeenCalledWith("agent");
   });
 });
 

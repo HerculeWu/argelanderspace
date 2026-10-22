@@ -2,6 +2,7 @@ import { DiscoverySavedViewActionSchema, APPEARANCE_DENSITIES, APPEARANCE_LANGUA
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { ActionButton } from "../ui";
+import { useLeaveDialog } from "./leave-dialog";
 import { fetchPapers } from "../api";
 import { DEFAULT_LANGUAGE } from "../i18n";
 import { resizeDivider, shareOf } from "./layout";
@@ -107,9 +108,10 @@ export function Shell() {
   }, [copilotOpen]);
 
   // Approving a manuscript delete would discard unsaved edits of an open editor (or its Info/Preamble dialog): ask first.
+  const { ask: askLeave, dialog: leaveDialog } = useLeaveDialog();
   const beforeManuscriptDelete = useCallback((manuscriptId: string) => {
-    return manuscriptDeleteGuard(store.mounted("write").map((writer) => writer.context().writer), manuscriptId, () => window.confirm(t("copilot.confirmation.manuscriptDraftGuard")));
-  }, [t, store]);
+    return manuscriptDeleteGuard(store.mounted("write").map((writer) => writer.context().writer), manuscriptId, () => askLeave(t("copilot.confirmation.manuscriptDraftGuard")));
+  }, [t, store, askLeave]);
   // The workspace's guards before a Copilot approval takes something open away; a refusal keeps the card.
   const confirmationGuards = useMemo<ConfirmationGuards>(() => ({
     // Only the open Doc asks the workspace's leave guard (unsaved drafts), as the delete dialog does.
@@ -237,6 +239,7 @@ export function Shell() {
     <PreferencesProvider value={preferences}>
     <WorkspaceProvider value={workspace}>
       <div className="app" data-ui="app-shell">
+        {leaveDialog}
         <div className="titlebar" data-ui="app-titlebar">
           <div className="tb-left">
             <span className="wordmark">
