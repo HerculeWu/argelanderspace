@@ -15,7 +15,6 @@
  * `JobSchema.payload` itself stays `unknown` on the wire and on disk.
  */
 import { z } from "zod";
-import type { JobKindSchema } from "./job-status.js";
 
 // ---- format ---------------------------------------------------------------- //
 
@@ -65,17 +64,6 @@ export type ArxivPdfPayload = z.infer<typeof ArxivPdfPayloadSchema>;
 export type PdfUploadPayload = z.infer<typeof PdfUploadPayloadSchema>;
 export type LatexZipPayload = z.infer<typeof LatexZipPayloadSchema>;
 export type RefreshPayload = z.infer<typeof RefreshPayloadSchema>;
-
-type JobKindName = z.infer<typeof JobKindSchema>;
-
-/** The payloads a job of kind `K` is submitted with. */
-export type JobPayloadOf<K extends JobKindName> = K extends "ingest"
-  ? IngestPayload
-  : K extends "upload"
-    ? ArxivPdfPayload | PdfUploadPayload | LatexZipPayload
-    : K extends "refresh"
-      ? RefreshPayload
-      : never;
 
 /**
  * A kind and its payload, judged together (kind outside the payload, format inside it, the zip without one). For

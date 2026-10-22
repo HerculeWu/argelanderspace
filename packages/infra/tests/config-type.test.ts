@@ -10,6 +10,7 @@ import type {
   SETTINGS_UI_DENSITIES,
   SETTINGS_UI_LANGUAGES,
   SETTINGS_UI_THEMES,
+  SettingsTable,
   TOP_LEVEL_SETTING_KEYS,
 } from "@argelanderspace/contracts";
 import { describe, expect, expectTypeOf, test } from "vitest";
@@ -42,6 +43,9 @@ describe("AppConfig follows the schema", () => {
     expectTypeOf<NonNullable<AppConfig["log_level"]>>().toEqualTypeOf<LogLevel>();
     // The top-level keys of the schema, and `ui`, are exactly the properties.
     expectTypeOf<keyof AppConfig>().toEqualTypeOf<(typeof TOP_LEVEL_SETTING_KEYS)[number] | "ui">();
+    // Sentinel: `AppConfig` spells the table name `"ui"` by hand. A second table in the schema turns this red; add
+    // it to `AppConfig` (and the expected type above) before changing the sentinel.
+    expectTypeOf<SettingsTable>().toEqualTypeOf<"ui">();
   });
 
   test("a key the schema does not have is not a property", () => {

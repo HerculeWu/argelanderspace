@@ -5,6 +5,7 @@ import {
   type HostSwitchJob,
   type HostSwitchTarget,
   isWsHostSwitchConfirmation,
+  JOB_FORMAT,
 } from "@argelanderspace/contracts";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
@@ -76,8 +77,8 @@ const JOB_LABEL = {
 
 function jobKey(job: HostSwitchJob) {
   if (job.kind !== "upload") return JOB_LABEL[job.kind];
-  if (job.format === "arxiv-pdf") return "projectSwitch.jobArxivPdf" as const;
-  if (job.format === "pdf") return "projectSwitch.jobPdf" as const;
+  if (job.format === JOB_FORMAT.arxivPdf) return "projectSwitch.jobArxivPdf" as const;
+  if (job.format === JOB_FORMAT.pdf) return "projectSwitch.jobPdf" as const;
   return "projectSwitch.jobUpload" as const;
 }
 
