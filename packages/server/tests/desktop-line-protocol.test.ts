@@ -400,6 +400,8 @@ async function feed(h: Running, text: string): Promise<Outcome> {
   const lineCount = h.lines.length;
   h.input.write(`${text}\n`);
   const [first] = await recordsAfter(h, count);
+  // A line written after a rejection would not be seen at once: give it the time before "no line written" is read.
+  if (first?.event === "desktop.protocol_rejected") await sleep(50);
   const { t: _t, ...record } = first ?? { t: null };
   return {
     record: first === undefined ? undefined : record,
