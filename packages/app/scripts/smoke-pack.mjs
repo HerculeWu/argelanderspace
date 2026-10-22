@@ -257,8 +257,9 @@ const notices = readFileSync(
 );
 check(
   /===== katex@[\d.]+ =====\nThe MIT License/.test(notices) &&
-    /===== marked@[\d.]+ =====\n/.test(notices),
-  "bundled notices carry the KaTeX and marked licenses"
+    /===== marked@[\d.]+ =====\n/.test(notices) &&
+    /===== marked-cjk-friendly@[\d.]+ =====\n/.test(notices),
+  "bundled notices carry the KaTeX, marked and marked-cjk-friendly licenses"
 );
 const mailNotices = readFileSync(
   join(extracted, "package/dist/THIRD-PARTY-MAIL-NOTICES.txt"),
