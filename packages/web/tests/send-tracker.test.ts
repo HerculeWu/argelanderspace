@@ -462,3 +462,55 @@ test("an answer that arrives after untrack is ignored", async () => {
   expect(view()).toBeUndefined();
   expect(c.timers()).toBe(0);
 });
+
+// The server counts remainingMs when it builds the answer; the page learns it one answer delay later. The page's end of the window
+// is the moment the request went out plus remainingMs, so it is never later than the server's (web-test-flake 05).
+test("the window ends at the time of the request plus remainingMs, not at the time the answer arrived", async () => {
+  const c = fakeClock();
+  const api = {
+    status: vi.fn(async () => {
+      await c.advance(400); // a slow answer
+      return status({ remainingMs: 8000 });
+    }),
+    undo: vi.fn(),
+  };
+  const tracker = createSendTracker({ api, clock: c.clock }, COPILOT_SEND_POLICY);
+  let views: SendView[] = [];
+  tracker.subscribe((v) => (views = v));
+  const sentAt = c.now();
+  tracker.track(ACC, ID);
+  await flush();
+  await c.advance(0);
+  expect(views[0]?.phase).toBe("window");
+  expect(views[0]?.endsAt).toBe(sentAt + 8000);
+  tracker.dispose();
+});
+
+test("a send known from its start answer counts the window from the moment that request went out", async () => {
+  const { c, tracker, view } = setup(MAIL_PAGE_SEND_POLICY, [status({ remainingMs: 1000 })]);
+  const requestedAt = c.now();
+  await c.advance(300);
+  tracker.track(ACC, ID, status({ remainingMs: 1000 }), requestedAt);
+  expect(view()?.endsAt).toBe(requestedAt + 1000);
+});
+
+test("a failed undo that refreshes the status also counts from the request time", async () => {
+  const c = fakeClock();
+  const api = {
+    status: vi.fn(async () => {
+      await c.advance(250);
+      return status({ remainingMs: 700 });
+    }),
+    undo: vi.fn(async () => {
+      throw new MailApiError("boom", 500);
+    }),
+  };
+  const tracker = createSendTracker({ api, clock: c.clock }, MAIL_PAGE_SEND_POLICY);
+  let views: SendView[] = [];
+  tracker.subscribe((v) => (views = v));
+  tracker.track(ACC, ID, status({ remainingMs: 8000 }));
+  const before = c.now();
+  await tracker.undo(ID);
+  expect(views[0]?.endsAt).toBe(before + 700);
+  tracker.dispose();
+});

@@ -57,7 +57,7 @@ export type UndoResult = "settled" | "tooLate" | "ownedElsewhere" | { error: str
 
 export interface SendTracker {
   /** Follow a send. `initial` is a state already known (a send just accepted, an outbox entry); without it the server is asked at once. One loop per send id: tracking it again does nothing. */
-  track(accountId: string, sendId: string, initial?: MailSendStatus): void;
+  track(accountId: string, sendId: string, initial?: MailSendStatus, requestedAt?: number): void;
   untrack(sendId: string): void;
   undo(sendId: string): Promise<UndoResult>;
   subscribe(fn: (views: SendView[]) => void): () => void;
@@ -180,8 +180,8 @@ export function createSendTracker(deps: SendTrackerDeps, policy: SendPolicy): Se
       startPolling(e);
     }, Math.max(0, endsAt - clock.now()));
   };
-  const toWindow = (e: Entry, remainingMs: number) => {
-    patch(e, { phase: "window", endsAt: clock.now() + remainingMs });
+  const toWindow = (e: Entry, remainingMs: number, requestedAt: number) => {
+    patch(e, { phase: "window", endsAt: requestedAt + remainingMs });
     armWindow(e);
   };
 
@@ -206,6 +206,7 @@ export function createSendTracker(deps: SendTrackerDeps, policy: SendPolicy): Se
 
   const poll = async (e: Entry) => {
     const { accountId, sendId } = e.view;
+    const requestedAt = clock.now();
     let st: MailSendStatus;
     try {
       st = await api.status(accountId, sendId);
@@ -236,10 +237,10 @@ export function createSendTracker(deps: SendTrackerDeps, policy: SendPolicy): Se
     if (st.state === "pending") {
       if (first || e.view.phase === "window") {
         // The first answer about a send, or one asked during its window: the window as the server counts it.
-        toWindow(e, st.remainingMs ?? 0);
+        toWindow(e, st.remainingMs ?? 0, requestedAt);
       } else if (!st.ownedElsewhere && st.remainingMs !== null && st.remainingMs > 0) {
         // Clock skew: the server still counts the window down.
-        toWindow(e, st.remainingMs);
+        toWindow(e, st.remainingMs, requestedAt);
       }
     } else if (e.view.phase === "window") {
       stopWindow(e);
@@ -260,6 +261,7 @@ export function createSendTracker(deps: SendTrackerDeps, policy: SendPolicy): Se
 
   /** One status request outside the loop (after a failed undo); a failure keeps the view as it is. */
   const refresh = async (e: Entry) => {
+    const requestedAt = clock.now();
     let st: MailSendStatus;
     try {
       st = await api.status(e.view.accountId, e.view.sendId);
@@ -270,7 +272,7 @@ export function createSendTracker(deps: SendTrackerDeps, policy: SendPolicy): Se
     if (TERMINAL.has(st.state)) return settleWith(e, st);
     if (st.state === "pending") {
       if (st.remainingMs !== null && (e.view.phase === "window" || (!st.ownedElsewhere && st.remainingMs > 0)))
-        toWindow(e, st.remainingMs);
+        toWindow(e, st.remainingMs, requestedAt);
       patch(e, { status: st });
       emit();
       return;
@@ -282,7 +284,7 @@ export function createSendTracker(deps: SendTrackerDeps, policy: SendPolicy): Se
   };
 
   return {
-    track(accountId, sendId, initial) {
+    track(accountId, sendId, initial, requestedAt) {
       if (disposed || entries.has(sendId)) return;
       const e: Entry = {
         view: { accountId, sendId, phase: "sending", endsAt: null, unreachable: false, status: initial ?? null },
@@ -295,7 +297,7 @@ export function createSendTracker(deps: SendTrackerDeps, policy: SendPolicy): Se
       };
       entries.set(sendId, e);
       if (initial?.state === "pending") {
-        patch(e, { phase: "window", endsAt: clock.now() + (initial.remainingMs ?? 0) });
+        patch(e, { phase: "window", endsAt: (requestedAt ?? clock.now()) + (initial.remainingMs ?? 0) });
         armWindow(e);
         emit();
         if (policy.pollInWindow) startPolling(e);

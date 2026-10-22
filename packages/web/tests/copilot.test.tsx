@@ -138,11 +138,12 @@ test("a view action runs once, reports what the page really did, and a failed re
   const id1 = "00000000-0000-4000-8000-0000000000a1", id2 = "00000000-0000-4000-8000-0000000000a2";
   act(() => { callbacks.subscription!.viewAction!(message(id1, { action: "show", view: "board" })); callbacks.subscription!.viewAction!(message(id1, { action: "show", view: "board" })); });
   act(() => callbacks.subscription!.viewAction!(message(id2, { action: "open_task", taskId: "t_ffffffff" })));
-  await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/action-results"))).toHaveLength(2));
+  await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/action-results"))).toHaveLength(2), { timeout: 3000 });
   expect(handler).toHaveBeenCalledTimes(2);
   const reports = fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/action-results")).map(([url, options]) => ({ url: String(url), body: JSON.parse((options as RequestInit).body as string) }));
-  expect(reports[0]).toEqual({ url: `/api/copilot/views/${context.viewId}/action-results`, body: { actionId: id1, ok: true } });
-  expect(reports[1]!.body).toEqual({ actionId: id2, ok: false, detail: "not_found" });
+  // An applied action may wait for its page, a failed one does not: the reports are matched by action, not by arrival order.
+  expect(reports.find((report) => report.body.actionId === id1)).toEqual({ url: `/api/copilot/views/${context.viewId}/action-results`, body: { actionId: id1, ok: true } });
+  expect(reports.find((report) => report.body.actionId === id2)!.body).toEqual({ actionId: id2, ok: false, detail: "not_found" });
 });
 
 test("an explicit request to open the Copilot settings shows the panel and the provider dialog, reports it, and sends no secret anywhere", async () => {
@@ -186,6 +187,52 @@ test("a view action is reported only after the service holds the page that shows
   await waitFor(() => expect(order).toContain("result"));
   expect(order.indexOf("page:2")).toBeGreaterThan(-1);
   expect(order.indexOf("page:2")).toBeLessThan(order.indexOf("result"));
+});
+
+// web-test-flake 03: "settled" used to mean "the revision did not move for 20 ms"; a page that re-renders later than that was reported stale.
+test.each([5, 60, 250])("a view action whose page arrives %i ms after the action returns is still reported only after that page is published", async (delay) => {
+  const order: string[] = [];
+  fetchMock.mockImplementation(async (url: string, options?: RequestInit) => {
+    if (url.endsWith("/providers")) return json({ version: 1, providers: [provider] });
+    if (url.endsWith("/conversations")) return json({ version: 1, conversations: [snapshot.conversation] });
+    if (url.endsWith("/action-results")) { order.push("result"); return json({ saved: true }); }
+    if (url.includes("/views/") && options?.method === "PUT") { order.push(`page:${JSON.parse(options.body as string).revision}`); return json({ saved: true }); }
+    return json(snapshot);
+  });
+  function Host() {
+    const [current, setCurrent] = useState(context);
+    const onViewAction = async () => { setTimeout(() => setCurrent((previous) => ({ ...previous, revision: previous.revision + 1 })), delay); return { ok: true }; };
+    return <Copilot open context={current} onClose={vi.fn()} onViewAction={onViewAction} />;
+  }
+  render(<Host />);
+  await screen.findByText("Copilot");
+  await waitFor(() => expect(callbacks.subscription?.viewAction).toBeTypeOf("function"));
+  await waitFor(() => expect(order).toContain("page:1"));
+  act(() => callbacks.subscription!.viewAction!({ type: "copilot.view-action", viewId: context.viewId, actionId: "00000000-0000-4000-8000-0000000000ab", action: { action: "show", view: "board" } }));
+  await waitFor(() => expect(order).toContain("result"), { timeout: 3000 });
+  expect(order.indexOf("page:2")).toBeGreaterThan(-1);
+  expect(order.indexOf("page:2")).toBeLessThan(order.indexOf("result"));
+});
+
+test.each([[false], [true]])("a view action with ok=%s that changes no page: a failed one is reported at once, an applied one only after the fallback wait", async (applied) => {
+  const order: string[] = [];
+  fetchMock.mockImplementation(async (url: string, options?: RequestInit) => {
+    if (url.endsWith("/providers")) return json({ version: 1, providers: [provider] });
+    if (url.endsWith("/conversations")) return json({ version: 1, conversations: [snapshot.conversation] });
+    if (url.endsWith("/action-results")) { order.push("result"); return json({ saved: true }); }
+    if (url.includes("/views/") && options?.method === "PUT") { order.push(`page:${JSON.parse(options.body as string).revision}`); return json({ saved: true }); }
+    return json(snapshot);
+  });
+  render(<Copilot open context={context} onClose={vi.fn()} onViewAction={async () => (applied ? { ok: true } : { ok: false, detail: "not_found" as const })} />);
+  await screen.findByText("Copilot");
+  await waitFor(() => expect(callbacks.subscription?.viewAction).toBeTypeOf("function"));
+  await waitFor(() => expect(order).toContain("page:1"));
+  const started = Date.now();
+  act(() => callbacks.subscription!.viewAction!({ type: "copilot.view-action", viewId: context.viewId, actionId: "00000000-0000-4000-8000-0000000000ac", action: { action: "open_task", taskId: "t_ffffffff" } }));
+  await waitFor(() => expect(order).toContain("result"), { timeout: 3000 });
+  const elapsed = Date.now() - started;
+  if (applied) expect(elapsed).toBeGreaterThanOrEqual(380); // SETTLE_WAIT_MS (400) less timer slack
+  else expect(elapsed).toBeLessThan(300);
 });
 
 test("the panel's own close button returns focus to the toolbar toggle", async () => {

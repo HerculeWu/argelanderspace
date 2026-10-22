@@ -17,6 +17,8 @@ import { LiveRunStatus, ThinkingBlock } from "./LiveStatus";
 import { Icon } from "../lib/icons";
 import { copilotMarkdown } from "./markdown";
 import "./copilot.css";
+/** How long an applied view action may take to show up in the page context before it is reported anyway (it may have changed nothing). */
+const SETTLE_WAIT_MS = 400;
 /** What a click-time system error (`unreadable`) says, by the card's problem scope (ticket 42). */
 const UNREADABLE_COPY = {
   plan: "copilot.confirmation.unreadablePlan",
@@ -235,7 +237,10 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, set
     } else await publishPageContext(next);
     sentReading.current = id; published.current = { viewId: next.viewId, revision: next.revision }; return next;
   };
-  const settlePublished = async () => {
+  // What an action changed reaches the page context through renders of unknown delay: wait for a revision newer than the one the action started from (an applied action that changes nothing times out), then for the renders that follow it to go quiet.
+  const settlePublished = async (startRevision: number, expectChange: boolean) => {
+    const deadline = Date.now() + SETTLE_WAIT_MS;
+    while (expectChange && latestContext.current.revision <= startRevision && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
     for (let round = 0; round < 6; round++) {
       const before = latestContext.current.revision;
       await new Promise((resolve) => setTimeout(resolve, 20));
@@ -313,9 +318,10 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, set
         void (async () => {
           // The provider settings dialog is this panel's own: opening it only shows the dialog, the user types any secret there.
           if (message.action.action === "open_copilot_settings") { openPanelRef.current?.(); setSettings(true); }
+          const startRevision = latestContext.current.revision;
           const outcome: Pick<CopilotViewActionResult, "ok" | "detail" | "http" | "folded"> = message.action.action === "open_copilot_settings" ? { ok: true } : viewActionRef.current ? await viewActionRef.current(message.action).catch(() => ({ ok: false, detail: "unavailable" as const })) : { ok: false, detail: "unavailable" as const };
           // What the action changed reaches the page context through a few renders: report only once the service holds the page that shows it, so a call that follows (read_discovery, save_candidate) never sees the old page.
-          await settlePublished();
+          await settlePublished(startRevision, outcome.ok && message.action.action !== "open_copilot_settings");
           try { await postViewActionResult(message.viewId, { actionId: message.actionId, ok: outcome.ok, ...(outcome.detail ? { detail: outcome.detail } : {}), ...(outcome.http !== undefined ? { http: outcome.http } : {}), ...(outcome.folded ? { folded: outcome.folded } : {}) }); } catch { /* the service times the action out as not displayed */ }
         })();
       },
