@@ -205,11 +205,12 @@ function LibraryBody({
   useEffect(
     () =>
       exploreBus.register({
+        paneId,
         isExploring: () => explore.isExploringRef.current,
         explore: explore.exploreFromHash,
         exit: explore.exitExplore,
       }),
-    [explore.isExploringRef, explore.exploreFromHash, explore.exitExplore]
+    [paneId, explore.isExploringRef, explore.exploreFromHash, explore.exitExplore]
   );
 
   // ---- Argument graph view (ticket 04): a sibling mode of exploration, `#argument/<work id>` ---------------- //

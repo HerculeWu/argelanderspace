@@ -611,6 +611,53 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
     argumentBus.request(workId, { push: true, paneId: library?.id ?? manager.getState().activeId });
   };
 
+  // ---- switching a pane's view (the activity bar, the pane menu) ------------------------------------ //
+
+  /**
+   * The person switches pane `id` to `view` (the activity bar: the active pane; the pane menu: that pane, which becomes
+   * active). A pane that shows the open exploration (`#explore/…`) leaves it this way: the exploration ends with the
+   * Library page, and a new history entry names what is on screen now — the Doc's address when the pane becomes a Doc
+   * pane showing a Doc, else the plain URL — so Back returns to the exploration. A pane that becomes a Doc pane records the
+   * view it replaces on the exploration's entry (`LeftRecord`), as `openDoc` does. The Library page's leave guard is asked
+   * once, as the pane manager would; refused, nothing changes. A late yes still switches, but writes the entry only while
+   * the address is still the one asked at (a later navigation's entry is not this switch's to bury).
+   */
+  const switchView = (id: number, view: string, origin: LeaveOrigin, activate: boolean): boolean => {
+    const pane = manager.getState().panes.find((p) => p.id === id);
+    const at = browser.location();
+    const leavesExploration = pane?.view === "library" && view !== "library" && parseExploreHash(at.hash) !== null && exploreBus.hostedBy(id);
+    if (!pane || !leavesExploration) return activate ? manager.setPaneView(id, view, origin) : manager.setActiveView(view, origin);
+    const askedAt = at.href;
+    const apply = () =>
+      batch(() => {
+        if (!manager.getState().panes.some((p) => p.id === id && p.view === pane.view)) return;
+        const write = browser.location().href === askedAt;
+        const docUrl = view === "doc" ? openDocUrl() : null;
+        if (write && docUrl) {
+          // the pane becomes a Doc pane with a session of its own, recorded on the exploration's entry (see onNav)
+          const session = mintSession();
+          sessions.set(id, session);
+          browser.setState(leftRecordOf(pane, session));
+        }
+        manager.update((ps) => ps.map((p) => (p.id === id ? { ...p, view } : p)));
+        if (activate) manager.select(id);
+        syncSessions();
+        if (write) {
+          browser.push(docUrl ?? "/");
+          if (docUrl) noteDocAddress();
+        }
+      });
+    const verdict = leave.ask(pane.view, pane.id, origin);
+    if (verdict === true) {
+      apply();
+      return true;
+    }
+    if (verdict !== false) void verdict.then((yes) => yes && apply());
+    return false;
+  };
+  const setActiveView = (view: string, origin: LeaveOrigin = "user"): boolean => switchView(manager.getState().activeId, view, origin, false);
+  const setPaneView = (id: number, view: string, origin: LeaveOrigin = "user"): boolean => switchView(id, view, origin, true);
+
   // ---- boot ------------------------------------------------------------------------------------- //
 
   /**
@@ -763,6 +810,8 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
         listeners.delete(listener);
       };
     },
+    setActiveView,
+    setPaneView,
     start,
     rendered,
     docHost,
