@@ -810,6 +810,8 @@
       "note": "Note",
       "notePlaceholder": "Supports Markdown and $…$ / $$…$$ math: # heading · **bold** · - list",
       "noteHint": "Supports Markdown and math · ⌘↵ to save",
+      "noteSaveFailed": "The note could not be saved. Your draft is kept; retry or cancel.",
+      "noteSaveConflict": "Your draft is kept: the plan data changed before this note was saved. Save again or cancel.",
       "noteEmpty": "Add a note — record ideas, experiment observations, or next steps…",
       "deleteTask": "Delete task"
     },

@@ -23,6 +23,7 @@ import {
   todayISO,
   type Plan,
   type PlansFile,
+  type SaveResult,
   type Task,
   type TaskStatus,
 } from "./model";
@@ -71,6 +72,7 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
   const { t } = useTranslation();
   const [doc, setDoc] = useState<PlansFile | null>(null);
   const docRef = useRef<PlansFile | null>(null);
+  const reloadGen = useRef(0);
   const writeChain = useRef<Promise<void>>(Promise.resolve());
   const localWrites = useRef(0);
   const pendingSaves = useRef(0);
@@ -151,6 +153,7 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
   const reload = useCallback(async () => {
     const d = await fetchPlans();
     if (d) {
+      reloadGen.current++; // any optimistic edit not yet written is now gone from the doc
       applyDoc(d);
       setLoadFailed(false);
       void syncServerUndo();
@@ -199,24 +202,35 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
   }, []);
 
   const mutate = useCallback(
-    (fn: (d: PlansFile) => PlansFile) => {
+    (fn: (d: PlansFile) => PlansFile): Promise<SaveResult> => {
       const cur = docRef.current;
-      if (!cur) return;
+      if (!cur) return Promise.resolve({ ok: false, conflict: false });
       const next = fn(cur);
-      if (next === cur) return; // noop edit (e.g. a cancelled drag): no doc churn, no PUT
+      if (next === cur) return Promise.resolve({ ok: true }); // noop edit (e.g. a cancelled drag): no doc churn, no PUT
       pendingSaves.current++;
       setSaveState("pending");
       applyDoc(next); // optimistic
-      writeChain.current = writeChain.current.then(async () => {
+      const gen = reloadGen.current;
+      let outcome: SaveResult = { ok: false, conflict: false };
+      const done = writeChain.current.then(async () => {
         const snapshot = docRef.current;
         if (!snapshot) return;
         localWrites.current++;
         try {
+          if (reloadGen.current !== gen) {
+            // An earlier failed write (or an external change) reloaded the doc after this optimistic
+            // edit: the edit is no longer in `snapshot`, so a PUT would "succeed" without it. Report
+            // that honestly (conflict) instead of writing the reloaded doc.
+            outcome = { ok: false, conflict: true };
+            return;
+          }
           const res = await putPlans(snapshot);
           if (res.ok) {
+            outcome = { ok: true };
             // adopt the bumped rev; keep newer optimistic edits, if any
             applyDoc(docRef.current === snapshot ? res.doc : { ...(docRef.current as PlansFile), rev: res.doc.rev });
           } else {
+            outcome = { ok: false, conflict: res.conflict };
             setSaveState("error");
             await reload();
             flash(res.conflict ? t("plan.notice.conflict") : t("plan.notice.saveFailed"));
@@ -232,6 +246,8 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
           }
         }
       });
+      writeChain.current = done;
+      return done.then(() => outcome);
     },
     [applyDoc, reload, flash]
   );
@@ -239,7 +255,7 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
   // ---- operations (all through mutate) ------------------------------------ //
 
   const patchTask = useCallback(
-    (planId: string, taskId: string, patch: Partial<Omit<Task, "id">>) =>
+    (planId: string, taskId: string, patch: Partial<Omit<Task, "id">>): Promise<SaveResult> =>
       mutate((d) => ({
         ...d,
         plans: d.plans.map((p) =>

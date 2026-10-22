@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { LibraryRef } from "../library/types";
 import { Icon } from "../lib/icons";
-import { ActionButton } from "../ui";
+import { ActionButton, InlineMessage } from "../ui";
 import { mdWithMath } from "../lib/mdWithMath";
 import { DrawerStatusRow } from "./atoms";
-import type { Plan, Task, TaskStatus } from "./model";
+import type { Plan, SaveResult, Task, TaskStatus } from "./model";
 import { DueBadge, PinBtn } from "./taskBits";
 
 // The task drawer (Stage 4): plan tag + title + four-state status row +
@@ -19,7 +19,7 @@ interface DrawerCallbacks {
   onSetStatus: (planId: string, taskId: string, status: TaskStatus) => void;
   onTogglePin: (planId: string, taskId: string) => void;
   onEdit: (planId: string, task: Task) => void;
-  onSetNote: (planId: string, taskId: string, note: string | undefined) => void;
+  onSetNote: (planId: string, taskId: string, note: string | undefined) => Promise<SaveResult>;
   onAddLink: (planId: string, taskId: string, docId: string) => void;
   onRemoveLink: (planId: string, taskId: string, docId: string) => void;
   onDelete: (planId: string, taskId: string) => void;
@@ -180,17 +180,51 @@ function LinkPicker({
   );
 }
 
-/** The note's view/edit split: view = markdown+math render; edit = textarea, ⌘↵ saves. */
+/** The note's view/edit split: view = markdown+math render; edit = textarea, ⌘↵ saves.
+ *  A save keeps the editor open (busy) until it succeeds; a failure stays in edit with the
+ *  draft and the reason, so it can be retried or cancelled. The draft lives only in this
+ *  component (not across a page refresh) and a reload of the old value never overwrites it. */
 function NoteEditor({
   value,
   onSave,
 }: {
   value: string | undefined;
-  onSave: (v: string | undefined) => void;
+  onSave: (v: string | undefined) => Promise<SaveResult>;
 }) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value ?? "");
+  const [saving, setSaving] = useState(false);
+  const [failure, setFailure] = useState<"failed" | "conflict" | null>(null);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true; // StrictMode mounts, cleans up, then mounts again
+    return () => { alive.current = false; };
+  }, []);
+  const savingRef = useRef(false);
+  const save = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setFailure(null);
+    let result: SaveResult;
+    try {
+      result = await onSave(draft.trim() || undefined);
+    } catch {
+      result = { ok: false, conflict: false };
+    }
+    savingRef.current = false;
+    if (!alive.current) return;
+    setSaving(false);
+    if (result.ok) setEditing(false);
+    else setFailure(result.conflict ? "conflict" : "failed");
+  };
+  const leave = () => {
+    if (savingRef.current) return;
+    setDraft(value ?? "");
+    setFailure(null);
+    setEditing(false);
+  };
   const ta = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (editing && ta.current) {
@@ -206,34 +240,30 @@ function NoteEditor({
           ref={ta}
           className="plan-note-textarea mono" data-ui="task-note-input"
           value={draft}
+          readOnly={saving}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-              onSave(draft.trim() || undefined);
-              setEditing(false);
-            }
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") void save();
             if (e.key === "Escape") {
               e.stopPropagation();
-              setDraft(value ?? "");
-              setEditing(false);
+              leave();
             }
           }}
           placeholder={t("plan.drawer.notePlaceholder")}
         />
+        {failure && (
+          <InlineMessage tone="danger" uiId="task-note-save-error">
+            {t(failure === "conflict" ? "plan.drawer.noteSaveConflict" : "plan.drawer.noteSaveFailed")}
+          </InlineMessage>
+        )}
         <div className="plan-note-edit-foot">
           <span className="plan-note-hint">
             <Icon name="sparkles" cls="ico-sm" />
             {t("plan.drawer.noteHint")}
           </span>
           <div style={{ flex: 1 }} />
-          <ActionButton unstyled mode="icon" iconName="x" label={t("common.cancel")} tooltip={t("common.cancel")} className="plan-note-btn icon" data-ui="cancel-task-note" onClick={() => {
-            setDraft(value ?? "");
-            setEditing(false);
-          }} />
-          <ActionButton unstyled mode="icon" iconName="check" label={t("common.save")} tooltip={t("common.save")} className="plan-note-btn icon primary" data-ui="save-task-note" onClick={() => {
-            onSave(draft.trim() || undefined);
-            setEditing(false);
-          }} />
+          <ActionButton unstyled mode="icon" iconName="x" label={t("common.cancel")} tooltip={t("common.cancel")} className="plan-note-btn icon" data-ui="cancel-task-note" disabled={saving} onClick={leave} />
+          <ActionButton unstyled mode="icon" iconName="check" label={t("common.save")} tooltip={t("common.save")} className="plan-note-btn icon primary" data-ui="save-task-note" busy={saving} onClick={() => void save()} />
         </div>
       </div>
     );
