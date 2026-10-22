@@ -33,6 +33,7 @@ export interface MemoryBrowser {
 
 export function memoryBrowser(start = "/"): MemoryBrowser {
   const entries: string[] = [norm(start)];
+  const states: unknown[] = [null];
   let index = 0;
   const navs = new Set<() => void>();
   let traversals: Promise<void> = Promise.resolve();
@@ -56,7 +57,9 @@ export function memoryBrowser(start = "/"): MemoryBrowser {
   };
   const push = (url: string) => {
     entries.splice(index + 1);
+    states.splice(index + 1);
     entries.push(norm(url));
+    states.push(null);
     index = entries.length - 1;
   };
   const port: BrowserPort = {
@@ -64,6 +67,11 @@ export function memoryBrowser(start = "/"): MemoryBrowser {
     push,
     replace: (url) => {
       entries[index] = norm(url);
+      states[index] = null;
+    },
+    state: () => states[index] ?? null,
+    setState: (state) => {
+      states[index] = state;
     },
     back: () => traverse(-1),
     listen: (onNav) => {

@@ -199,7 +199,7 @@ export function Shell() {
   }, [setCopilotOpen]);
   const openMailAccounts = useCallback(() => setActiveView("mail"), [setActiveView]);
   const workspace: Workspace = useMemo(
-    () => ({ papers, currentDoc, setCurrentDoc: store.setCurrentDoc, openDoc: store.openDoc, pendingAnchor, clearPendingAnchor: store.clearPendingAnchor, docDeleted: store.docDeleted, openArgumentGraph: store.openArgumentGraph, openCopilotSettings, openMailAccounts, tweaks }),
+    () => ({ papers, currentDoc, setCurrentDoc: store.setCurrentDoc, openDoc: store.openDoc, pendingAnchor, clearPendingAnchor: store.clearPendingAnchor, docDeleted: store.docDeleted, openArgumentGraph: store.openArgumentGraph, librarySelection: store.librarySelection, openCopilotSettings, openMailAccounts, tweaks }),
     [papers, currentDoc, store, pendingAnchor, openCopilotSettings, openMailAccounts, tweaks]
   );
 

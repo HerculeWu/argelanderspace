@@ -3,7 +3,7 @@ import { type ArgumentViewAction, type CopilotViewActionResult, type DiscoveryPa
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import { ActionButton } from "../ui";
-import { askWorkspaceLeave, confirmWorkspaceLeave, useWorkspace, whenWorkspaceMayLeave } from "../argelander/workspace";
+import { askWorkspaceLeave, confirmWorkspaceLeave, useWorkspace, type Workspace, whenWorkspaceMayLeave } from "../argelander/workspace";
 import { fetchLibrary, type LibraryLoad } from "../api/library";
 import { onLibraryChanged } from "../api/ws";
 import { LibraryGraph } from "./LibraryGraph";
@@ -134,6 +134,7 @@ export function LibraryView({
       onController={onController}
       onDocDeleted={ws.docDeleted}
       onBeforeDocDelete={(docId) => docId !== ws.currentDoc || confirmWorkspaceLeave()}
+      selectionMemory={ws.librarySelection}
     />
   );
 }
@@ -152,6 +153,7 @@ function LibraryBody({
   onController,
   onDocDeleted,
   onBeforeDocDelete,
+  selectionMemory,
 }: {
   payload: LibraryData;
   live: boolean;
@@ -169,6 +171,8 @@ function LibraryBody({
    *  after a document is physically deleted. */
   onDocDeleted: (docId: string, remaining: string[]) => void;
   onBeforeDocDelete: (docId: string) => boolean;
+  /** The workspace's memory of this pane's selected Work, for when a Doc pane has replaced the page and Back brings it back. */
+  selectionMemory?: Workspace["librarySelection"];
 }) {
   const { refs, graph } = payload;
   const { t } = useTranslation();
@@ -183,7 +187,14 @@ function LibraryBody({
 
   const refToNodeRef = useRef(refToNode);
   refToNodeRef.current = refToNode;
-  const [selNode, setSelNode] = useState<string | null>(graph.nodes.find((n) => n.ref)?.id ?? null);
+  const [selNode, setSelNode] = useState<string | null>(() => {
+    const remembered = paneId === undefined ? undefined : selectionMemory?.get(paneId);
+    if (remembered === null || (remembered !== undefined && byId[remembered])) return remembered;
+    return graph.nodes.find((n) => n.ref)?.id ?? null;
+  });
+  useEffect(() => {
+    if (paneId !== undefined) selectionMemory?.set(paneId, selNode);
+  }, [paneId, selectionMemory, selNode]);
   const [q, setQ] = useState("");
   const [sideCollapsed, setSideCollapsed] = useState(false);
 
