@@ -55,7 +55,6 @@
 - **latexmk 稳定缓存在编译失败后曾死锁**：“Nothing to do”+“previous invocation error”，坏 bbl 阻断 bibtex 重跑；Stage 12 起 compileTex 失败路径清理 aux/bbl/blg/fdb_latexmk/log（输入不动），下次编译自愈。desktop-app 票 08 起，完整日志的另存发生在这次清理之前（`tex/failure-log.ts`），清理的文件集合不变；`infra/tests/tex-failure-log.test.ts` 钉住「失败后被清掉的文件」与「同一份源立即重试能重新编译」。
 - web Vitest 经 workspace **dist** 解析；改 contracts/core 后先 build 再跑下游测试，否则可能误报旧实现故障。CodeMirror 的 happy-dom selectionchange 同步重入用测试 shim，不当真实浏览器证据。Shift-Enter 高优先级及 compositionStarted 防 IME 误提交是当前集成教训。
 - biome web legacy override 关闭了部分格式/导入/a11y；不要对旧前端文件盲目 `--write` 全量重排。新代码保持 clean；parse 级错误不能靠 override 关闭，真实 HTML 夹具当年需 files.includes 排除。
-
 - **宿主关停时限只在 server 层测**（2026-10-22，desktop-app 票 31 后续，用户决定）：`closeHttpServer` 在 2 秒宽限后强制断开连接，此后 CLI 进程里已没有测试能构造、又会拖过宿主 10 秒时限（`HOST_STOP_DEADLINE_MS`）的真实因素（剩下的只有在跑的 Copilot 或卡住的 IMAP），所以原 cli `desktop-host.test.ts`「its input closed and its shutdown held up」整条删除，不留 skip；时限兜底本身保留，由 server `tests/desktop-host.test.ts`「a shutdown that does not finish in time is given up」用注入的短时限覆盖，cli 层改测「发了一半的请求不再拖住关停（约 2 秒、退出码 0、端口释放）」。产品里不为此加测试开关。
 
 ### 交互回归教训
