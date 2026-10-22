@@ -42,6 +42,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { PdfWriteOutcome } from "./copilot-reader-tool.js";
 import { badDocId } from "./doc-id.js";
 import type { DocMutationRegistry } from "./doc-mutations.js";
+import { detail, pyRepr } from "./fastapi-parity.js";
 import type { AsyncLock } from "./lock.js";
 import {
   PdfAnnotationHistory,
@@ -59,14 +60,9 @@ import {
   resolvePdfTextTarget,
 } from "./pdf-material.js";
 
-/** FastAPI's `HTTPException(status, msg)` body (the app's own helper, for `sourceFailure`). */
-function detail(msg: string, status: ContentfulStatusCode) {
-  return { body: { detail: msg }, status };
-}
-
-/** Python `f"...{value!r}..."` for the simple ids that reach these messages (the app's own helper). */
-function pyRepr(s: string): string {
-  return `'${s}'`;
+/** The Works whose `doc_ids` list the Doc, read fresh from the library each call (also the Doc delete's holders). */
+export function worksOwningDoc(paths: LibraryPaths, docId: string): Work[] {
+  return LibraryStore.load(paths).works.filter((work) => work.doc_ids.includes(docId));
 }
 
 /** What `source` found: the verified original, or why there is none. */
@@ -79,6 +75,13 @@ export type PdfSource =
       annotations?: ReturnType<typeof readPdfAnnotationsFile>;
     }
   | { kind: "bad_id" | "busy" | "not_found" | "changed" | "inconsistent" | "error" };
+
+/** What `source` found when the workbench sidecar was asked for: an `ok` always carries it. */
+export type PdfSourceWithAnnotations =
+  | Exclude<PdfSource, { kind: "ok" }>
+  | (Extract<PdfSource, { kind: "ok" }> & {
+      annotations: ReturnType<typeof readPdfAnnotationsFile>;
+    });
 
 /**
  * What the page's whole-file save of the workbench annotations came to. `saved` wrote the next rev and notified once;
@@ -118,6 +121,10 @@ export interface PdfAccess {
   /** The Works whose `doc_ids` list the Doc, read fresh from the library each call. */
   owners(docId: string): Work[];
   /** The verified original (see the module comment); `annotations` also reads the workbench sidecar. */
+  source(
+    docId: string,
+    options: { expectedHash?: string; annotations: true }
+  ): PdfSourceWithAnnotations;
   source(docId: string, options?: { expectedHash?: string; annotations?: boolean }): PdfSource;
   /** The Copilot's PDF workbench annotation write, on the lock; the undo/redo history lives in this instance. */
   writeAnnotation(
@@ -139,6 +146,11 @@ export interface PdfAccess {
     docId: string,
     candidate: PdfReadingPosition
   ): Promise<PdfReadingPositionSave>;
+  /**
+   * The owner check the two page PUTs make before they save (the id and the body already checked): an unowned Doc is
+   * the 404 and a Doc several Works list is the 500, in `sourceFailure`'s words; null when exactly one Work owns it.
+   */
+  ownerFailure(docId: string): { body: { detail: string }; status: ContentfulStatusCode } | null;
   /** What a failed PDF material request is, as the routes answer it. */
   materialFailure(error: unknown): { status: 400 | 409 | 500 | 503; detail: string };
   /** The status a failed `source` answers on the PDF material routes. */
@@ -157,8 +169,7 @@ export function createPdfAccess(deps: PdfAccessDeps): PdfAccess {
     readingPositionLock,
     onReadingPositionChanged,
   } = deps;
-  const pdfOwners = (docId: string) =>
-    LibraryStore.load(paths).works.filter((work) => work.doc_ids.includes(docId));
+  const pdfOwners = (docId: string) => worksOwningDoc(paths, docId);
   /**
    * The ONE way PDF page material is reached (the `/pdf/pages` routes and the Copilot's reader tool): content-busy
    * check, a unique owner, and the original read once and verified against its immutable SHA-256 (and against the
@@ -470,9 +481,16 @@ export function createPdfAccess(deps: PdfAccessDeps): PdfAccess {
         return detail(`PDF document ${pyRepr(docId)} cannot be verified`, 500);
     }
   };
+  const ownerFailure = (docId: string) => {
+    const owners = pdfOwners(docId);
+    if (owners.length === 0) return pdfSourceFailure(docId, "not_found");
+    if (owners.length !== 1) return pdfSourceFailure(docId, "inconsistent");
+    return null;
+  };
   return {
     owners: pdfOwners,
-    source: pdfSource,
+    ownerFailure,
+    source: pdfSource as PdfAccess["source"],
     writeAnnotation: writePdfAnnotation,
     saveAnnotations,
     saveReadingPosition,

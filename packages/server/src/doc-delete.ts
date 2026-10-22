@@ -15,7 +15,6 @@ import type { DocReplaceImpact } from "@argelanderspace/contracts";
 import {
   annotationsDocDir,
   type LibraryPaths,
-  LibraryStore,
   type RemovedDocWork,
   readAnnotationRisk,
   readPdfAnnotationsFile,
@@ -27,6 +26,7 @@ import { badDocId } from "./doc-id.js";
 import type { DocMutationRegistry } from "./doc-mutations.js";
 import type { DocDeleteDescription, DocDeleteOutcome, DocDeletionPort } from "./library-actions.js";
 import type { AsyncLock } from "./lock.js";
+import { worksOwningDoc } from "./pdf-access.js";
 import type { TextDocService } from "./text-docs.js";
 
 export interface DocDeletionDeps {
@@ -65,9 +65,11 @@ export function createDocDeletion(deps: DocDeletionDeps): DocDeletionPort {
    * gone from disk while library.json still lists it; the caller is told and a retry finishes the cleanup.
    */
   const holdersOf = (docId: string) =>
-    LibraryStore.load(paths)
-      .works.filter((work) => work.doc_ids.includes(docId))
-      .map((work) => ({ id: work.id, title: work.title, docIds: [...work.doc_ids] }));
+    worksOwningDoc(paths, docId).map((work) => ({
+      id: work.id,
+      title: work.title,
+      docIds: [...work.doc_ids],
+    }));
   /** What the lock-time check compares: which Works hold the Doc and their Doc lists (a main-Doc change included). */
   const holdersKey = (held: { id: string; docIds: string[] }[]) =>
     JSON.stringify(held.map(({ id, docIds }) => ({ id, docIds })));
