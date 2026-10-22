@@ -21,6 +21,8 @@ export const pushExploreUrl = route.push;
 export const clearExploreUrl = route.clear;
 
 export interface ExploreTarget {
+  /** The pane the Library page is in (absent outside the workspace's panes). */
+  paneId?: number;
   /** Whether this LibraryView currently hosts the active exploration. */
   isExploring(): boolean;
   /** Navigate to the seed: restore the session when known, else fetch fresh. */
@@ -41,4 +43,9 @@ export const exploreBus = {
   /** Called when the URL stops naming an exploration (popstate to a plain URL). */
   exit: (): void => bus.exit(),
   register: (t: ExploreTarget): (() => void) => bus.register(t),
+  /** Whether the exploration that is open is in pane `paneId` (a page that names no pane counts as any). */
+  hostedBy: (paneId: number): boolean => {
+    const t = bus.peek();
+    return t !== undefined && (t.paneId === undefined || t.paneId === paneId);
+  },
 };

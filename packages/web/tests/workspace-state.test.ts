@@ -78,6 +78,7 @@ function libraryPages(x: WorkspaceState, browser: MemoryBrowser) {
         },
       }),
       exploreBus.register({
+        paneId,
         isExploring: () => exploring.has(paneId),
         explore: (seed) => {
           if (exploring.has(paneId)) return;
@@ -89,7 +90,10 @@ function libraryPages(x: WorkspaceState, browser: MemoryBrowser) {
         },
       }),
     ];
-    return () => offs.forEach((off) => off());
+    return () => {
+      offs.forEach((off) => off());
+      exploring.delete(paneId); // the page goes away with its exploration, as the real view's state does
+    };
   };
   const sync = () => {
     const shown = new Set(x.getState().panes.filter((p) => p.view === "library").map((p) => p.id));
@@ -1264,6 +1268,150 @@ describe("a guard that answers later (the argument graph's own dialog)", () => {
     // the question is closed: the next Back asks again
     t.browser.pop("/");
     expect(t.leave.late).toHaveLength(2);
+  });
+});
+
+describe("switching the view away from an exploration (the activity bar, the pane menu)", () => {
+  /** A Library page with the first Doc current, then an exploration (its address entered by hand, as the view's own push leaves it). */
+  const exploring = async (o: Setup = {}) => {
+    const t = await booted({ panes: [{ id: 1, view: "library", size: 1 }], ...o });
+    t.browser.editHash("/#explore/2020X");
+    await flush();
+    expect(t.library.explores).toEqual(["2020X"]);
+    return t;
+  };
+
+  it("to the Doc: the exploration is left with a new entry naming the Doc, and Back returns to the exploration", async () => {
+    const t = await exploring();
+    const before = t.leave.asks.length;
+    expect(t.x.setActiveView("doc")).toBe(true);
+    expect(t.views()).toEqual(["doc"]);
+    expect(t.leave.asks.slice(before)).toEqual([{ view: "library", paneId: 1, origin: "user" }]);
+    expect(t.browser.entries).toEqual(["/", "/#explore/2020X", "/doc/d1"]);
+    await flush();
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.browser.url()).toBe("/#explore/2020X");
+    expect(t.views()).toEqual(["library"]);
+    expect(t.library.explores).toEqual(["2020X", "2020X"]);
+  });
+
+  it("to the Doc: the replaced view is recorded, so Back puts that pane back even when another pane is active", async () => {
+    const t = await exploring({
+      panes: [
+        { id: 1, view: "library", size: 1 },
+        { id: 2, view: "plan", size: 1 },
+      ],
+      activeId: 1,
+    });
+    expect(t.x.setActiveView("doc")).toBe(true);
+    expect(t.views()).toEqual(["doc", "plan"]);
+    expect(t.browser.entries).toEqual(["/", "/#explore/2020X", "/doc/d1"]);
+    t.x.select(2);
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.views()).toEqual(["library", "plan"]);
+    expect(t.library.explores).toEqual(["2020X", "2020X"]);
+    // Forward (from that pane): the same Doc pane again, and Back still finds its record
+    t.x.select(1);
+    t.browser.forward();
+    await t.browser.settle();
+    await flush();
+    expect(t.views()).toEqual(["doc", "plan"]);
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.views()).toEqual(["library", "plan"]);
+  });
+
+  it("the pane menu leaving the exploration for the Doc writes the same entry", async () => {
+    const t = await exploring({
+      panes: [
+        { id: 1, view: "library", size: 1 },
+        { id: 2, view: "plan", size: 1 },
+      ],
+      activeId: 2,
+    });
+    expect(t.x.setPaneView(1, "doc")).toBe(true);
+    expect(t.views()).toEqual(["doc", "plan"]);
+    expect(t.x.getState().activeId).toBe(1);
+    expect(t.browser.entries).toEqual(["/", "/#explore/2020X", "/doc/d1"]);
+  });
+
+  it("to the Doc with no Doc to show: the plain URL", async () => {
+    const t = await exploring({ papers: [] });
+    expect(t.x.setActiveView("doc")).toBe(true);
+    expect(t.browser.entries).toEqual(["/", "/#explore/2020X", "/"]);
+  });
+
+  it("to another page: a new entry with the plain URL, and Back returns to the exploration", async () => {
+    const t = await exploring();
+    expect(t.x.setActiveView("plan")).toBe(true);
+    expect(t.views()).toEqual(["plan"]);
+    expect(t.browser.entries).toEqual(["/", "/#explore/2020X", "/"]);
+    await flush();
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.browser.url()).toBe("/#explore/2020X");
+    expect(t.views()).toEqual(["library"]);
+    expect(t.library.explores).toEqual(["2020X", "2020X"]);
+  });
+
+  it("refused by the Library page's guard: asked once, nothing changes and no entry is written", async () => {
+    const t = await exploring();
+    t.leave.answer((view) => view !== "library");
+    const before = t.leave.asks.length;
+    expect(t.x.setActiveView("doc")).toBe(false);
+    expect(t.leave.asks.slice(before)).toEqual([{ view: "library", paneId: 1, origin: "user" }]);
+    expect(t.views()).toEqual(["library"]);
+    expect(t.browser.entries).toEqual(["/", "/#explore/2020X"]);
+  });
+
+  it("a guard that answers later: no changes nothing; yes switches and writes the entry then", async () => {
+    const t = await exploring();
+    t.leave.lateFor("library");
+    expect(t.x.setActiveView("doc")).toBe(false);
+    t.leave.late[0]!(false);
+    await flush();
+    expect(t.views()).toEqual(["library"]);
+    expect(t.browser.entries).toEqual(["/", "/#explore/2020X"]);
+    expect(t.x.setActiveView("doc")).toBe(false);
+    expect(t.leave.late).toHaveLength(2);
+    t.leave.late[1]!(true);
+    await flush();
+    expect(t.views()).toEqual(["doc"]);
+    expect(t.browser.entries).toEqual(["/", "/#explore/2020X", "/doc/d1"]);
+  });
+
+  it("a late yes after the address moved on switches the view but writes no entry over the newer one", async () => {
+    const t = await exploring();
+    t.leave.lateFor("library");
+    expect(t.x.setActiveView("plan")).toBe(false);
+    t.browser.editHash("/#explore/2021Y");
+    await flush();
+    t.leave.late[0]!(true);
+    await flush();
+    expect(t.views()).toEqual(["plan"]);
+    expect(t.browser.entries).toEqual(["/", "/#explore/2020X", "/#explore/2021Y"]);
+  });
+
+  it("a pane that is not exploring, or an address that names no exploration, writes nothing", async () => {
+    const t = await exploring({
+      panes: [
+        { id: 1, view: "library", size: 1 },
+        { id: 2, view: "library", size: 1 },
+      ],
+      activeId: 1,
+    });
+    // the boot request is served by the first Library page: pane 1 explores, pane 2 does not
+    expect(t.x.setPaneView(2, "doc")).toBe(true);
+    expect(t.browser.entries).toEqual(["/", "/#explore/2020X"]);
+    const u = await booted({ url: "/", panes: [{ id: 1, view: "library", size: 1 }] });
+    expect(u.x.setActiveView("doc")).toBe(true);
+    expect(u.browser.entries).toEqual(["/"]);
   });
 });
 
