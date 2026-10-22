@@ -357,6 +357,8 @@
       "addStructure": "Add annotation · {{kind}}",
       "view": "View annotation",
       "edit": "Edit annotation",
+      "expandBody": "Show full comment",
+      "collapseBody": "Hide full comment",
       "delete": "Delete annotation"
     },
     "popover": {

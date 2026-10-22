@@ -1,5 +1,5 @@
 import { useReaderSession } from "../doc/ReaderSession";
-import { useLayoutEffect, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Annotation } from "@argelanderspace/contracts";
 import { useStore } from "../store";
@@ -79,7 +79,23 @@ function AnnotationEntry({ a }: { a: Annotation }) {
   const ann = useAnnotations();
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
+  // Per-entry, page-lifetime only: the 2-line preview opens to the full body.
+  const [expanded, setExpanded] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+  const previewRef = useRef<HTMLSpanElement>(null);
   const { controller } = useReaderSession();
+  // The control exists only when the clamped preview really hides text. While
+  // open the clamp is off, so the last collapsed measurement is kept.
+  useLayoutEffect(() => {
+    const el = previewRef.current;
+    if (!el || expanded) return;
+    const measure = () => setOverflows(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [a.body, expanded]);
   const sum = targetSummary(a, store);
   const active = ann.activeId === a.id;
 
@@ -97,9 +113,20 @@ function AnnotationEntry({ a }: { a: Annotation }) {
           {sum.path && <span className="ann-entry-path">{sum.path}</span>}
         </span>
         {sum.snippet && <span className="ann-entry-quote">{sum.snippet}</span>}
-        <span className="ann-entry-preview">{a.body}</span>
+        <span ref={previewRef} className={"ann-entry-preview" + (expanded ? " expanded" : "")}>{a.body}</span>
       </button>
       <span className="ann-entry-actions">
+        {(overflows || expanded) && (
+          <ActionButton
+            mode="icon"
+            iconName={expanded ? "collapse" : "expand"}
+            label={t(expanded ? "annotation.action.collapseBody" : "annotation.action.expandBody")}
+            tooltip={t(expanded ? "annotation.action.collapseBody" : "annotation.action.expandBody")}
+            data-ui="toggle-latex-annotation-body"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((v) => !v)}
+          />
+        )}
         <ActionButton
           mode="icon"
           iconName="pencil"

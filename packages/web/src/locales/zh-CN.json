@@ -357,6 +357,8 @@
       "addStructure": "添加标注 · {{kind}}",
       "view": "查看标注",
       "edit": "编辑标注",
+      "expandBody": "展开全文",
+      "collapseBody": "收起全文",
       "delete": "删除标注"
     },
     "popover": {
