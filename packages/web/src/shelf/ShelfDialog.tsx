@@ -1,6 +1,7 @@
-import { SHELF_FORMAT, type ShelfAnnotationsResponse, type ShelfEntryResponse, type ShelfEntrySummary, type ShelfListRow, type ShelfTakeRequest, type ShelfTakeResult } from "@argelanderspace/contracts";
+import { SHELF_FORMAT, type ShelfAnnotationsResponse, type ShelfEntryResponse, type ShelfEntrySummary, type ShelfListRow, type ShelfNotePreview, type ShelfTakeRequest, type ShelfTakeResult } from "@argelanderspace/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { fetchArgumentGraph } from "../api/argument-graph";
 import { deleteShelfEntry, fetchShelf, fetchShelfAnnotations, fetchShelfEntry, onShelfChanged, previewTake, type ShelfFailure, takeFromShelf } from "../api/shelf";
 import { Icon } from "../lib/icons";
 import type { LibraryRef } from "../library/types";
@@ -253,6 +254,8 @@ function Summary({ row, works, onTake, onDelete }: { row: ShelfListRow; works: r
   const ok = row.status === "ok";
   const here = ok ? projectWorkFor(row, works) : undefined;
   const venue = entry?.status === "ok" && typeof entry.bibliography.venue === "string" ? entry.bibliography.venue : null;
+  // The note's opening (shelf follow-up 01) comes with the summary of this rev only.
+  const notePreview = entry?.status === "ok" && entry.rev === row.rev ? entry.notePreview : null;
   return (
     <div className="shelf-pane" data-ui="shelf-entry-summary" data-ui-key={row.entryId}>
       <div className="shelf-pane-scroll">
@@ -311,8 +314,8 @@ function Summary({ row, works, onTake, onDelete }: { row: ShelfListRow; works: r
                 </span>
               </div>
               <MetaRow k={t("shelf.annotations")} v={String(row.annotations)} />
-              <MetaRow k={t("shelf.graph")} v={t(row.argumentGraph ? "shelf.yes" : "shelf.no")} />
-              <MetaRow k={t("shelf.note")} v={t(row.note ? "shelf.yes" : "shelf.no")} />
+              <MetaRow k={t("shelf.graph")} v={graphText(row, t, "shelf.yes")} />
+              <MetaRow k={t("shelf.note")} v={!row.note ? t("shelf.no") : notePreview ? previewText(notePreview) : t("shelf.yes")} />
               <MetaRow k={t("shelf.size")} v={formatBytes(row.bytes)} mono />
               <MetaRow k={t("shelf.added")} v={t("shelf.addedFrom", { at: formatTime(row.addedAt), from: row.source.project })} mono />
             </div>
@@ -337,6 +340,20 @@ function Summary({ row, works, onTake, onDelete }: { row: ShelfListRow; works: r
       </div>
     </div>
   );
+}
+
+/**
+ * What the entry's argument graph is, in words: its argument count when the server could count it (shelf follow-up 01),
+ * otherwise `carried` (the graph is there, its count unknown); `none` when no graph is carried.
+ */
+function graphText(row: OkRow, t: Translate, carried: "shelf.yes" | "shelf.take.graphCarried", none: "shelf.no" | "shelf.add.noGraph" = "shelf.no"): string {
+  if (!row.argumentGraph) return t(none);
+  return row.argumentCount === null ? t(carried) : t("shelf.add.arguments", { count: row.argumentCount });
+}
+
+/** The note's opening as the page shows it: an ellipsis marks that the note goes on. */
+function previewText(p: ShelfNotePreview): string {
+  return `${p.text}${p.truncated ? "…" : ""}`;
 }
 
 function MetaRow({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
@@ -374,6 +391,19 @@ function TakePane({ row, onBusy, onBack, onDone, onStale }: { row: OkRow; onBusy
     setBusyState(b);
     onBusy(b);
   };
+
+  // The opening of the note (shelf follow-up 01) is only in the entry's summary, not in its list row.
+  const [notePreview, setNotePreview] = useState<ShelfNotePreview | null>(null);
+  useEffect(() => {
+    if (!row.note) return;
+    const controller = new AbortController();
+    void fetchShelfEntry(row.entryId, controller.signal)
+      .then((answer) => {
+        if (answer.ok && answer.value.status === "ok" && answer.value.rev === row.rev) setNotePreview(answer.value.notePreview);
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [row]);
 
   useEffect(() => {
     if (row.annotations === 0) return;
@@ -422,6 +452,20 @@ function TakePane({ row, onBusy, onBack, onDone, onStale }: { row: OkRow; onBusy
     }));
   const skipped = new Map((plan?.result.docs.skipped ?? base?.skipped ?? []).map((s) => [s.docId, s]));
   const keepLocalGraph = base?.argumentGraph === "kept_local";
+  // The project's own graph that is kept: its argument count, read (only) from the project's graph (follow-up 01).
+  const keptWorkId = keepLocalGraph ? (base?.work.id ?? null) : null;
+  const [localCount, setLocalCount] = useState<number | null>(null);
+  useEffect(() => {
+    setLocalCount(null);
+    if (keptWorkId === null) return;
+    const controller = new AbortController();
+    void fetchArgumentGraph(keptWorkId, controller.signal)
+      .then((load) => {
+        if (!controller.signal.aborted && load.kind === "ok") setLocalCount(load.graph.arguments.length);
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [keptWorkId]);
   const noteKept = base?.note === "kept_local";
   const noteExisting = base?.note === "existing_work";
   const work = plan?.result.work ?? base?.work;
@@ -564,10 +608,10 @@ function TakePane({ row, onBusy, onBack, onDone, onStale }: { row: OkRow; onBusy
             <input type="checkbox" checked={graph && !keepLocalGraph} disabled={!row.argumentGraph || keepLocalGraph || busy} onChange={(e) => setGraph(e.target.checked)} />
             <span className="shelf-row-main">
               <strong>{t("shelf.graph")}</strong>
-              <span className="shelf-dim">{row.argumentGraph ? t("shelf.take.graphCarried") : t("shelf.add.noGraph")}</span>
+              <span className="shelf-dim">{graphText(row, t, "shelf.take.graphCarried", "shelf.add.noGraph")}</span>
               {keepLocalGraph && (
                 <span className="shelf-warn-text" data-ui="take-keep-local-graph">
-                  {t("shelf.take.keepLocalGraph")}
+                  {localCount === null ? t("shelf.take.keepLocalGraph") : t("shelf.take.keepLocalGraphCount", { count: localCount })}
                 </span>
               )}
             </span>
@@ -576,7 +620,9 @@ function TakePane({ row, onBusy, onBack, onDone, onStale }: { row: OkRow; onBusy
             <input type="checkbox" checked={note} disabled={!row.note || busy} onChange={(e) => setNote(e.target.checked)} />
             <span className="shelf-row-main">
               <strong>{t("shelf.note")}</strong>
-              <span className="shelf-dim">{row.note ? t("shelf.take.noteCarried") : t("shelf.add.noNote")}</span>
+              <span className="shelf-dim" data-ui="take-note-preview">
+                {!row.note ? t("shelf.add.noNote") : notePreview ? previewText(notePreview) : t("shelf.take.noteCarried")}
+              </span>
               {note && (noteKept || noteExisting) && (
                 <span className="shelf-warn-text" data-ui="take-note-not-written">
                   {t(noteKept ? "shelf.take.noteKeptLocal" : "shelf.take.noteExistingWork")}

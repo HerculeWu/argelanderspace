@@ -4,7 +4,8 @@
  * `GET /api/shelf/lookup`, `POST /api/shelf/entries/:id/take/preview` and `POST /api/shelf/entries/:id/take` answer.
  * The entry format itself is `shelf.ts`.
  *
- * Only the annotation list carries annotation bodies (for the page); no answer carries the note text or the graph.
+ * Only the annotation list carries annotation bodies (for the page), and only the entry summary carries the opening of
+ * the note (`notePreview`, for the page; shelf follow-up 01); no answer carries the whole note or the graph's content.
  */
 
 import { z } from "zod";
@@ -42,7 +43,25 @@ export interface ShelfEntrySummary {
   /** All annotations carried, over every Doc. */
   annotations: number;
   argumentGraph: boolean;
+  /**
+   * How many arguments the carried graph has, counted when read from the entry's own `argument-graph.json` (shelf
+   * follow-up 01). Null when no graph is carried, or when this build cannot count it (a later version, not a graph,
+   * a file that no longer matches the manifest or cannot be read): unknown, never an error. A count, not content.
+   */
+  argumentCount: number | null;
   note: boolean;
+}
+
+/** How many characters (code points) of the note `GET /api/shelf/entries/:id` gives (`notePreview`). */
+export const SHELF_NOTE_PREVIEW_CHARS = 200;
+
+/**
+ * The opening of an entry's note for the page (shelf follow-up 01): its first {@link SHELF_NOTE_PREVIEW_CHARS}
+ * characters, `truncated` when the note is longer. Only the entry summary has it; the list and the Copilot never do.
+ */
+export interface ShelfNotePreview {
+  text: string;
+  truncated: boolean;
 }
 
 /**
@@ -70,11 +89,16 @@ export interface ShelfListResponse {
 }
 
 /**
- * `GET /api/shelf/entries/:id`: the entry as its manifest says (files are not hashed here; the take and its preview
- * check every file). `ok` adds the whole bibliography snapshot to the list row.
+ * `GET /api/shelf/entries/:id`: the entry as its manifest says (the Doc files are not hashed here; the take and its
+ * preview check every file). `ok` adds the whole bibliography snapshot and the note's opening to the list row:
+ * `notePreview` is null when no note is carried or the note file no longer matches the manifest or cannot be read.
  */
 export type ShelfEntryResponse =
-  | ({ status: "ok"; bibliography: ShelfBibliography } & ShelfEntrySummary)
+  | ({
+      status: "ok";
+      bibliography: ShelfBibliography;
+      notePreview: ShelfNotePreview | null;
+    } & ShelfEntrySummary)
   | { status: "incompatible"; entryId: string; rev: number; needsUpdate: true }
   | { status: "damaged"; entryId: string; rev: number; problem: string }
   | { status: "unreadable"; entryId: string; rev: number; code: string };

@@ -12,7 +12,7 @@ import i18n from "../src/i18n";
 import { ImportDialog } from "../src/library/ImportDialog";
 import { LibraryView } from "../src/library/LibraryView";
 import type { LibraryData, LibraryRef, ManualWorkResponse } from "../src/library/types";
-import { identifierIds, projectHas } from "../src/shelf/already-on-shelf";
+import { identifierIds, projectHas, ShelfHint } from "../src/shelf/already-on-shelf";
 import { projectWorkFor } from "../src/shelf/ShelfDialog";
 import { ShelfAvailabilityValue } from "../src/shelf/availability";
 import { ENTRY_A, ENTRY_B, json, must, OK_ROW, OTHER_ROW, type Route, stubFetch } from "./shelf-fixtures";
@@ -92,7 +92,7 @@ describe("identifier dialog", () => {
     const hint = await waitFor(() => must('[data-ui="already-on-shelf-hint"]'));
     expect(lookups(fetchMock)).toEqual(["/api/shelf/lookup?doi=10.1051%2Fgaia.2018"]);
     expect(hint.textContent).toContain("文献仓里已有这一篇");
-    expect(hint.textContent).toContain("2 个 Doc、3 条标注、论证图。直接取入，免重新摄入？");
+    expect(hint.textContent).toContain("2 个 Doc、3 条标注、论证图（7 条论证）。直接取入，免重新摄入？");
     expect(hint.textContent).toContain("来自 /home/u/research/wd-cooling");
     expect(h.createWorks).not.toHaveBeenCalled();
     expect(document.querySelector('[data-ui="submit-import"]')).toBeNull();
@@ -528,6 +528,17 @@ describe("review: late lookups", () => {
     expect(h.createWorks).not.toHaveBeenCalled();
     candidate("GAIA");
     expect(document.querySelector('[data-ui="already-on-shelf-hint"]')).toBeNull();
+  });
+});
+
+describe("the hint's argument count (shelf follow-up 01)", () => {
+  it("a graph the server could not count is named without a count; no graph is not named", () => {
+    const hit = (summary: typeof GAIA_ROW) => ({ entryId: summary.entryId, rev: summary.rev, title: summary.title, summary });
+    render(<ShelfHint hits={[hit({ ...GAIA_ROW, argumentCount: null })]} />);
+    expect(must('[data-ui="already-on-shelf-hint"]').textContent).toContain("2 个 Doc、3 条标注、论证图。直接取入");
+    cleanup();
+    render(<ShelfHint hits={[hit({ ...GAIA_ROW, argumentGraph: false, argumentCount: null })]} />);
+    expect(must('[data-ui="already-on-shelf-hint"]').textContent).toContain("2 个 Doc、3 条标注。直接取入");
   });
 });
 

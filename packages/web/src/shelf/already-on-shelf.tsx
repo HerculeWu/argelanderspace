@@ -119,7 +119,15 @@ export function ShelfHint({ hits }: { hits: readonly ShelfHit[] }) {
   const counts = s && { docs: t("shelf.docCount", { count: s.docs.length }), annotations: t("shelf.annCount", { count: s.annotations }) };
   return (
     <InlineMessage uiId="already-on-shelf-hint" title={t("shelf.hint.title")}>
-      <p className="shelf-hint-p">{counts ? t(s.argumentGraph ? "shelf.hint.bodyGraph" : "shelf.hint.body", counts) : t("shelf.hint.bodyPlain")}</p>
+      <p className="shelf-hint-p">
+        {counts
+          ? !s.argumentGraph
+            ? t("shelf.hint.body", counts)
+            : s.argumentCount === null
+              ? t("shelf.hint.bodyGraph", counts)
+              : t("shelf.hint.bodyGraphCount", { ...counts, count: s.argumentCount })
+          : t("shelf.hint.bodyPlain")}
+      </p>
       {s && <p className="shelf-hint-p shelf-dim mono">{added(s)}</p>}
     </InlineMessage>
   );

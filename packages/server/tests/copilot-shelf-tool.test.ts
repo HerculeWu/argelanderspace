@@ -24,6 +24,7 @@ const okRow: ShelfListRow = {
   docs: [{ docId: "paper-a", kind: "latex", bytes: 10, annotations: 1 }],
   annotations: 1,
   argumentGraph: false,
+  argumentCount: null,
   note: false,
 };
 const preview = {

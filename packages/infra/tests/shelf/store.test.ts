@@ -513,6 +513,33 @@ describe("entries this build cannot use", () => {
     expect((await s.list())[0]?.status).toBe("ok"); // the list does not hash; verify does
   });
 
+  test("readPart gives the graph or note bytes of the listed rev, checked; absent, changed or replaced is null", async () => {
+    const s = createShelfStore({ dir });
+    const e = ok(await s.put(input(), { mode: "new" }));
+    const listed = await s.list();
+    const item = listed[0];
+    if (item?.status !== "ok") throw new Error("not listed");
+    expect((await s.readPart(item, "note"))?.toString("utf8")).toBe("my note");
+    expect((await s.readPart(item, "argument_graph"))?.toString("utf8")).toContain(
+      '"arguments":[]'
+    );
+    // a part the entry does not carry
+    const bareEntry = ok(await s.put(bare("No parts", { doi: "10.1/none" }), { mode: "new" }));
+    expect(await s.readPart(bareEntry, "note")).toBeNull();
+    expect(await s.readPart(bareEntry, "argument_graph")).toBeNull();
+    // a file whose bytes no longer match the manifest is not handed out
+    writeFileSync(join(dir, "entries", `${e.entryId}.r1`, "note.md"), "my notf");
+    expect(await s.readPart(item, "note")).toBeNull();
+    // replaced meanwhile: the old rev's files are gone, never the new rev's bytes
+    ok(
+      await s.put(input({ note: "newer note" }), {
+        mode: "replace",
+        targets: [{ entryId: e.entryId, rev: 1 }],
+      })
+    );
+    expect(await s.readPart(item, "argument_graph")).toBeNull();
+  });
+
   test("missing, extra and misplaced files and manifests are damage; damaged entries can only be deleted", async () => {
     const s = createShelfStore({ dir });
     const id = ok(await s.put(input(), { mode: "new" })).entryId;

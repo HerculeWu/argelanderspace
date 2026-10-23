@@ -56,6 +56,7 @@ export const OK_ROW: ShelfListRow = {
   ],
   annotations: 3,
   argumentGraph: true,
+  argumentCount: 7,
   note: true,
 };
 
@@ -70,6 +71,7 @@ export const OTHER_ROW: ShelfListRow = {
   docs: [{ docId: "pdf-a90b33e4", kind: "pdf", bytes: 2048, annotations: null }],
   annotations: 0,
   argumentGraph: false,
+  argumentCount: null,
   note: false,
 };
 

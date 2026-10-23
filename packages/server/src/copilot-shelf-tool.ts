@@ -1,7 +1,7 @@
 /**
  * The Copilot's `shelf` tool (shelf ticket 07; contracts「文献仓」, ADR 0005, ADR 0013): the Shelf (文献仓) for the
- * model. It lists and searches the Shelf with the rows of `GET /api/shelf` (bibliography, Doc kinds, annotation counts;
- * never an annotation body, a note or a graph) and asks for its four writes — add, replace (an add of a paper the
+ * model. It lists and searches the Shelf with the rows of `GET /api/shelf` (bibliography, Doc kinds, annotation and
+ * argument counts; never an annotation body, note text or a graph) and asks for its four writes — add, replace (an add of a paper the
  * Shelf already has), delete and take — through the very functions the routes use (`createShelfWriter`,
  * `createShelfTake`): their meaning is not changed here.
  *
@@ -232,6 +232,7 @@ async function list(
           docs: row.docs,
           annotations: row.annotations,
           argumentGraph: row.argumentGraph,
+          argumentCount: row.argumentCount,
           note: row.note,
           bytes: row.bytes,
         }

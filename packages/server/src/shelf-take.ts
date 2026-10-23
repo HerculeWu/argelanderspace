@@ -45,6 +45,7 @@ import {
   PdfReadingPositionSchema,
   SHELF_ENTRY_ID_RE,
   SHELF_EXCLUDED_WORK_FIELDS,
+  SHELF_NOTE_PREVIEW_CHARS,
   type ShelfAnnotationsResponse,
   type ShelfDocKind,
   type ShelfEntryResponse,
@@ -52,6 +53,7 @@ import {
   type ShelfListResponse,
   type ShelfListRow,
   type ShelfLookupResponse,
+  type ShelfNotePreview,
   type ShelfTakePreview,
   type ShelfTakeRefusalCode,
   type ShelfTakeRequest,
@@ -175,7 +177,49 @@ function lexists(path: string): boolean {
 
 // ---- summaries ----------------------------------------------------------------------------------------------
 
-function summaryOf(entry: ShelfEntry): ShelfEntrySummary {
+/**
+ * How many arguments the entry's carried graph has (shelf follow-up 01): read from the entry's own
+ * `argument-graph.json`, checked against the manifest. Null — unknown, never an error — when no graph is carried,
+ * or this build cannot count it: a later version, not a graph of this build's schema, a file that no longer
+ * matches or cannot be read.
+ */
+async function argumentCountOf(store: ShelfStore, entry: ShelfEntry): Promise<number | null> {
+  if (entry.manifest.argument_graph === null) return null;
+  try {
+    const bytes = await store.readPart(entry, "argument_graph");
+    if (bytes === null) return null;
+    const graph = ArgumentGraphSchema.safeParse(jsonOf(bytes));
+    return graph.success ? graph.data.arguments.length : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The opening of the entry's note, for the page's summary only (shelf follow-up 01): the first
+ * {@link SHELF_NOTE_PREVIEW_CHARS} characters (code points, never half a pair). Null when no note is carried or it
+ * cannot be read as the manifest says.
+ */
+async function notePreviewOf(
+  store: ShelfStore,
+  entry: ShelfEntry
+): Promise<ShelfNotePreview | null> {
+  if (entry.manifest.note === null) return null;
+  let bytes: Buffer | null;
+  try {
+    bytes = await store.readPart(entry, "note");
+  } catch {
+    return null;
+  }
+  if (bytes === null) return null;
+  const chars = [...bytes.toString("utf8")];
+  return {
+    text: chars.slice(0, SHELF_NOTE_PREVIEW_CHARS).join(""),
+    truncated: chars.length > SHELF_NOTE_PREVIEW_CHARS,
+  };
+}
+
+async function summaryOf(store: ShelfStore, entry: ShelfEntry): Promise<ShelfEntrySummary> {
   const m = entry.manifest;
   return {
     entryId: entry.entryId,
@@ -195,47 +239,54 @@ function summaryOf(entry: ShelfEntry): ShelfEntrySummary {
     })),
     annotations: m.docs.reduce((n, d) => n + (d.annotations?.count ?? 0), 0),
     argumentGraph: m.argument_graph !== null,
+    argumentCount: await argumentCountOf(store, entry),
     note: m.note !== null,
   };
 }
 
 /**
  * The rows of `GET /api/shelf` for what the store listed: the one mapping the route and the Copilot `shelf` tool (shelf
- * ticket 07) both answer with. No row carries an annotation body, a note or a graph.
+ * ticket 07) both answer with. No row carries an annotation body, note text or a graph; the graph's argument count
+ * (shelf follow-up 01) is read from each entry's graph file.
  */
-export function shelfListRows(items: Awaited<ReturnType<ShelfStore["list"]>>): ShelfListRow[] {
-  return items.map((item): ShelfListRow => {
-    switch (item.status) {
-      case "ok":
-        return { status: "ok", ...summaryOf(item) };
-      case "incompatible":
-        return {
-          status: "incompatible",
-          entryId: item.entryId,
-          rev: item.rev,
-          bytes: item.bytes,
-          format: item.format,
-          title: item.title,
-          needsUpdate: true,
-        };
-      case "damaged":
-        return {
-          status: "damaged",
-          entryId: item.entryId,
-          rev: item.rev,
-          bytes: item.bytes,
-          problem: item.problem,
-        };
-      default:
-        return {
-          status: "unreadable",
-          entryId: item.entryId,
-          rev: item.rev,
-          bytes: 0,
-          code: item.code,
-        };
-    }
-  });
+export async function shelfListRows(
+  store: ShelfStore,
+  items: Awaited<ReturnType<ShelfStore["list"]>>
+): Promise<ShelfListRow[]> {
+  return Promise.all(
+    items.map(async (item): Promise<ShelfListRow> => {
+      switch (item.status) {
+        case "ok":
+          return { status: "ok", ...(await summaryOf(store, item)) };
+        case "incompatible":
+          return {
+            status: "incompatible",
+            entryId: item.entryId,
+            rev: item.rev,
+            bytes: item.bytes,
+            format: item.format,
+            title: item.title,
+            needsUpdate: true,
+          };
+        case "damaged":
+          return {
+            status: "damaged",
+            entryId: item.entryId,
+            rev: item.rev,
+            bytes: item.bytes,
+            problem: item.problem,
+          };
+        default:
+          return {
+            status: "unreadable",
+            entryId: item.entryId,
+            rev: item.rev,
+            bytes: 0,
+            code: item.code,
+          };
+      }
+    })
+  );
 }
 
 /** The refusal of a read that did not give an entry of this build's format. */
@@ -1142,13 +1193,14 @@ export function mountShelfRoutes(
   const answer = (c: Context, r: Refusal) => c.json(r.body, r.status, NO_STORE);
 
   app.get("/api/shelf", { guard: true, noStore: true }, async (c) => {
+    const store = deps.store();
     let items: Awaited<ReturnType<ShelfStore["list"]>>;
     try {
-      items = await deps.store().list();
+      items = await store.list();
     } catch (error) {
       return unreadable(c, error);
     }
-    const entries = shelfListRows(items);
+    const entries = await shelfListRows(store, items);
     return c.json({ entries } satisfies ShelfListResponse, 200, NO_STORE);
   });
 
@@ -1178,15 +1230,16 @@ export function mountShelfRoutes(
     }
   });
 
-  // The summary is what the manifest says (the list's reading; no file is hashed): the take and its preview check
-  // every file.
+  // The summary is what the manifest says (the list's reading; no Doc file is hashed): the take and its preview check
+  // every file. Only the graph (for its count) and the note (for its opening) are read, each checked on its own.
   app.get("/api/shelf/entries/:entry_id", { guard: true, noStore: true }, async (c) => {
     const entryId = c.req.param("entry_id");
     if (!SHELF_ENTRY_ID_RE.test(entryId))
       return c.json({ detail: "not a Shelf entry id", code: "invalid_request" }, 400, NO_STORE);
+    const store = deps.store();
     let item: Awaited<ReturnType<ShelfStore["list"]>>[number] | undefined;
     try {
-      item = (await deps.store().list()).find((e) => e.entryId === entryId);
+      item = (await store.list()).find((e) => e.entryId === entryId);
     } catch (error) {
       return unreadable(c, error);
     }
@@ -1194,7 +1247,12 @@ export function mountShelfRoutes(
       return c.json({ detail: "no such Shelf entry", code: "not_found" }, 404, NO_STORE);
     const body: ShelfEntryResponse =
       item.status === "ok"
-        ? { status: "ok", ...summaryOf(item), bibliography: item.manifest.bibliography }
+        ? {
+            status: "ok",
+            ...(await summaryOf(store, item)),
+            bibliography: item.manifest.bibliography,
+            notePreview: await notePreviewOf(store, item),
+          }
         : item.status === "incompatible"
           ? { status: "incompatible", entryId, rev: item.rev, needsUpdate: true }
           : item.status === "damaged"

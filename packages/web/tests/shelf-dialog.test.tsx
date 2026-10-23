@@ -227,6 +227,47 @@ describe("the Shelf dialog", () => {
     expect(kept.textContent).toContain("笔记不为空");
   });
 
+  it("the summary and the take step give the graph's argument count; the take step shows the opening of the note (follow-up 01)", async () => {
+    const preview = { text: "与 Röser 2019 同期发现 Hyades 潮汐尾", truncated: true };
+    const localGraph = { version: 1, rev: 3, work_id: "doi:10.1/gaia", arguments: ["l1", "l2", "l3", "l4"].map((id) => ({ id, title: id, claim: "", grounds: "", warrant: "", backing: "", qualifier: "", rebuttal: "", warrant_implicit: false, kind: "normal", sources: [] })), edges: [] };
+    stubFetch(
+      shelfRoutes(() => [OK_ROW], (url) =>
+        url === `/api/shelf/entries/${ENTRY_A}`
+          ? json({ ...OK_ROW, bibliography: { title: "Gaia", authors: [], year: 2018 }, notePreview: preview })
+          : url === `/api/works/${encodeURIComponent("doi:10.1/gaia")}/argument-graph`
+            ? json(localGraph)
+            : undefined
+      )
+    );
+    open({ entryId: ENTRY_A });
+    const summary = await waitFor(() => must('[data-ui="shelf-entry-summary"]'));
+    expect(summary.textContent).toContain("论证图7 条论证");
+    // the summary's note row shows the same opening (prototype)
+    await waitFor(() => expect(summary.textContent).toContain("Work 笔记与 Röser 2019 同期发现 Hyades 潮汐尾…"));
+    fireEvent.click(must('[data-ui="take-shelf-entry"]'));
+    await waitFor(() => must('[data-ui="take-from-shelf"]'));
+    expect(must('[data-ui="take-argument-graph"]').textContent).toContain("7 条论证");
+    await waitFor(() => expect(must('[data-ui="take-note"]').textContent).toContain("与 Röser 2019 同期发现 Hyades 潮汐尾…"));
+    // the project's own graph is kept: its argument count is named (prototype)
+    await waitFor(() => expect(must('[data-ui="take-keep-local-graph"]').textContent).toBe("本项目这篇已有论证图（4 条论证），保留本地的，不取入文献仓的。"));
+  });
+
+  it("a graph whose count is unknown and a note whose opening could not be read say only that they are carried", async () => {
+    const unknown = { ...OK_ROW, argumentCount: null };
+    stubFetch(shelfRoutes(() => [unknown], (url) => (url === `/api/shelf/entries/${ENTRY_A}` ? json({ ...unknown, bibliography: { title: "Gaia", authors: [], year: 2018 }, notePreview: null }) : undefined)));
+    open({ entryId: ENTRY_A, take: true });
+    await waitFor(() => must('[data-ui="take-from-shelf"]'));
+    expect(must('[data-ui="take-argument-graph"]').textContent).toContain("文献仓里这一条带着论证图");
+    expect(must('[data-ui="take-note"]').textContent).toContain("文献仓里这一条带着笔记");
+    // the project's graph could not be counted (no answer here): the kept-local line stays as it was
+    await waitFor(() => must('[data-ui="take-keep-local-graph"]'));
+    expect(must('[data-ui="take-keep-local-graph"]').textContent).toBe("本项目这篇已有论证图，保留本地的，不取入文献仓的。");
+    cleanup();
+    open({ entryId: ENTRY_A });
+    const summary = await waitFor(() => must('[data-ui="shelf-entry-summary"]'));
+    await waitFor(() => expect(summary.textContent).toContain("Work 笔记有"));
+  });
+
   it("the Take button waits for the plan of what is chosen now", async () => {
     let release: (r: Response) => void = () => {};
     let calls = 0;

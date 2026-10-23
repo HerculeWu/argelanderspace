@@ -1094,7 +1094,10 @@ export function createApp(deps: AppDeps): Hono {
     shelf: {
       writer: shelfWriter,
       take: shelfTake,
-      list: async () => shelfListRows(await shelfTakeDeps.store().list()),
+      list: async () => {
+        const store = shelfTakeDeps.store();
+        return shelfListRows(store, await store.list());
+      },
       work: (workId) => {
         try {
           const found = LibraryStore.load(paths).get(workId);

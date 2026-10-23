@@ -221,6 +221,9 @@ export interface ShelfStoreIo {
   rename(from: string, to: string): Promise<void>;
 }
 
+/** The parts of an entry {@link ShelfStore.readPart} reads. */
+export type ShelfPart = "argument_graph" | "note";
+
 export interface ShelfStore {
   /** Every entry, newest addition first; never throws for one entry it cannot use. */
   list(): Promise<ShelfListItem[]>;
@@ -234,6 +237,13 @@ export interface ShelfStore {
   verify(entryId: string, opts?: { rev?: number }): Promise<ShelfCheck>;
   /** `verify`, keeping the checked bytes. */
   read(entryId: string, opts?: { rev?: number }): Promise<ShelfRead>;
+  /**
+   * One small part of a listed entry — its argument graph or its note — at that entry's rev, checked against the
+   * manifest's size and SHA-256 (only that file; the rest of the entry is not looked at). Null when the entry does
+   * not carry it, or the file is gone (replaced or deleted meanwhile) or no longer matches. For summaries (shelf
+   * follow-up 01): what it gives is never content of another rev. A system error throws {@link ShelfIoError}.
+   */
+  readPart(entry: ShelfEntry, part: ShelfPart): Promise<Buffer | null>;
   /** Throws {@link ShelfIoError} when any entry cannot be read: it might be the same paper. */
   put(input: ShelfPutInput, target: ShelfPutTarget): Promise<ShelfPutResult>;
   /** Remove the entry at `rev`, whatever its format or state. */
@@ -630,6 +640,24 @@ export function createShelfStore(opts: ShelfStoreOptions = {}): ShelfStore {
     return { status: "not_found" };
   };
 
+  const readPart: ShelfStore["readPart"] = async (entry, part) => {
+    const record = part === "argument_graph" ? entry.manifest.argument_graph : entry.manifest.note;
+    if (record === null) return null;
+    const file = join(
+      entryDir(resolveRoot(), entry.entryId, entry.rev),
+      part === "argument_graph" ? SHELF_ARGUMENT_GRAPH_FILE : SHELF_NOTE_FILE
+    );
+    let bytes: Buffer;
+    try {
+      if (!(await lstat(file)).isFile()) return null;
+      bytes = await readFile(file);
+    } catch (e) {
+      if (isEnoent(e)) return null;
+      throw new ShelfIoError(errCode(e));
+    }
+    return bytes.length === record.bytes && sha256(bytes) === record.sha256 ? bytes : null;
+  };
+
   // ---- writes ----
 
   /**
@@ -862,6 +890,7 @@ export function createShelfStore(opts: ShelfStoreOptions = {}): ShelfStore {
     findByIdentity,
     verify: async (entryId, o) => (await check(entryId, o, false)) as ShelfCheck,
     read: async (entryId, o) => (await check(entryId, o, true)) as ShelfRead,
+    readPart,
     put,
     delete: del,
   };
