@@ -76,9 +76,15 @@ export function shelfAddDigest(
 ): string {
   return digest({ request, preview });
 }
-/** The binding of a delete card: the entry's list row. */
+/**
+ * The binding of a delete card: the entry's list row, without the argument count. The count is read from the graph
+ * file each time and is null when that read fails, so binding it would turn a system error at the click into "the
+ * entry changed"; the card does not show it, and the rev already binds the entry's content.
+ */
 export function shelfDeleteDigest(row: ShelfListRow): string {
-  return digest({ row });
+  if (row.status !== "ok") return digest({ row });
+  const { argumentCount: _count, ...bound } = row;
+  return digest({ row: bound });
 }
 /** What a delete card shows of an entry of this build's format (the shape of a replacement's impact row). */
 export function deletedEntryOf(row: Extract<ShelfListRow, { status: "ok" }>): ShelfReplacedEntry {

@@ -5,7 +5,7 @@
  */
 import type { ShelfListRow } from "@argelanderspace/contracts";
 import { expect, test, vi } from "vitest";
-import { createShelfTool, type ShelfOpDeps } from "../src/copilot-shelf-tool.js";
+import { createShelfTool, type ShelfOpDeps, shelfDeleteDigest } from "../src/copilot-shelf-tool.js";
 import type { ConfirmationOutcome } from "../src/copilot-tool-kit.js";
 
 const ENTRY = "0123456789abcdef0123456789abcdef";
@@ -133,4 +133,12 @@ test("add: a confirmation refused by the server keeps the server's own detail (a
   const result = await run({ action: "add", workId: WORK });
   expect(result).toMatchObject({ status: "expired", archived: [{ docId: "paper-a", count: 2 }] });
   expect(result.detail).toContain(detail);
+});
+
+test("a delete card is not bound to the argument count: a graph read failing at the click is not \"the entry changed\"", () => {
+  const counted = { ...okRow, argumentCount: 3 } as ShelfListRow;
+  const unknown = { ...okRow, argumentCount: null } as ShelfListRow;
+  expect(shelfDeleteDigest(unknown)).toBe(shelfDeleteDigest(counted));
+  // what the card does show still binds it
+  expect(shelfDeleteDigest({ ...okRow, rev: okRow.rev + 1 } as ShelfListRow)).not.toBe(shelfDeleteDigest(okRow));
 });

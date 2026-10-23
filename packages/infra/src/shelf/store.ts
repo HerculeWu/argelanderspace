@@ -649,7 +649,9 @@ export function createShelfStore(opts: ShelfStoreOptions = {}): ShelfStore {
     );
     let bytes: Buffer;
     try {
-      if (!(await lstat(file)).isFile()) return null;
+      const st = await lstat(file);
+      // Not the recorded file (a link, or another size): nothing to read.
+      if (!st.isFile() || st.size !== record.bytes) return null;
       bytes = await readFile(file);
     } catch (e) {
       if (isEnoent(e)) return null;
