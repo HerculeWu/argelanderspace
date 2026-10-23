@@ -96,6 +96,8 @@ let discoveryGets: string[];
 let writes: { url: string; method: string; body?: unknown }[];
 let answer: (seed: string, signal?: AbortSignal | null) => Promise<Response>;
 let libraryLive: boolean;
+/** When set, `/api/papers` answers only once this settles (the boot's paper list read). */
+let papersHeld: Promise<void> | null;
 const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as Response;
 const failing = (status: number) => ({ ok: false, status, json: async () => ({ detail: "x" }) }) as unknown as Response;
 
@@ -104,6 +106,7 @@ installShellHarness({
     const method = init?.method ?? "GET";
     if (method !== "GET") writes.push({ url, method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
     if (url === "/api/plans") return ok({ version: 1, rev: 1, plans: [] });
+    if (url === "/api/papers" && papersHeld) return papersHeld.then(() => ok({ papers: [] }));
     if (url === "/api/library") {
       if (!libraryLive) throw new TypeError("network down");
       return ok(data);
@@ -131,6 +134,7 @@ beforeEach(() => {
   discoveryGets = [];
   writes = [];
   libraryLive = true;
+  papersHeld = null;
   answer = async (seed) => ok(graphFor(seed));
   g.calls = [];
   g.labelsOn = [];
@@ -175,6 +179,25 @@ describe("entering an exploration", () => {
     // exactly one ADS request and nothing written
     expect(discoveryGets).toEqual(["SEED1"]);
     expect(writes).toEqual([]);
+  });
+
+  it("a paper list that answers after the exploration began sends no second request (the boot does not re-read the address)", async () => {
+    // Under load the paper list could answer after explore_work had written `#explore/SEED1` and before the page
+    // re-rendered; the boot then handed that address to the explore bus as a deep link and the seed was fetched twice.
+    let listed!: () => void;
+    const list = new Promise<void>((resolve) => (listed = resolve));
+    papersHeld = list;
+    // the list answers right after the exploration wrote its address, before the page has re-rendered
+    const push = window.history.pushState.bind(window.history);
+    vi.spyOn(window.history, "pushState").mockImplementation((state, unused, url) => {
+      push(state, unused, url);
+      if (String(url).includes("#explore/")) listed();
+    });
+    await explore();
+    await list;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitFor(() => expect(h.context!.status).toBe("complete"));
+    expect(discoveryGets).toEqual(["SEED1"]);
   });
 
   it("explore_work is disabled without an ADS bibcode, for an unknown work and without a live library", async () => {

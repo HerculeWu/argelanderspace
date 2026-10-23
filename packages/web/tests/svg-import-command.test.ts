@@ -5,7 +5,11 @@ import { chmodSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, s
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+
+// Each case runs the command as its own Node process, several times (each run is bounded by `timeout` below): on a
+// loaded machine a case passed 5 s (shelf-followups 07). No assertion is timed.
+vi.setConfig({ testTimeout: 60_000 });
 
 const commandPath = fileURLToPath(new URL("../scripts/svg-import.ts", import.meta.url));
 const temps: string[] = [];

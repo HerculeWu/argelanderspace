@@ -1,11 +1,14 @@
 import { afterAll, afterEach } from "vitest";
 import "../src/i18n";
+import { installBrowserHistorySemantics } from "./browser-history";
 import { installNetworkGuard, takeUnmockedNetworkAttempts } from "./network-guard";
 
 // Any fetch / XMLHttpRequest that no test mocked fails here instead of dialling
 // happy-dom's default origin (localhost:3000). An unstubbed WebSocket is inert
 // and only warns (see network-guard.ts).
 installNetworkGuard();
+// pushState / replaceState fire no `hashchange`, as in a browser (happy-dom queues one; see browser-history.ts).
+installBrowserHistorySemantics();
 
 function failOnAttempts(where: string): void {
   const attempts = takeUnmockedNetworkAttempts();

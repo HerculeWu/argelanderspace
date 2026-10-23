@@ -1008,24 +1008,27 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
           openDoc(route.docId, route.anchor, { urlIsDoc: true });
           return;
         }
-        const now = browser.location();
+        // The boot acts on the address it booted from. One that changed while the list was read was written by the
+        // page itself (an exploration or a graph opened meanwhile, pushState) or by a hand edit that `onNav` already
+        // served: handing it to a bus again would open the same thing twice (shelf-followups 07: a second ADS request).
+        const moved = browser.location().href !== at.href;
         // Stage 14: a boot `#explore/<bibcode>` hash opens the library pane and
         // hands the seed to the explore bus (the LibraryView consumes it once
         // mounted — exploreBus keeps it pending until then)
-        const exploreSeed = parseExploreHash(now.hash);
+        const exploreSeed = moved ? null : parseExploreHash(at.hash);
         if (exploreSeed) {
           ensureLibraryPane(false);
           exploreBus.request(exploreSeed);
           return;
         }
         // Argument graph ticket 04: a boot `#argument/<work id>` hash opens the library pane the same way
-        const argumentWork = parseArgumentHash(now.hash);
+        const argumentWork = moved ? null : parseArgumentHash(at.hash);
         if (argumentWork) {
           ensureLibraryPane(false);
           argumentBus.request(argumentWork);
           return;
         }
-        const want = new URL(now.href).searchParams.get("doc");
+        const want = new URL(at.href).searchParams.get("doc");
         setOwn({ currentDoc: want && list.includes(want) ? want : list[0] ?? null });
       });
     })();

@@ -958,19 +958,29 @@ describe("configuration sources: config.toml and flags only", () => {
     }
   }, 120_000);
 
-  test("the removed environment variables change nothing, with or without a config file", () => {
-    const f = makeDataDir();
-    const commands = [...LINK_COMMANDS.map(([args]) => args), ["search"], ["note", WORK_ID]];
-    for (const toml of [null, "port = 9123\n"]) {
-      if (toml !== null) writeConfig(f.env, toml);
-      for (const args of commands) {
+  // One case per command and config (two CLI processes each, the package's 30 s per case): as one case the 36
+  // processes in a row took over 190 s on a loaded machine and passed its 120 s limit (shelf-followups 07).
+  const REMOVED_ENV_COMMANDS = [
+    ...LINK_COMMANDS.map(([args]) => args),
+    ["search"],
+    ["note", WORK_ID],
+  ];
+  describe.each([
+    ["without a config file", null],
+    ["with a config file", "port = 9123\n"],
+  ] as const)("the removed environment variables change nothing, %s", (_label, toml) => {
+    test.each(REMOVED_ENV_COMMANDS.map((args) => [args.join(" "), args] as const))(
+      "%s",
+      (_name, args) => {
+        const f = makeDataDir();
+        if (toml !== null) writeConfig(f.env, toml);
         const argv = [...args, "--data-dir", f.dataDir];
         const plain = runCli(argv, f.env);
         expect(plain.status).toBe(0);
         expect(runCli(argv, { ...f.env, ...removedEnv(f.root) })).toEqual(plain);
       }
-    }
-  }, 120_000);
+    );
+  });
 
   test("the data dir comes from the flag, config.toml `data_dir`, then ./literatures; never the variable", () => {
     const f = makeDataDir();

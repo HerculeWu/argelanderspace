@@ -195,7 +195,8 @@ describe("the matrix: capability × mail state × file permission × platform", 
             expect([...measured.tools.map(nameOf), ...fileNames], label).toEqual(run.toolNames);
           }
     expect(combos).toBeGreaterThan(500);
-  });
+    // over 500 assembled sessions in one synchronous case: on a loaded machine it passed 5 s (shelf-followups 07)
+  }, 30_000);
 
   test("the run-time names of the file tools come from the tools built for this run, never from a static list", () => {
     for (const permission of ["off", "ask", "auto"] as const)

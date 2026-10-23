@@ -191,11 +191,15 @@ describe("B5/B6: id-keyed work is linear and safe", () => {
     const list = Array.from({ length: n }, (_, i) => ({ id: `r${i}`, raw: `R${i}` }));
     const refs = marker("argelander-references", list);
     const md = `${Array.from({ length: n }, (_, i) => `[cite: r${i}]`).join(" ")}\n\n${refs}`;
-    const started = performance.now();
+    // The budget is this thread's CPU time, not the wall clock: on a loaded machine (the packages' suites in parallel,
+    // other agents) the wall clock of the linear parse tripled past 5 s while its CPU time stayed near 1 s; an array
+    // scan instead of the Set costs about 14 s of CPU here, so the gate still catches it (shelf-followups 07).
+    const started = process.threadCpuUsage();
     const r = parse(md);
-    const elapsed = performance.now() - started;
+    const used = process.threadCpuUsage(started);
+    const cpuMs = (used.user + used.system) / 1000;
     expect(r.ir?.citationsByBlock["p-1"]?.length).toBe(n);
-    expect(elapsed).toBeLessThan(5000);
+    expect(cpuMs).toBeLessThan(5000);
   }, 60_000);
   it("block ids that are Object.prototype names are refused with a diagnostic, never a crash", () => {
     for (const id of ["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf"]) {

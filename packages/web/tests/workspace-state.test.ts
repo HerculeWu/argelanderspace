@@ -302,6 +302,25 @@ describe("boot", () => {
     expect(linked.x.getState()).toMatchObject({ papers: [], currentDoc: "d1", pendingAnchor: "fig-1" });
   });
 
+  it("an exploration or a graph the page opened itself while the list was being read is not taken for a boot deep link", async () => {
+    // The page's own navigation writes the address with pushState (no event); the boot then must not hand that address
+    // to a bus again: with a mocked, instant ADS answer the second request sent the same exploration twice (ticket 07).
+    for (const [url, bus] of [["/#explore/2020X", exploreBus], ["/#argument/w1", argumentBus]] as const) {
+      let answer!: (papers: string[]) => void;
+      const t = setup({ panes: [{ id: 1, view: "library", size: 1 }], fetchPapers: () => new Promise((resolve) => (answer = resolve)) });
+      await flush();
+      const asked = vi.spyOn(bus, "request");
+      t.browser.port.push(url); // the Library page explores / opens a graph and writes its URL
+      answer(["d1"]);
+      await flush();
+      expect(asked).not.toHaveBeenCalled();
+      expect(t.x.getState()).toMatchObject({ papers: ["d1"], currentDoc: "d1" });
+      expect(t.browser.entries).toEqual(["/", url]);
+      asked.mockRestore();
+      for (const cleanup of cleanups.splice(0)) cleanup();
+    }
+  });
+
   it("stopped before the list arrives (React StrictMode's first mount), nothing is applied and nothing listens", async () => {
     let answer!: (papers: string[]) => void;
     const t = setup({ url: "/doc/d1", fetchPapers: () => new Promise((resolve) => (answer = resolve)) });

@@ -36,6 +36,10 @@ import { WsHub } from "../src/ws.js";
 import { stubPipelines, stubSources } from "./helpers.js";
 import { syntheticPdf } from "./pdf-fixture.js";
 
+// Each case runs a real Pi session over the real PDFium text layer: on a loaded machine a case passed 5 s
+// (shelf-followups 07). No assertion is timed.
+vi.setConfig({ testTimeout: 30_000 });
+
 type Out = { text?: string; call?: Record<string, unknown>; tool?: string };
 type Step = (context: TranscriptContext) => Out | Promise<Out>;
 let root: string;

@@ -127,13 +127,14 @@ describe("RefDetail reading-first interaction", () => {
     expect(copy.classList.contains("ui-action")).toBe(false);
     fireEvent.click(copy);
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("Lin2026Disc"));
-    expect(screen.getByRole("status").textContent).toBe("引用键已复制");
+    // the feedback is set after the clipboard's promise settles, a render after the call itself (shelf-followups 07)
+    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("引用键已复制"));
 
     fireEvent.click(screen.getByRole("tab", { name: "BibTeX" }));
     fireEvent.click(screen.getByRole("button", { name: "复制 BibTeX" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2));
     expect(writeText.mock.calls[1]?.[0]).toContain("@article{Lin2026Disc");
-    expect(screen.getByRole("status").textContent).toBe("BibTeX 已复制");
+    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("BibTeX 已复制"));
   });
 
   it("keeps the migrated copy and close names localized after changing language", async () => {

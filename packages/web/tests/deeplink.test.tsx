@@ -19,6 +19,10 @@ const goldenIr = JSON.parse(
   )
 ) as TexDocIr;
 
+// The DocPane cases render the whole golden IR (as annotations.test.tsx, 785c0e1): on a loaded machine they passed 5 s
+// (shelf-followups 07). The assertions stay `waitFor` on what the page shows; none is timed.
+vi.setConfig({ testTimeout: 30_000 });
+
 // ---------------------------------------------------------------------------
 // URL parsing
 // ---------------------------------------------------------------------------

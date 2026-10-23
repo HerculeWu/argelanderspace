@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import { Worker } from "node:worker_threads";
 import { PDF_IMAGE_LONG_EDGE, PDF_OUTLINE_MAX_ENTRIES } from "@argelanderspace/contracts";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   encodePng,
   imageScale,
@@ -26,6 +26,11 @@ import {
 } from "../src/pdfium-shared.js";
 import { syntheticPdf } from "./pdf-fixture.js";
 import { decodePng } from "./png-decode.js";
+
+// Every case drives the real PDFium engine in a worker, and the huge page renders and encodes about 12 million pixels:
+// on a loaded machine (the packages' suites in parallel) that case ran past 5 s, and the render it left in the one
+// serialized queue then made the next cases wait or see it still active (shelf-followups 07). No assertion is timed.
+vi.setConfig({ testTimeout: 30_000 });
 
 const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 const pngSize = (png: Buffer) => ({ width: png.readUInt32BE(16), height: png.readUInt32BE(20) });
