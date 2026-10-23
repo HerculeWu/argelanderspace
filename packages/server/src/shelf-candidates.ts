@@ -21,7 +21,7 @@ import {
   LibraryStore,
   readPdfMetadataIfPresent,
 } from "@argelanderspace/core";
-import type { AnnotationAccess } from "./annotations-access.js";
+import { type AnnotationAccess, DocMetadataError } from "./annotations-access.js";
 import type { ProtectedRoutes } from "./protected-app.js";
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
@@ -97,7 +97,6 @@ export function mountShelfCandidateRoute(routes: ProtectedRoutes, deps: ShelfCan
           metadataProblem = true;
         }
       }
-      const bytes = carriedBytes(kind, docId, join(paths.outputDir, docId));
       let annotations: ShelfAddCandidateDoc["annotations"];
       if (metadataProblem) annotations = { state: "unreadable", code: "metadata" };
       else if (kind === "pdf") annotations = { state: "pdf" };
@@ -109,18 +108,32 @@ export function mountShelfCandidateRoute(routes: ProtectedRoutes, deps: ShelfCan
           else if (peeked.reading.stale) annotations = { state: "stale" };
           else annotations = { state: "current", list: peeked.reading.file.annotations };
         } catch (err) {
-          // Only the access path's own system errors and file errors are answers; a programming error goes to the app.
-          const errno = (err as { code?: unknown } | null)?.code;
-          if (!(err instanceof AnnotationsError) && typeof errno !== "string") throw err;
-          const code = err instanceof AnnotationsError ? err.code : String(errno);
-          // A text Doc never generated has no reading text to bind annotations to: nothing to list.
-          annotations =
-            kind === "text" && code === "not_found"
-              ? { state: "none" }
-              : { state: "unreadable", code };
+          // The PDF metadata became unreadable after the check above (the access path's own check): the same answer
+          // as the metadata branch above, for this Doc only.
+          if (err instanceof DocMetadataError) {
+            kind = "pdf";
+            annotations = { state: "unreadable", code: "metadata" };
+          } else {
+            // Only the access path's own system errors and file errors are answers; a programming error goes to the
+            // app.
+            const errno = (err as { code?: unknown } | null)?.code;
+            if (!(err instanceof AnnotationsError) && typeof errno !== "string") throw err;
+            const code = err instanceof AnnotationsError ? err.code : String(errno);
+            // A text Doc never generated has no reading text to bind annotations to: nothing to list.
+            annotations =
+              kind === "text" && code === "not_found"
+                ? { state: "none" }
+                : { state: "unreadable", code };
+          }
         }
       }
-      docs.push({ docId, kind, bytes, annotations });
+      // Counted by the rule of the kind the checks ended on (the PDF one when its metadata turned up late).
+      docs.push({
+        docId,
+        kind,
+        bytes: carriedBytes(kind, docId, join(paths.outputDir, docId)),
+        annotations,
+      });
     }
     const answer: ShelfAddCandidates = { workId, docs };
     return c.json(answer, 200, NO_STORE);
