@@ -6,7 +6,10 @@
  * cancels never create entries. The bus links Shell's popstate/hashchange
  * handling to the LibraryView instance hosting the exploration (the one
  * currently exploring, else the first registered); the URL never encodes a
- * pane id. A boot-time `#explore/…` hash is held as `pending` until a
+ * pane id. A request may name the pane whose Library page must take it
+ * (ticket 09: Back puts an exploration back into the pane it was in); only
+ * that pane's page serves it, and it waits as `pending` until that page
+ * registers. A boot-time `#explore/…` hash is held as `pending` until a
  * LibraryView registers (Shell meanwhile ensures a library pane exists).
  * The mechanics are shared with the argument graph view (`hash-route.ts`).
  */
@@ -31,15 +34,21 @@ export interface ExploreTarget {
   exit(): void;
 }
 
-const bus = createRouteBus<ExploreTarget, string>({
+interface ExploreRequest {
+  seed: string;
+  paneId?: number;
+}
+
+const bus = createRouteBus<ExploreTarget, ExploreRequest>({
   active: (t) => t.isExploring(),
-  open: (t, seed) => t.explore(seed),
+  open: (t, r) => t.explore(r.seed),
   exit: (t) => t.exit(),
+  accepts: (t, r) => r.paneId === undefined || t.paneId === r.paneId,
 });
 
 export const exploreBus = {
-  /** Called by Shell on boot / popstate / hashchange for `#explore/…`. */
-  request: (seed: string): void => bus.request(seed),
+  /** Called by Shell on boot / popstate / hashchange for `#explore/…`; `paneId`: only that pane's Library page takes it. */
+  request: (seed: string, opts: { paneId?: number } = {}): void => bus.request({ seed, ...(opts.paneId === undefined ? {} : { paneId: opts.paneId }) }),
   /** Called when the URL stops naming an exploration (popstate to a plain URL). */
   exit: (): void => bus.exit(),
   register: (t: ExploreTarget): (() => void) => bus.register(t),

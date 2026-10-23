@@ -55,6 +55,8 @@ function libraryPages(x: WorkspaceState, browser: MemoryBrowser) {
   const requests: { workId: string; confirmed: boolean; showing: string | null }[] = [];
   const exits: number[] = [];
   const explores: string[] = [];
+  /** Each exploration a Library page started, with its pane (ticket 09). */
+  const exploresIn: { paneId: number; seed: string }[] = [];
   const exploreExits: number[] = [];
   const exploring = new Set<number>();
   const mounted = new Map<number, () => void>();
@@ -84,6 +86,7 @@ function libraryPages(x: WorkspaceState, browser: MemoryBrowser) {
         explore: (seed) => {
           if (exploring.has(paneId)) return;
           explores.push(seed);
+          exploresIn.push({ paneId, seed });
           exploring.add(paneId);
         },
         exit: () => {
@@ -120,6 +123,8 @@ function libraryPages(x: WorkspaceState, browser: MemoryBrowser) {
     requests,
     exits,
     explores,
+    exploresIn,
+    exploring,
     exploreExits,
     unmount: () => {
       off();
@@ -2132,6 +2137,168 @@ describe("a Doc's deletion: the three states", () => {
     expect(pending).toBeInstanceOf(Promise);
     t.leave.late[0]!(true);
     expect(await pending).toBe(true);
+  });
+});
+
+describe("a Doc's deletion and a refused open keep the entry's history state (ticket 08)", () => {
+  const planAndWrite = (): Pane[] => [
+    { id: 1, view: "plan", size: 1 },
+    { id: 2, view: "write", size: 1 },
+  ];
+  const step = async (t: Awaited<ReturnType<typeof booted>>, dir: "back" | "fwd") => {
+    if (dir === "back") t.browser.port.back();
+    else t.browser.forward();
+    await t.browser.settle();
+    await flush();
+  };
+
+  it("the open Doc deleted: the address follows to the new main Doc and the entry keeps its state, so Back then Forward puts the Doc back into its own pane", async () => {
+    const t = await booted({ panes: planAndWrite(), activeId: 1 });
+    t.x.openDoc("d1"); // pane 1: Plan → Doc; "/" records it, "/doc/d1" names pane 1's Doc session
+    const state = t.browser.port.state();
+    t.x.docDeleted("d1", ["d2"]);
+    expect(t.browser.entries).toEqual(["/", "/doc/d2"]);
+    expect(t.browser.port.state()).toEqual(state);
+    await step(t, "back");
+    expect(t.views()).toEqual(["plan", "write"]);
+    t.x.select(2);
+    await step(t, "fwd");
+    expect(t.browser.url()).toBe("/doc/d2");
+    expect(t.views()).toEqual(["doc", "write"]);
+    expect(t.x.getState().currentDoc).toBe("d2");
+  });
+
+  it("the open Doc deleted with nothing left: the address resets to / and the entry keeps its state", async () => {
+    const t = await booted({ panes: planAndWrite(), activeId: 1, papers: ["d1"] });
+    t.x.openDoc("d1");
+    const state = t.browser.port.state();
+    expect(state).not.toBeNull();
+    t.x.docDeleted("d1", []);
+    expect(t.browser.entries).toEqual(["/", "/"]);
+    expect(t.browser.port.state()).toEqual(state);
+  });
+
+  it("an open the Doc's guard refuses puts the address back keeping the entry's state: Back then Forward still puts the Doc back into its own pane", async () => {
+    const t = await booted({ panes: planAndWrite(), activeId: 1 });
+    t.x.openDoc("d1");
+    const state = t.browser.port.state();
+    t.leave.answer((view) => view !== "doc");
+    expect(t.x.openDoc("d2")).toBe(false);
+    expect(t.browser.entries).toEqual(["/", "/doc/d1"]);
+    expect(t.browser.port.state()).toEqual(state);
+    t.leave.answer(() => true);
+    await step(t, "back");
+    expect(t.views()).toEqual(["plan", "write"]);
+    t.x.select(2);
+    await step(t, "fwd");
+    expect(t.views()).toEqual(["doc", "write"]);
+    expect(t.x.getState().currentDoc).toBe("d1");
+  });
+
+  it("a late no puts the address back keeping the entry's state too", async () => {
+    const t = await booted({ panes: planAndWrite(), activeId: 1 });
+    t.x.openDoc("d1");
+    const state = t.browser.port.state();
+    t.leave.lateFor("doc");
+    expect(t.x.openDoc("d2")).toBe(false);
+    t.leave.late[0]!(false);
+    await flush();
+    expect(t.browser.entries).toEqual(["/", "/doc/d1"]);
+    expect(t.browser.port.state()).toEqual(state);
+  });
+
+  it("a record naming a Doc that was deleted is void: Back never brings the deleted Doc back", async () => {
+    const t = await booted({
+      panes: [
+        { id: 1, view: "library", size: 1 },
+        { id: 2, view: "plan", size: 1 },
+      ],
+      activeId: 2,
+    });
+    expect(t.x.setActiveView("doc")).toBe(true); // pane 2 shows d1
+    t.x.select(1);
+    t.browser.editHash("/#explore/2020X");
+    await flush();
+    t.x.openDoc("d2"); // the Doc pane switches d1 → d2; the exploration's entry records d1
+    expect(t.x.getState().currentDoc).toBe("d2");
+    t.x.docDeleted("d1", []);
+    await step(t, "back");
+    expect(t.browser.url()).toBe("/#explore/2020X");
+    expect(t.x.getState().currentDoc).toBe("d2");
+    expect(t.views()).toEqual(["library", "doc"]);
+  });
+});
+
+describe("Back puts a mode back into the pane it was in, however many Library pages there are (ticket 09)", () => {
+  const twoLibraries = (): Pane[] => [
+    { id: 1, view: "library", size: 1 },
+    { id: 2, view: "library", size: 1 },
+  ];
+  const step = async (t: Awaited<ReturnType<typeof booted>>, dir: "back" | "fwd") => {
+    if (dir === "back") t.browser.port.back();
+    else t.browser.forward();
+    await t.browser.settle();
+    await flush();
+  };
+
+  it("explore in pane 1, switch it to the Plan page, Back: the exploration reappears in pane 1, not pane 2", async () => {
+    const t = await booted({ panes: twoLibraries(), activeId: 1 });
+    t.browser.editHash("/#explore/2020X");
+    await flush();
+    expect(t.library.exploresIn).toEqual([{ paneId: 1, seed: "2020X" }]);
+    expect(t.x.setPaneView(1, "plan")).toBe(true);
+    expect(t.views()).toEqual(["plan", "library"]);
+    t.x.select(2);
+    await step(t, "back");
+    expect(t.browser.url()).toBe("/#explore/2020X");
+    expect(t.views()).toEqual(["library", "library"]);
+    expect(t.library.exploresIn).toEqual([
+      { paneId: 1, seed: "2020X" },
+      { paneId: 1, seed: "2020X" },
+    ]);
+    expect([...t.library.exploring]).toEqual([1]);
+  });
+
+  it("the graph in pane 1, switch it to the Plan page, Back: the graph reappears in pane 1, not pane 2", async () => {
+    const t = await booted({ panes: twoLibraries(), activeId: 1 });
+    t.x.openArgumentGraph("w1");
+    await flush();
+    expect(t.library.open.get(1)).toBe("w1");
+    expect(t.x.setPaneView(1, "plan")).toBe(true);
+    t.x.select(2);
+    await step(t, "back");
+    expect(t.browser.url()).toBe("/#argument/w1");
+    expect(t.views()).toEqual(["library", "library"]);
+    expect(t.library.open.get(1)).toBe("w1");
+    expect(t.library.open.has(2)).toBe(false);
+  });
+
+  it("two panes that each left an exploration: Back to each exploration puts it in its own pane", async () => {
+    const t = await booted({ panes: twoLibraries(), activeId: 1 });
+    t.browser.editHash("/#explore/X1");
+    await flush();
+    t.x.setPaneView(1, "plan");
+    t.x.select(2);
+    t.browser.editHash("/#explore/Y2");
+    await flush();
+    t.x.setPaneView(2, "write");
+    await step(t, "back"); // Y2 again, in pane 2
+    await step(t, "back"); // "/", the entry between the two explorations
+    await step(t, "back"); // X1 again, in pane 1
+    expect(t.browser.url()).toBe("/#explore/X1");
+    expect(t.library.exploresIn.map((e) => `${e.paneId}:${e.seed}`)).toEqual(["1:X1", "2:Y2", "2:Y2", "1:X1"]);
+  });
+
+  it("a request that names no pane keeps today's rule (the page that has the mode open, else the first registered)", async () => {
+    const t = await booted({ panes: twoLibraries(), activeId: 2 });
+    exploreBus.request("2020Y");
+    expect(t.library.exploresIn).toEqual([{ paneId: 1, seed: "2020Y" }]);
+    exploreBus.exit();
+    exploreBus.request("2020Z", { paneId: 2 });
+    expect(t.library.exploresIn).toEqual([
+      { paneId: 1, seed: "2020Y" },
+      { paneId: 2, seed: "2020Z" },
+    ]);
   });
 });
 
