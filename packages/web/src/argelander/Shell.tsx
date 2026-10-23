@@ -3,7 +3,8 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { useTranslation } from "react-i18next";
 import { ActionButton } from "../ui";
 import { useLeaveDialog } from "./leave-dialog";
-import { fetchPapers } from "../api";
+import { docDescriptionStatus, fetchPapers } from "../api";
+import { onLibraryChanged } from "../api/ws";
 import { DEFAULT_LANGUAGE } from "../i18n";
 import { resizeDivider, shareOf } from "./layout";
 import { createWorkspaceState, pageFields, type Pane, type PaneAdapter, type ViewActionOutcome, windowBrowser, windowTimers, workspaceLeave, type WorkspaceState } from "./panes";
@@ -91,12 +92,15 @@ export function Shell() {
       timers: windowTimers(),
       leave: workspaceLeave,
       fetchPapers,
+      // the server's library.changed keeps the paper list fresh (a Doc deleted from another tab, the Copilot, the CLI)
+      onLibraryChanged,
+      docStatus: docDescriptionStatus,
       // a stable function of the preferences (preferences.tsx): the first render's is every render's
       setTweak,
     })
   );
   const snapshot = useSyncExternalStore(store.subscribe, store.getState);
-  const { panes, activeId, pagesVersion, papers, currentDoc, pendingAnchor, copilotOpen } = snapshot;
+  const { panes, activeId, pagesVersion, papers, currentDoc, pendingAnchor, copilotOpen, docGoneNotice } = snapshot;
   // Committed, the whole tree included (the Copilot panel has this render's PageContext): a workspace action waiting for it may answer.
   useLayoutEffect(() => store.rendered(snapshot), [store, snapshot]);
   useEffect(() => store.start(), [store]);
@@ -240,6 +244,12 @@ export function Shell() {
     <WorkspaceProvider value={workspace}>
       <div className="app" data-ui="app-shell">
         {leaveDialog}
+        {/* Back/Forward or a deep link reached a Doc that is gone (ticket 11): the app's status toast, as the leave guard's */}
+        {docGoneNotice && (
+          <div key={docGoneNotice.seq} className="app-status-toast app-status-toast--second" role="status" data-ui="doc-gone-notice">
+            {t("shell.docGone", { id: docGoneNotice.docId })}
+          </div>
+        )}
         <div className="titlebar" data-ui="app-titlebar">
           <div className="tb-left">
             <span className="wordmark">

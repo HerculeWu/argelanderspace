@@ -113,3 +113,23 @@ describe("Shell docDeleted wiring (Stage 8 §8)", () => {
     expect(window.location.pathname).toBe("/doc/d2");
   });
 });
+
+describe("a deep link to a Doc that is gone (ticket 11)", () => {
+  it("shows the deleted notice in the page's language, with the plain address and no Doc pane", async () => {
+    stubShellFetch({ papers: () => ["d1"] });
+    renderShell("/doc/zz");
+    await waitFor(() => expect(document.querySelector('[data-ui="doc-gone-notice"]')).not.toBeNull());
+    const notice = () => document.querySelector('[data-ui="doc-gone-notice"]')!;
+    expect(notice().getAttribute("role")).toBe("status");
+    expect(window.location.pathname).toBe("/");
+    expect(h.ws).toBeNull(); // no Doc pane was opened
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+    expect(notice().textContent).toBe("The document “zz” has been deleted.");
+    await act(async () => {
+      await i18n.changeLanguage("zh-CN");
+    });
+    expect(notice().textContent).toBe("文档「zz」已被删除。");
+  });
+});

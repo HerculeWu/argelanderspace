@@ -15,7 +15,7 @@ import { exploreBus } from "../src/lib/explore-route";
 import type { LeaveOrigin, LeaveVerdict } from "../src/argelander/workspace";
 import type { DocPaneHost } from "../src/doc/doc-pane-adapter";
 import type { LeavePort } from "../src/argelander/panes/browser";
-import { createWorkspaceState, type WorkspaceState } from "../src/argelander/panes/workspace-state";
+import { createWorkspaceState, DOC_GONE_NOTICE_MS, type WorkspaceState } from "../src/argelander/panes/workspace-state";
 import { PAGE_FIELD_KEYS, pageFields, type Pane } from "../src/argelander/panes";
 import type { PaneAdapter } from "../src/argelander/panes/adapter";
 import { usePreferencesState } from "../src/argelander/preferences";
@@ -142,6 +142,10 @@ interface Setup {
   url?: string;
   papers?: string[];
   fetchPapers?: () => Promise<string[]>;
+  /** The server's library.changed subscription (none unless given). */
+  onLibraryChanged?: (cb: () => void) => () => void;
+  /** The status of a Doc's description (default: 200 while listed, else 404). */
+  docStatus?: (docId: string) => Promise<number>;
   panes?: Pane[];
   activeId?: number;
   /** Install a Shell stand-in that acknowledges every snapshot at once (default true). */
@@ -167,6 +171,8 @@ function setup(o: Setup = {}) {
   const leave = scriptedLeave();
   let papers = o.papers ?? ["d1", "d2"];
   const fetchPapers = vi.fn(o.fetchPapers ?? (async () => [...papers]));
+  // a Doc's description: there (200) while the server lists it, else 404 (a test may answer otherwise)
+  const docStatus = vi.fn(o.docStatus ?? (async (id: string) => (papers.includes(id) ? 200 : 404)));
   const setTweak = vi.fn(async (_key: string, _value: unknown) => true);
   let host: DocPaneHost | null = null;
   const x = createWorkspaceState({
@@ -179,6 +185,8 @@ function setup(o: Setup = {}) {
     timers: timers.port,
     leave: leave.port,
     fetchPapers,
+    ...(o.onLibraryChanged ? { onLibraryChanged: o.onLibraryChanged } : {}),
+    docStatus,
     setTweak: setTweak as never,
   });
   const notified = { count: 0 };
@@ -198,6 +206,7 @@ function setup(o: Setup = {}) {
     leave,
     library,
     fetchPapers,
+    docStatus,
     setTweak,
     notified,
     stop,
@@ -231,10 +240,11 @@ describe("boot", () => {
     expect(t.library.explores).toEqual([]);
   });
 
-  it("a Doc route that is not in the list is opened anyway (the Doc pane shows its load error)", async () => {
+  it("a Doc route that is not in the list opens no Doc: the Library page, the plain URL and the deleted notice (ticket 11)", async () => {
     const t = await booted({ url: "/doc/zz" });
-    expect(t.x.getState()).toMatchObject({ currentDoc: "zz", papers: ["d1", "d2"] });
-    expect(t.views()).toEqual(["doc"]);
+    expect(t.x.getState()).toMatchObject({ currentDoc: "d1", papers: ["d1", "d2"], docGoneNotice: { docId: "zz" } });
+    expect(t.views()).toEqual(["library"]);
+    expect(t.browser.entries).toEqual(["/"]);
   });
 
   it("#explore/<bibcode> makes the active pane a Library pane and hands the seed to the explore bus", async () => {
@@ -324,6 +334,7 @@ describe("Back/Forward and hand-edited hashes", () => {
     await flush();
     expect(t.library.open.get(1)).toBe("w1");
     t.browser.pop("/doc/d2");
+    await flush(); // the server's paper list is read first (ticket 11)
     expect(t.library.exits).toEqual([1, 1]);
     expect(t.library.open.size).toBe(0);
     expect(t.x.getState().currentDoc).toBe("d2");
@@ -425,7 +436,7 @@ describe("Back/Forward and hand-edited hashes", () => {
     expect(t.views()).toEqual(["library"]);
     expect(t.browser.url()).toBe("/#explore/2020X");
 
-    const u = await booted({ url: "/#explore/2020X" });
+    const u = await booted({ url: "/#explore/2020X", papers: ["d1", "d2", "d9"] });
     u.x.openDoc("d2");
     u.leave.lateFor("doc");
     u.browser.port.back();
@@ -462,6 +473,7 @@ describe("Back/Forward and hand-edited hashes", () => {
     });
     expect(t.library.explores).toEqual(["2020X"]);
     t.browser.pop("/doc/d2");
+    await flush(); // the server's paper list is read first (ticket 11)
     expect(t.library.exploreExits).toEqual([1]);
     expect(t.x.getState().currentDoc).toBe("d2");
     expect(t.views()).toEqual(["library", "doc"]);
@@ -503,6 +515,7 @@ describe("Back/Forward and hand-edited hashes", () => {
     const t = await booted({ url: "/doc/d1" });
     t.leave.answer((view) => view !== "doc");
     t.browser.pop("/doc/d2");
+    await flush(); // the server's paper list is read first (ticket 11)
     expect(t.x.getState().currentDoc).toBe("d1");
     expect(t.browser.url()).toBe("/doc/d1");
   });
@@ -2226,6 +2239,358 @@ describe("a Doc's deletion and a refused open keep the entry's history state (ti
     expect(t.browser.url()).toBe("/#explore/2020X");
     expect(t.x.getState().currentDoc).toBe("d2");
     expect(t.views()).toEqual(["library", "doc"]);
+  });
+});
+
+describe("the address is rewritten only while it names the Doc deleted or refused (ticket 10)", () => {
+  it("an open the Doc's guard refuses at the plain URL leaves / alone", async () => {
+    const t = await booted(); // the Plan page, d1 current, the address /
+    t.leave.answer((view) => view !== "doc");
+    expect(t.x.openDoc("d2")).toBe(false);
+    expect(t.browser.entries).toEqual(["/"]);
+    expect(t.views()).toEqual(["plan"]);
+  });
+
+  it("a late no at the plain URL leaves / alone too", async () => {
+    const t = await booted();
+    t.leave.lateFor("doc");
+    expect(t.x.openDoc("d2")).toBe(false);
+    t.leave.late[0]!(false);
+    await flush();
+    expect(t.browser.entries).toEqual(["/"]);
+  });
+
+  it("an open refused during an exploration (the Doc's guard, or the Library page's) leaves #explore/… alone", async () => {
+    const t = await booted({ panes: [{ id: 1, view: "library", size: 1 }] });
+    t.browser.editHash("/#explore/2020X");
+    await flush();
+    t.leave.answer((view) => view !== "doc");
+    expect(t.x.openDoc("d2")).toBe(false);
+    expect(t.browser.entries).toEqual(["/", "/#explore/2020X"]);
+    t.leave.answer((view) => view !== "library");
+    expect(t.x.openDoc("d1")).toBe(false); // d1 is current: only the Library page it would replace is asked
+    expect(t.browser.entries).toEqual(["/", "/#explore/2020X"]);
+    expect(t.views()).toEqual(["library"]);
+  });
+
+  it("the open Doc deleted while the address is /: the address stays, the Doc still moves", async () => {
+    const plain = await booted();
+    plain.x.docDeleted("d1", ["d2"]);
+    expect(plain.x.getState().currentDoc).toBe("d2");
+    expect(plain.browser.entries).toEqual(["/"]);
+  });
+
+  it("the open Doc deleted while the address is #explore/…: the address stays", async () => {
+    const explore = await booted({ panes: [{ id: 1, view: "library", size: 1 }] });
+    explore.browser.editHash("/#explore/2020X");
+    await flush();
+    explore.x.docDeleted("d1", ["d2"]);
+    expect(explore.x.getState().currentDoc).toBe("d2");
+    expect(explore.browser.entries).toEqual(["/", "/#explore/2020X"]);
+  });
+
+  it("the open Doc deleted while the address is #argument/…: the address stays", async () => {
+    const graph = await booted({ panes: [{ id: 1, view: "library", size: 1 }] });
+    graph.x.openArgumentGraph("w1");
+    await flush();
+    graph.x.docDeleted("d1", []);
+    expect(graph.x.getState().currentDoc).toBeNull();
+    expect(graph.browser.url()).toBe("/#argument/w1");
+  });
+
+  it("another Doc's address stays when the Doc deleted is not the one it names", async () => {
+    const t = await booted({ url: "/doc/d2" });
+    t.x.docDeleted("d1", ["x"]);
+    expect(t.browser.entries).toEqual(["/doc/d2"]);
+  });
+});
+
+describe("Back, Forward or a deep link to a Doc that is gone (ticket 11)", () => {
+  const step = async (t: Awaited<ReturnType<typeof booted>>, dir: "back" | "fwd") => {
+    if (dir === "back") t.browser.port.back();
+    else t.browser.forward();
+    await t.browser.settle();
+    await flush();
+  };
+
+  it("Back to a Doc deleted in this page load: not opened; a notice names it, the Doc pane turns back into the Library, the address is the plain URL and the entry keeps its state", async () => {
+    const t = await booted({ panes: [{ id: 1, view: "library", size: 1 }] });
+    t.x.openDoc("d1");
+    t.x.openDoc("d2"); // the same Doc pane; the d1 entry records d1
+    t.x.docDeleted("d1", ["x"]); // not the open Doc: nothing moves
+    expect(t.browser.entries).toEqual(["/", "/doc/d1", "/doc/d2"]);
+    const asked = t.leave.asks.length;
+    await step(t, "back");
+    expect(t.browser.entries).toEqual(["/", "/", "/doc/d2"]);
+    expect(t.browser.index).toBe(1);
+    expect(t.x.getState().currentDoc).toBe("d2");
+    expect(t.views()).toEqual(["library"]);
+    expect(t.x.getState().docGoneNotice?.docId).toBe("d1");
+    expect(t.leave.asks.slice(asked)).toEqual([{ view: "doc", paneId: 1, origin: "user" }]);
+    expect(t.browser.port.state()).toMatchObject({ argelanderShown: { paneId: 1, view: "doc" }, argelanderReplaced: { paneId: 1, view: "doc", prevDocId: "d1" } });
+    // Forward to d2 is an ordinary Doc entry
+    await step(t, "fwd");
+    expect(t.x.getState().currentDoc).toBe("d2");
+    expect(t.views()).toEqual(["doc"]);
+  });
+
+  it("Forward to a Doc deleted after Back left it: the notice and the Library page; Back and Forward again never bring a Doc pane back", async () => {
+    const t = await booted({ panes: [{ id: 1, view: "library", size: 1 }] });
+    t.x.openDoc("d1");
+    await step(t, "back");
+    expect(t.views()).toEqual(["library"]);
+    t.x.docDeleted("d1", []);
+    expect(t.browser.entries).toEqual(["/", "/doc/d1"]); // ticket 10: / names no Doc
+    await step(t, "fwd");
+    expect(t.browser.entries).toEqual(["/", "/"]);
+    expect(t.browser.index).toBe(1);
+    expect(t.views()).toEqual(["library"]);
+    expect(t.x.getState().currentDoc).toBeNull();
+    expect(t.x.getState().docGoneNotice?.docId).toBe("d1");
+    expect(t.browser.port.state()).toMatchObject({ argelanderShown: { paneId: 1, view: "doc" } });
+    await step(t, "back");
+    await step(t, "fwd");
+    expect(t.views()).toEqual(["library"]);
+  });
+
+  it("only the Doc pane changes, through its guard: refused, the Doc stays and its address is pushed back after the plain entry", async () => {
+    const t = await booted({
+      panes: [
+        { id: 1, view: "plan", size: 1 },
+        { id: 2, view: "library", size: 1 },
+      ],
+      activeId: 2,
+    });
+    t.x.openDoc("d1");
+    t.x.openDoc("d2");
+    t.x.docDeleted("d1", ["x"]);
+    t.leave.answer((view) => view !== "doc");
+    await step(t, "back");
+    expect(t.views()).toEqual(["plan", "doc"]);
+    expect(t.x.getState().currentDoc).toBe("d2");
+    expect(t.browser.entries).toEqual(["/", "/", "/doc/d2"]);
+    expect(t.x.getState().docGoneNotice?.docId).toBe("d1");
+    t.leave.answer(() => true);
+    await step(t, "back"); // the plain entry it became: its record names the deleted Doc, so it is void
+    expect(t.views()).toEqual(["plan", "library"]);
+    expect(t.x.getState().currentDoc).toBe("d2");
+  });
+
+  it("a Doc deleted behind the page's back (another tab, the CLI, a bare DELETE): Forward to it reads the list again and shows the notice", async () => {
+    const t = await booted({ panes: [{ id: 1, view: "library", size: 1 }] });
+    t.x.openDoc("d1");
+    await step(t, "back");
+    expect(t.views()).toEqual(["library"]);
+    t.setPapers(["d2"]); // the server no longer has d1; this page was not told
+    await step(t, "fwd");
+    expect(t.browser.entries).toEqual(["/", "/"]);
+    expect(t.views()).toEqual(["library"]);
+    expect(t.x.getState().docGoneNotice?.docId).toBe("d1");
+    expect(t.x.getState().papers).toEqual(["d2"]);
+  });
+
+  it("a Doc found gone counts as deleted even when the Doc pane's guard keeps the open Doc: Back to that entry later never puts it back", async () => {
+    const t = await booted({ panes: [{ id: 1, view: "library", size: 1 }] });
+    t.x.openDoc("d1");
+    t.x.openDoc("d2"); // the d1 entry records {pane 1, doc, prevDocId d1}
+    t.setPapers(["d2"]); // d1 deleted elsewhere
+    t.leave.answer((view) => view !== "doc");
+    await step(t, "back");
+    expect(t.browser.entries).toEqual(["/", "/", "/doc/d2"]);
+    expect(t.x.getState().currentDoc).toBe("d2");
+    t.leave.answer(() => true);
+    await step(t, "back"); // the entry that named d1: its record names d1, so it is void
+    expect(t.x.getState().currentDoc).toBe("d2");
+    expect(t.views()).toEqual(["library"]);
+  });
+
+  it("a Doc deleted in this page while the read is out is gone, whatever the read says, and never comes back into the list", async () => {
+    const t = await booted({ url: "/doc/d1" });
+    let answer!: (papers: string[]) => void;
+    t.fetchPapers.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)));
+    t.browser.pop("/doc/d2");
+    t.x.docDeleted("d2", []);
+    answer(["d1", "d2"]);
+    await flush();
+    expect(t.x.getState()).toMatchObject({ currentDoc: "d1", papers: ["d1"], docGoneNotice: { docId: "d2" } });
+    expect(t.browser.url()).toBe("/");
+  });
+
+  it("an older read that answers last never overwrites a newer list", async () => {
+    let changed!: () => void;
+    const t = await booted({
+      url: "/doc/d1",
+      onLibraryChanged: (cb) => {
+        changed = cb;
+        return () => {};
+      },
+    });
+    let older!: (papers: string[]) => void;
+    t.fetchPapers.mockImplementationOnce(() => new Promise((resolve) => (older = resolve)));
+    t.browser.pop("/doc/d2"); // the arrival's read answers later
+    t.setPapers(["d2", "d3"]);
+    changed(); // a newer read, answered at once
+    await flush();
+    expect(t.x.getState().papers).toEqual(["d2", "d3"]);
+    older(["d1", "d2"]);
+    await flush();
+    expect(t.x.getState().papers).toEqual(["d2", "d3"]);
+    expect(t.x.getState().currentDoc).toBe("d2"); // the arrival still decides by its own answer
+  });
+
+  it("a late yes lets its traversal through at once: no second read, no second question, however slow the server", async () => {
+    const t = await booted({ url: "/doc/d1" });
+    t.leave.lateFor("doc");
+    t.browser.pop("/doc/d2");
+    await flush();
+    expect(t.leave.late).toHaveLength(1);
+    expect(t.browser.url()).toBe("/doc/d1"); // the open Doc's address pushed back while the question is open
+    t.fetchPapers.mockImplementation(() => new Promise(() => {}));
+    const reads = t.fetchPapers.mock.calls.length;
+    t.leave.late[0]!(true);
+    await t.browser.settle();
+    await flush();
+    expect(t.leave.late).toHaveLength(1);
+    expect(t.fetchPapers.mock.calls.length).toBe(reads);
+    expect(t.x.getState().currentDoc).toBe("d2");
+    expect(t.browser.url()).toBe("/doc/d2");
+  });
+
+  it("a Doc the list leaves out is gone only when its description answers 404: a 500 (a PDF two Works own) or no answer opens it", async () => {
+    const t = await booted({ url: "/doc/d1", docStatus: async (id) => (id === "odd" ? 500 : 404) });
+    t.browser.pop("/doc/d2");
+    await flush();
+    expect(t.docStatus).not.toHaveBeenCalled(); // listed: there
+    t.browser.pop("/doc/odd");
+    await flush();
+    expect(t.docStatus).toHaveBeenCalledWith("odd");
+    expect(t.x.getState()).toMatchObject({ currentDoc: "odd", docGoneNotice: null });
+    t.docStatus.mockRejectedValueOnce(new Error("offline"));
+    t.browser.pop("/doc/zz");
+    await flush();
+    expect(t.x.getState()).toMatchObject({ currentDoc: "zz", docGoneNotice: null });
+  });
+
+  it("a boot deep link the list leaves out but whose description is there opens as before", async () => {
+    const t = await booted({ url: "/doc/odd", docStatus: async () => 500 });
+    expect(t.x.getState()).toMatchObject({ currentDoc: "odd", docGoneNotice: null });
+    expect(t.views()).toEqual(["doc"]);
+    expect(t.browser.url()).toBe("/doc/odd");
+  });
+
+  it("a deleted Doc re-ingested under the same id: once a read sent after the delete lists it, Back/Forward opens it again", async () => {
+    let changed!: () => void;
+    const t = await booted({
+      panes: [{ id: 1, view: "library", size: 1 }],
+      onLibraryChanged: (cb) => {
+        changed = cb;
+        return () => {};
+      },
+    });
+    t.x.openDoc("d1");
+    await step(t, "back");
+    t.setPapers(["d2"]);
+    t.x.docDeleted("d1", []);
+    t.setPapers(["d1", "d2"]); // ingested again under the same id
+    changed();
+    await flush();
+    expect(t.x.getState().papers).toEqual(["d1", "d2"]);
+    await step(t, "fwd");
+    expect(t.x.getState()).toMatchObject({ currentDoc: "d1", docGoneNotice: null });
+    expect(t.views()).toEqual(["doc"]);
+    expect(t.browser.url()).toBe("/doc/d1");
+  });
+
+  it("a read sent before the delete that answers after it does not bring the deleted Doc back", async () => {
+    const t = await booted({ url: "/doc/d1" });
+    let answer!: (papers: string[]) => void;
+    t.fetchPapers.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)));
+    t.browser.pop("/doc/d2"); // a read goes out
+    t.x.docDeleted("d1", ["d2"]);
+    answer(["d1", "d2"]); // it was sent before the delete
+    await flush();
+    expect(t.x.getState().papers).toEqual(["d2"]);
+  });
+
+  it("the server's library.changed rereads the paper list, so it stays fresh for every path", async () => {
+    let changed: (() => void) | null = null;
+    const t = await booted({
+      onLibraryChanged: (cb) => {
+        changed = cb;
+        return () => {
+          changed = null;
+        };
+      },
+    });
+    expect(changed).not.toBeNull();
+    t.setPapers(["d2", "d3"]);
+    changed!();
+    await flush();
+    expect(t.x.getState().papers).toEqual(["d2", "d3"]);
+    t.stop();
+    expect(changed).toBeNull();
+  });
+
+  it("a Doc the paper list does not have is checked with one reread of the list: gone, it gets the same treatment", async () => {
+    const t = await booted({ url: "/doc/d1" });
+    t.browser.pop("/doc/zz");
+    await flush();
+    expect(t.fetchPapers).toHaveBeenCalledTimes(2);
+    expect(t.browser.url()).toBe("/");
+    expect(t.views()).toEqual(["library"]);
+    expect(t.x.getState().currentDoc).toBe("d1");
+    expect(t.x.getState().docGoneNotice?.docId).toBe("zz");
+  });
+
+  it("a Doc ingested after the page loaded is found by the reread and opened", async () => {
+    const t = await booted({ url: "/doc/d1" });
+    t.setPapers(["d1", "d2", "fresh"]);
+    t.browser.pop("/doc/fresh");
+    await flush();
+    expect(t.x.getState()).toMatchObject({ currentDoc: "fresh", papers: ["d1", "d2", "fresh"], docGoneNotice: null });
+    expect(t.browser.url()).toBe("/doc/fresh");
+  });
+
+  it("every arrival reads the list once (a listed Doc too) and opens a Doc it has; a reread that fails opens it as before (the Doc pane shows its load error)", async () => {
+    const t = await booted({ url: "/doc/d1" });
+    t.browser.pop("/doc/d2");
+    expect(t.x.getState().currentDoc).toBe("d1"); // not before the answer
+    await flush();
+    expect(t.fetchPapers).toHaveBeenCalledTimes(2);
+    expect(t.x.getState().currentDoc).toBe("d2");
+    t.fetchPapers.mockRejectedValueOnce(new Error("offline"));
+    t.browser.pop("/doc/zz");
+    await flush();
+    expect(t.x.getState()).toMatchObject({ currentDoc: "zz", docGoneNotice: null });
+    expect(t.browser.url()).toBe("/doc/zz");
+  });
+
+  it("the reread's answer after the address moved on changes nothing", async () => {
+    const t = await booted({ url: "/doc/d1" });
+    let answer!: (papers: string[]) => void;
+    t.fetchPapers.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)));
+    t.browser.pop("/doc/zz");
+    t.browser.pop("/doc/d2");
+    await flush();
+    answer(["d1", "d2"]);
+    await flush();
+    expect(t.browser.url()).toBe("/doc/d2");
+    expect(t.x.getState()).toMatchObject({ currentDoc: "d2", docGoneNotice: null });
+  });
+
+  it("a boot deep link to a Doc that is not in the library: the same treatment (no Doc opened, the Library page, the plain URL, the notice)", async () => {
+    const t = await booted({ url: "/doc/zz#fig-1" });
+    expect(t.views()).toEqual(["library"]);
+    expect(t.x.getState()).toMatchObject({ currentDoc: "d1", pendingAnchor: null });
+    expect(t.browser.entries).toEqual(["/"]);
+    expect(t.x.getState().docGoneNotice?.docId).toBe("zz");
+  });
+
+  it("the notice goes away by itself", async () => {
+    const t = await booted({ url: "/doc/zz" });
+    expect(t.x.getState().docGoneNotice?.docId).toBe("zz");
+    t.timers.advance(DOC_GONE_NOTICE_MS);
+    expect(t.x.getState().docGoneNotice).toBeNull();
   });
 });
 
