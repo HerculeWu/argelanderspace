@@ -17,6 +17,7 @@ import type { DocPaneHost } from "../src/doc/doc-pane-adapter";
 import type { LeavePort } from "../src/argelander/panes/browser";
 import { createWorkspaceState, type WorkspaceState } from "../src/argelander/panes/workspace-state";
 import { PAGE_FIELD_KEYS, pageFields, type Pane } from "../src/argelander/panes";
+import type { PaneAdapter } from "../src/argelander/panes/adapter";
 import { usePreferencesState } from "../src/argelander/preferences";
 import { shareOf } from "../src/argelander/layout";
 import { manualTimers, memoryBrowser, type MemoryBrowser } from "./memory-browser";
@@ -93,6 +94,7 @@ function libraryPages(x: WorkspaceState, browser: MemoryBrowser) {
     return () => {
       offs.forEach((off) => off());
       exploring.delete(paneId); // the page goes away with its exploration, as the real view's state does
+      open.delete(paneId); // and with the graph it showed
     };
   };
   const sync = () => {
@@ -141,6 +143,8 @@ interface Setup {
   render?: boolean;
   /** An existing history (a reload: a new page on the same entries); `url` is then ignored. */
   browser?: MemoryBrowser;
+  /** The page adapters the pane manager is given (default none). */
+  pages?: PaneAdapter[];
 }
 
 const cleanups: (() => void)[] = [];
@@ -164,7 +168,7 @@ function setup(o: Setup = {}) {
     initial: { panes: o.panes ?? [{ id: 1, view: "plan", size: 1 }], activeId: o.activeId ?? 1 },
     pages: (docHost) => {
       host = docHost;
-      return [];
+      return o.pages ?? [];
     },
     browser: browser.port,
     timers: timers.port,
@@ -931,6 +935,55 @@ describe("opening a Doc", () => {
     expect(after.views()).toEqual(["library"]);
   });
 
+  it("Forward to the Doc a Back parked puts it back into its parked pane, not the active pane (ticket 06)", async () => {
+    const t = await booted({
+      panes: [
+        { id: 1, view: "plan", size: 1 },
+        { id: 2, view: "library", size: 1 },
+      ],
+      activeId: 1,
+    });
+    t.x.openDoc("d2"); // pane 1: Plan → Doc
+    expect(t.views()).toEqual(["doc", "library"]);
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.views()).toEqual(["plan", "library"]);
+    t.x.select(2); // the person clicks into the other pane
+    const asked = t.leave.asks.length;
+    t.browser.forward();
+    await t.browser.settle();
+    await flush();
+    expect(t.views()).toEqual(["doc", "library"]);
+    expect(t.x.getState().currentDoc).toBe("d2");
+    expect(t.leave.asks.slice(asked).filter((a) => a.view === "library")).toEqual([]); // the Library pane is not replaced, so not asked
+    // the same Doc pane again: Back still finds its record
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.views()).toEqual(["plan", "library"]);
+  });
+
+  it("Forward with a parked session that is void (its pane switched by hand) lands in the active pane as before", async () => {
+    const t = await booted({
+      panes: [
+        { id: 1, view: "plan", size: 1 },
+        { id: 2, view: "library", size: 1 },
+      ],
+      activeId: 1,
+    });
+    t.x.openDoc("d2");
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    t.x.setPaneView(1, "write"); // by hand: pane 1 becomes active and the parked session is void
+    t.x.select(2);
+    t.browser.forward();
+    await t.browser.settle();
+    await flush();
+    expect(t.views()).toEqual(["write", "doc"]);
+  });
+
   it("a parked session is void once its pane is switched by hand: Forward then Back is no record, so the Library page", async () => {
     const t = await booted(); // Plan
     t.x.openDoc("d2");
@@ -1398,6 +1451,34 @@ describe("switching the view away from an exploration (the activity bar, the pan
     expect(t.browser.entries).toEqual(["/", "/#explore/2020X", "/#explore/2021Y"]);
   });
 
+  it("the Copilot's switch_view leaves it the same way, with origin agent: a new entry, and Back returns to the exploration", async () => {
+    const t = await exploring();
+    const before = t.leave.asks.length;
+    expect(await t.x.runWorkspaceAction({ action: "switch_view", view: "plan" })).toEqual({ ok: true });
+    expect(t.views()).toEqual(["plan"]);
+    expect(t.leave.asks.slice(before)).toEqual([{ view: "library", paneId: 1, origin: "agent" }]);
+    expect(t.browser.entries).toEqual(["/", "/#explore/2020X", "/"]);
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.browser.url()).toBe("/#explore/2020X");
+    expect(t.views()).toEqual(["library"]);
+  });
+
+  it("the Copilot's switch_view of a named pane to the Doc writes the Doc's address", async () => {
+    const u = await exploring();
+    expect(await u.x.runWorkspaceAction({ action: "switch_view", view: "doc", paneId: 1 })).toEqual({ ok: true });
+    expect(u.browser.entries).toEqual(["/", "/#explore/2020X", "/doc/d1"]);
+  });
+
+  it("the Copilot's switch_view with unsaved work is leave_blocked: nothing changes and no entry is written", async () => {
+    const t = await exploring();
+    t.leave.answer((view, _paneId, origin) => !(view === "library" && origin === "agent"));
+    expect(await t.x.runWorkspaceAction({ action: "switch_view", view: "plan" })).toEqual({ ok: false, detail: "leave_blocked" });
+    expect(t.views()).toEqual(["library"]);
+    expect(t.browser.entries).toEqual(["/", "/#explore/2020X"]);
+  });
+
   it("a pane that is not exploring, or an address that names no exploration, writes nothing", async () => {
     const t = await exploring({
       panes: [
@@ -1412,6 +1493,475 @@ describe("switching the view away from an exploration (the activity bar, the pan
     const u = await booted({ url: "/", panes: [{ id: 1, view: "library", size: 1 }] });
     expect(u.x.setActiveView("doc")).toBe(true);
     expect(u.browser.entries).toEqual(["/"]);
+  });
+});
+
+describe("switching the view away from an argument graph (ticket 05: the same rule as an exploration)", () => {
+  /** A Library page with the first Doc current, then the graph of w1 opened in pane 1 (one entry). */
+  const graph = async (o: Setup = {}) => {
+    const t = await booted({ panes: [{ id: 1, view: "library", size: 1 }], ...o });
+    t.x.select(1);
+    t.x.openArgumentGraph("w1");
+    await flush();
+    expect(t.library.open.get(1)).toBe("w1");
+    expect(t.browser.entries).toEqual(["/", "/#argument/w1"]);
+    return t;
+  };
+
+  it("to another page: the graph's guard is asked once, a new entry with the plain URL, and Back returns to the graph", async () => {
+    const t = await graph();
+    const before = t.leave.asks.length;
+    expect(t.x.setActiveView("plan")).toBe(true);
+    expect(t.views()).toEqual(["plan"]);
+    expect(t.leave.asks.slice(before)).toEqual([{ view: "library", paneId: 1, origin: "user" }]);
+    expect(t.browser.entries).toEqual(["/", "/#argument/w1", "/"]);
+    await flush();
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.browser.url()).toBe("/#argument/w1");
+    expect(t.views()).toEqual(["library"]);
+    expect(t.library.open.get(1)).toBe("w1");
+    expect(t.leave.asks.slice(before)).toHaveLength(1); // the Back asked nothing: no graph was open to lose
+  });
+
+  it("to the Doc: a new entry naming the Doc, the replaced view recorded on the graph's entry, so Back puts that pane back even when another pane is active", async () => {
+    const t = await graph({
+      panes: [
+        { id: 1, view: "library", size: 1 },
+        { id: 2, view: "plan", size: 1 },
+      ],
+      activeId: 1,
+    });
+    expect(t.x.setActiveView("doc")).toBe(true);
+    expect(t.views()).toEqual(["doc", "plan"]);
+    expect(t.browser.entries).toEqual(["/", "/#argument/w1", "/doc/d1"]);
+    t.x.select(2);
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.browser.url()).toBe("/#argument/w1");
+    expect(t.views()).toEqual(["library", "plan"]);
+    expect(t.library.open.get(1)).toBe("w1");
+  });
+
+  it("the pane menu leaves it the same way (that pane becomes active)", async () => {
+    const t = await graph({
+      panes: [
+        { id: 1, view: "library", size: 1 },
+        { id: 2, view: "plan", size: 1 },
+      ],
+      activeId: 2,
+    });
+    t.x.select(2);
+    expect(t.x.setPaneView(1, "write")).toBe(true);
+    expect(t.x.getState().activeId).toBe(1);
+    expect(t.browser.entries).toEqual(["/", "/#argument/w1", "/"]);
+  });
+
+  it("the Copilot's switch_view: a new entry with origin agent; with an unsaved draft leave_blocked and nothing written", async () => {
+    const t = await graph();
+    t.leave.answer((view, _paneId, origin) => !(view === "library" && origin === "agent"));
+    expect(await t.x.runWorkspaceAction({ action: "switch_view", view: "plan" })).toEqual({ ok: false, detail: "leave_blocked" });
+    expect(t.browser.entries).toEqual(["/", "/#argument/w1"]);
+    expect(t.views()).toEqual(["library"]);
+    t.leave.answer(() => true);
+    expect(await t.x.runWorkspaceAction({ action: "switch_view", view: "plan" })).toEqual({ ok: true });
+    expect(t.leave.asks[t.leave.asks.length - 1]).toEqual({ view: "library", paneId: 1, origin: "agent" });
+    expect(t.browser.entries).toEqual(["/", "/#argument/w1", "/"]);
+  });
+
+  it("refused by the graph's guard: nothing changes and no entry is written; a late yes writes the entry then", async () => {
+    const t = await graph();
+    t.leave.answer((view) => view !== "library");
+    expect(t.x.setActiveView("plan")).toBe(false);
+    expect(t.views()).toEqual(["library"]);
+    expect(t.browser.entries).toEqual(["/", "/#argument/w1"]);
+    t.leave.lateFor("library");
+    expect(t.x.setActiveView("plan")).toBe(false);
+    t.leave.late[0]!(true);
+    await flush();
+    expect(t.views()).toEqual(["plan"]);
+    expect(t.browser.entries).toEqual(["/", "/#argument/w1", "/"]);
+  });
+
+  it("a pane that shows no graph writes nothing", async () => {
+    const t = await graph({
+      panes: [
+        { id: 1, view: "library", size: 1 },
+        { id: 2, view: "library", size: 1 },
+      ],
+      activeId: 1,
+    });
+    expect(t.library.open.has(2)).toBe(false);
+    expect(t.x.setPaneView(2, "plan")).toBe(true);
+    expect(t.browser.entries).toEqual(["/", "/#argument/w1"]);
+  });
+});
+
+describe("records for every view (ticket 07): a pane's view session decides whether Back puts its view back", () => {
+  const twoPanes = (): Pane[] => [
+    { id: 1, view: "library", size: 1 },
+    { id: 2, view: "plan", size: 1 },
+  ];
+  /** Pane 1 explores; pane 2 shows the Doc d1 (opened from the Library, so pane 2 is a Doc pane). */
+  const exploringBesideDoc = async () => {
+    const t = await booted({ panes: twoPanes(), activeId: 1 });
+    t.x.select(2);
+    expect(t.x.setActiveView("doc")).toBe(true);
+    expect(t.views()).toEqual(["library", "doc"]);
+    t.x.select(1);
+    t.browser.editHash("/#explore/2020X");
+    await flush();
+    expect(t.library.explores).toEqual(["2020X"]);
+    return t;
+  };
+
+  it("explore → Plan → Back: the exploring pane gets the Library page and the exploration back; the Doc pane beside it is not changed", async () => {
+    const t = await exploringBesideDoc();
+    expect(t.x.setActiveView("plan")).toBe(true);
+    expect(t.views()).toEqual(["plan", "doc"]);
+    t.x.select(2); // the Doc pane is active when Back is pressed
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.browser.url()).toBe("/#explore/2020X");
+    expect(t.views()).toEqual(["library", "doc"]);
+    expect(t.library.explores).toEqual(["2020X", "2020X"]);
+    expect(t.leave.asks.filter((a) => a.view === "doc" && a.paneId === 2)).toEqual([]);
+  });
+
+  it("graph → Plan → Back: the graph's pane gets the Library page and the graph back; the Doc pane beside it is not changed", async () => {
+    const t = await booted({ panes: twoPanes(), activeId: 2 });
+    expect(t.x.setActiveView("doc")).toBe(true);
+    t.x.openArgumentGraph("w1"); // pane 1 shows the graph
+    await flush();
+    expect(t.library.open.get(1)).toBe("w1");
+    expect(t.x.setPaneView(1, "plan")).toBe(true);
+    expect(t.views()).toEqual(["plan", "doc"]);
+    t.x.select(2);
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.browser.url()).toBe("/#argument/w1");
+    expect(t.views()).toEqual(["library", "doc"]);
+    expect(t.library.open.get(1)).toBe("w1");
+  });
+
+  it("a record whose pane left that view session (switched by hand) is no record, and the fallback leaves the other Doc pane alone", async () => {
+    const t = await exploringBesideDoc();
+    t.x.setActiveView("plan");
+    t.x.setPaneView(1, "write"); // by hand: pane 1 is no longer in the session the switch to the Plan page made
+    t.x.select(2);
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.browser.url()).toBe("/#explore/2020X");
+    // the exploration needs a Library page: the recorded pane gives it, not the Doc pane that is active
+    expect(t.views()).toEqual(["library", "doc"]);
+    expect(t.library.explores).toEqual(["2020X", "2020X"]);
+  });
+
+  it("a switch by hand back to the same view is a new session too: Plan → Write → Plan voids the record", async () => {
+    const t = await exploringBesideDoc();
+    t.x.split(2); // pane 3, a third pane (a Doc pane copy), turned into the Writer
+    t.x.setActiveView("write");
+    t.x.select(1);
+    expect(t.views()).toEqual(["library", "doc", "write"]);
+    t.x.setActiveView("plan");
+    t.x.setPaneView(1, "write");
+    t.x.setPaneView(1, "plan");
+    t.x.select(3);
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    // no record applied (pane 1 would have been put back): the fallback makes the active pane the Library page
+    expect(t.views()).toEqual(["plan", "doc", "library"]);
+  });
+
+  it("Back to a plain URL with a record that no longer applies changes no other Doc pane", async () => {
+    const t = await booted(); // pane 1, the Plan page
+    t.x.openDoc("d2"); // pane 1 Plan → Doc; "/" records it
+    t.x.split(1); // pane 2: a second Doc pane, active
+    expect(t.views()).toEqual(["doc", "doc"]);
+    t.x.setPaneView(1, "write"); // pane 1 leaves the Doc session the record names
+    t.x.select(2);
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.browser.url()).toBe("/");
+    expect(t.views()).toEqual(["write", "doc"]);
+  });
+
+  it("each view session is unique per page load: a record written before a reload never matches a pane after it", async () => {
+    const browser = memoryBrowser("/");
+    const before = await booted({ browser, panes: [{ id: 1, view: "library", size: 1 }] });
+    browser.editHash("/#explore/2020X");
+    await flush();
+    before.x.setActiveView("plan"); // "#explore/2020X" records pane 1's Plan session of this page load
+    before.stop();
+    before.library.unmount();
+    const after = await booted({ browser });
+    expect(after.views()).toEqual(["plan"]);
+    browser.port.back();
+    await browser.settle();
+    await flush();
+    // no record applies; with no Doc pane anywhere the fallback is the one it always was: the active pane
+    expect(after.views()).toEqual(["library"]);
+  });
+});
+
+describe("Forward restores the view a Back parked, for any view (07 follow-up)", () => {
+  it("explore → Plan → Back → Forward puts the Plan page back, and Back again returns to the exploration", async () => {
+    const t = await booted({ panes: [{ id: 1, view: "library", size: 1 }] });
+    t.browser.editHash("/#explore/2020X");
+    await flush();
+    expect(t.x.setActiveView("plan")).toBe(true);
+    expect(t.browser.entries).toEqual(["/", "/#explore/2020X", "/"]);
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.views()).toEqual(["library"]);
+    t.browser.forward();
+    await t.browser.settle();
+    await flush();
+    expect(t.browser.url()).toBe("/");
+    expect(t.views()).toEqual(["plan"]);
+    // the same Plan session again: the exploration's record still applies
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.browser.url()).toBe("/#explore/2020X");
+    expect(t.views()).toEqual(["library"]);
+    expect(t.library.explores).toEqual(["2020X", "2020X", "2020X"]);
+  });
+
+  it("graph → Write → Back → Forward puts the Writer back", async () => {
+    const t = await booted({ panes: [{ id: 1, view: "library", size: 1 }] });
+    t.x.openArgumentGraph("w1");
+    await flush();
+    expect(t.x.setActiveView("write")).toBe(true);
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.views()).toEqual(["library"]);
+    expect(t.library.open.get(1)).toBe("w1");
+    t.browser.forward();
+    await t.browser.settle();
+    await flush();
+    expect(t.browser.url()).toBe("/");
+    expect(t.views()).toEqual(["write"]);
+  });
+
+  it("a parking that is void (its pane closed) leaves Forward as it was: no pane changes", async () => {
+    const t = await booted({
+      panes: [
+        { id: 1, view: "library", size: 1 },
+        { id: 2, view: "write", size: 1 },
+      ],
+      activeId: 1,
+    });
+    t.browser.editHash("/#explore/2020X");
+    await flush();
+    t.x.setActiveView("plan");
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.views()).toEqual(["library", "write"]);
+    t.x.close(1); // the parked pane goes away (no entry is written for a close)
+    t.browser.forward();
+    await t.browser.settle();
+    await flush();
+    expect(t.browser.url()).toBe("/");
+    expect(t.views()).toEqual(["write"]);
+  });
+
+  it("a parked Plan session is not a Doc session: a Doc address does not take that pane", async () => {
+    const t = await booted({
+      panes: [
+        { id: 1, view: "library", size: 1 },
+        { id: 2, view: "write", size: 1 },
+      ],
+      activeId: 1,
+    });
+    t.browser.editHash("/#explore/2020X");
+    await flush();
+    t.x.setActiveView("plan");
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    t.x.select(2);
+    t.browser.pop("/doc/d2");
+    await flush();
+    expect(t.views()).toEqual(["library", "doc"]);
+  });
+});
+
+describe("the Copilot's page actions that switch a pane leave an exploration or a graph the same way (04 follow-up)", () => {
+  /** A Plan page adapter whose action needs a Plan pane (`any`): with none the active pane is switched to it. */
+  const planPage = (): PaneAdapter => ({
+    page: "plan",
+    status: () => "ready" as never,
+    context: () => ({}),
+    handles: (action) => (action as { action: string }).action === "plan_test_action",
+    needsPane: () => "any",
+    timeouts: { readyMs: 0, applyMs: 0 },
+  });
+  const action = { action: "plan_test_action" } as never;
+
+  it("from an exploration: a new entry with the plain URL, the guard asked with origin agent, and Back returns to the exploration", async () => {
+    const t = await booted({ panes: [{ id: 1, view: "library", size: 1 }], pages: [planPage()] });
+    t.browser.editHash("/#explore/2020X");
+    await flush();
+    const before = t.leave.asks.length;
+    await t.x.runViewAction(action);
+    expect(t.views()).toEqual(["plan"]);
+    expect(t.leave.asks.slice(before)).toEqual([{ view: "library", paneId: 1, origin: "agent" }]);
+    expect(t.browser.entries).toEqual(["/", "/#explore/2020X", "/"]);
+    t.browser.port.back();
+    await t.browser.settle();
+    await flush();
+    expect(t.views()).toEqual(["library"]);
+    expect(t.library.explores).toEqual(["2020X", "2020X"]);
+  });
+
+  it("from a graph with an unsaved draft: leave_blocked, nothing changes and no entry is written", async () => {
+    const t = await booted({ panes: [{ id: 1, view: "library", size: 1 }], pages: [planPage()] });
+    t.x.openArgumentGraph("w1");
+    await flush();
+    t.leave.answer((view, _paneId, origin) => !(view === "library" && origin === "agent"));
+    expect(await t.x.runViewAction(action)).toEqual({ ok: false, detail: "leave_blocked" });
+    expect(t.views()).toEqual(["library"]);
+    expect(t.browser.entries).toEqual(["/", "/#argument/w1"]);
+    t.leave.answer(() => true);
+    await t.x.runViewAction(action);
+    expect(t.browser.entries).toEqual(["/", "/#argument/w1", "/"]);
+  });
+});
+
+describe("chains of Back and Forward, and fallbacks with nothing left to take (04–07 review)", () => {
+  const step = async (t: Awaited<ReturnType<typeof booted>>, dir: "back" | "fwd") => {
+    if (dir === "back") t.browser.port.back();
+    else t.browser.forward();
+    await t.browser.settle();
+    await flush();
+    return [t.browser.url(), ...t.views()].join(" ");
+  };
+
+  it("explore → Plan → Doc: Back, Back, Forward, Forward, Back, Back walk the same screens both ways", async () => {
+    const t = await booted({ panes: [{ id: 1, view: "library", size: 1 }] });
+    t.browser.editHash("/#explore/2020X");
+    await flush();
+    t.x.setActiveView("plan");
+    t.x.openDoc("d2");
+    const log = [[t.browser.url(), ...t.views()].join(" ")];
+    for (const d of ["back", "back", "fwd", "fwd", "back", "back"] as const) log.push(await step(t, d));
+    expect(log).toEqual([
+      "/doc/d2 doc",
+      "/ plan",
+      "/#explore/2020X library",
+      "/ plan",
+      "/doc/d2 doc",
+      "/ plan",
+      "/#explore/2020X library",
+    ]);
+  });
+
+  it("two panes that each left an exploration: Back ×3 and Forward ×3 put each pane's view back", async () => {
+    const t = await booted({
+      panes: [
+        { id: 1, view: "library", size: 1 },
+        { id: 2, view: "library", size: 1 },
+      ],
+      activeId: 1,
+    });
+    t.browser.editHash("/#explore/X1");
+    await flush();
+    t.x.setPaneView(1, "plan");
+    t.x.select(2);
+    t.browser.editHash("/#explore/Y2");
+    await flush();
+    t.x.setPaneView(2, "write");
+    const log = [[t.browser.url(), ...t.views()].join(" ")];
+    for (const d of ["back", "back", "back", "fwd", "fwd", "fwd"] as const) log.push(await step(t, d));
+    expect(log).toEqual([
+      "/ plan write",
+      "/#explore/Y2 plan library",
+      "/ plan library",
+      "/#explore/X1 library library",
+      "/ plan library",
+      "/#explore/Y2 plan library",
+      "/ plan write",
+    ]);
+  });
+
+  it("a graph's void record with only another Doc pane left: that Doc pane is not taken; the address names the graph, the screen keeps the Doc", async () => {
+    const t = await booted({
+      panes: [
+        { id: 1, view: "library", size: 1 },
+        { id: 2, view: "plan", size: 1 },
+      ],
+      activeId: 2,
+    });
+    t.x.setActiveView("doc");
+    t.x.openArgumentGraph("w1");
+    await flush();
+    t.x.setPaneView(1, "write");
+    t.x.close(1);
+    expect(await step(t, "back")).toBe("/#argument/w1 doc");
+    expect(t.leave.asks.filter((a) => a.view === "doc")).toEqual([]);
+    expect(t.library.opens.filter((o) => o.workId === "w1")).toHaveLength(1); // only the first open
+  });
+
+  it("an exploration's void record with only another Doc pane left: the same", async () => {
+    const t = await booted({
+      panes: [
+        { id: 1, view: "library", size: 1 },
+        { id: 2, view: "plan", size: 1 },
+      ],
+      activeId: 2,
+    });
+    t.x.setActiveView("doc");
+    t.x.select(1);
+    t.browser.editHash("/#explore/2020X");
+    await flush();
+    t.x.setPaneView(1, "write");
+    t.x.close(1);
+    expect(await step(t, "back")).toBe("/#explore/2020X doc");
+    expect(t.library.explores).toEqual(["2020X"]);
+  });
+
+  it("a graph's void record naming a pane that is not active: that pane becomes the Library page and the active pane stays active", async () => {
+    const t = await booted({
+      panes: [
+        { id: 1, view: "library", size: 1 },
+        { id: 2, view: "plan", size: 1 },
+      ],
+      activeId: 1,
+    });
+    t.x.openArgumentGraph("w1");
+    await flush();
+    t.x.setPaneView(1, "write");
+    t.x.setPaneView(1, "mail"); // by hand: the record on the graph's entry is void
+    t.x.select(2);
+    t.x.setActiveView("doc"); // pane 2 is a Doc pane now, and active
+    expect(await step(t, "back")).toBe("/#argument/w1 library doc");
+    expect(t.x.getState().activeId).toBe(2);
+    expect(t.library.open.get(1)).toBe("w1");
+  });
+
+  it("a late yes to a switch away from the graph writes nothing over an entry the graph's own refusal pushed back at the same address", async () => {
+    const t = await booted({ panes: [{ id: 1, view: "library", size: 1 }] });
+    t.x.openArgumentGraph("w1");
+    await flush();
+    t.leave.lateFor("library");
+    expect(t.x.setActiveView("plan")).toBe(false); // the switch's question is open
+    t.browser.pop("/"); // a Back while it is open: the graph's own question pushes its address back (a new entry, same address)
+    expect(t.browser.entries).toEqual(["/", "/#argument/w1", "/", "/#argument/w1"]);
+    t.leave.late[0]!(true); // the switch's yes
+    await flush();
+    expect(t.views()).toEqual(["plan"]);
+    expect(t.browser.entries).toEqual(["/", "/#argument/w1", "/", "/#argument/w1"]);
   });
 });
 
