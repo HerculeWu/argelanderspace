@@ -3,6 +3,7 @@ import {
   resolveGlobalDirs,
   resolveLogDir,
   resolveRecentProjectsPath,
+  resolveShelfDir,
   resolveTutorialProgressPath,
   resolveUserBinDir,
 } from "@argelanderspace/infra";
@@ -17,6 +18,8 @@ describeUserDirsGuard(() => {
     "recent projects": resolveRecentProjectsPath(),
     // The tutorial progress (in-app-tutorial ticket 18).
     "tutorial progress": resolveTutorialProgressPath(),
+    // The Shelf (shelf ticket 01): no test reads or writes the real one.
+    Shelf: resolveShelfDir(),
     // The command-line tool's launcher (desktop-app ticket 24): no test writes a real executable directory.
     "user executables": resolveUserBinDir(),
     "CLI launcher": cliLauncherFile(),

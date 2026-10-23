@@ -43,6 +43,7 @@ export * from "./reader-ops.js";
 export * from "./settings-api.js";
 export * from "./settings-change.js";
 export * from "./settings-schema.js";
+export * from "./shelf.js";
 export * from "./tex-ir.js";
 export * from "./text-doc.js";
 export * from "./text-ops.js";

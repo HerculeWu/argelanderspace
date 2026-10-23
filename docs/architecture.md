@@ -93,6 +93,36 @@ config.toml 的 `data_dir` 只接受相对路径，写绝对路径是配置错�
 
 TexDocIr 直接落盘，含 source/meta 身份、references/bib/refsManifest/citationsByBlock 和原生 text/math/cite/xref segments。旧 Document 桥与双轨 occurrences 已删除。`/api/paper/:id/ir` 只服务 LaTeX IR；`/description` 的格式是显式描述，不能替代正文一致性证明。PDF `GET /pdf/snapshot` 验证 owner、实际原件 hash 和 annotation sidecar；`GET /pdf` 返回受同一固定 hash 校验的原始 Buffer，Web 再校验收到的 bytes 并将那份 buffer 交给 EmbedPDF。PDF hash 已知不同返回 409，不归档/重绑或重写用户数据；损坏 metadata/annotations 返回 500并保留原 bytes。reading-position 独立校验；其损坏/缺失以snapshot中的明确 progress error表示，正文仍可读但不假称位置已恢复，且不写空替代文件。EmbedPDF worker 的 WASM URL 由 Vite 本地资产解析成**绝对同源 URL**后再交给 blob worker（相对 URL 按 blob 基址解析会卡在 loading）；font fallback 关闭。产品错误层以 10 秒 timeout 收束 worker/WASM 异步无响应（它不能抢占同步 CPU/WASM 阻塞，不声称此类情况的硬时限）；部署若加 CSP，至少需允许 `worker-src blob:` 与 `script-src 'wasm-unsafe-eval'`。旧 raw GET `/api/paper/:id` 已删除，不能与同路径的新 DELETE 混淆；旧无 version 文档需要重摄入，不再投影。
 
+**文献仓的存储**（shelf 票 01，[ADR 0013](adr/0013-shelf-copy-not-global-library.md)，契约见 [contracts](contracts.md)「文献仓」；contracts `shelf.ts` 定条目格式、跨版本不变的信封与「Doc 带哪些文件」，infra `shelf/store.ts` 是存储）。目录在全局数据目录下（`resolveShelfDir()`，已进三个包的隔离守卫目录表），本层从不读写任何项目 dataDir：`put` 收上层已读出、已筛选好的字节，`read` 交回字节。
+
+```text
+<全局数据目录>/shelf/
+├── shelf.lock/                    跨进程写锁（proper-lockfile）
+├── entries/<条目 id>.r<rev>/      一个条目；条目 id 是 32 位随机十六进制，替换时沿用
+│   ├── entry.json                 条目清单（format 1）
+│   ├── docs/<doc id>/<相对路径>   该 Doc 的文件，相对路径与项目 output/<doc id>/ 下相同
+│   ├── annotations/<doc id>.json  该 Doc 的标注副本（只在带了标注时有）
+│   ├── argument-graph.json        论证图文件原样字节（可选）
+│   └── note.md                    Work 笔记 UTF-8（可选）
+├── staging/                       正在写的条目，读者不看
+└── trash/                         正在移除的条目，读者不看
+```
+
+- **信封（以后各版不变）**：锁目录 `shelf/shelf.lock/`，所有写入（加入、替换、删除、清理）都持有它；条目目录名 `entries/<32 位十六进制 id>.r<正整数 rev>`，`entries/` 下其他名字不是条目；同一 id 有多个目录时取 rev 最高的为条目，较低的是替换留下的旧目录，只有在最高者是写入方自己格式的完整条目时才在锁内清掉；`entry.json` 顶层的 `format`、`entry_id`、`rev`（与目录名一致）；`staging/` 是正在写的、`trash/` 是正在移除的，读者都不看，持锁写入方可清空 trash 与一小时以前的 staging。这样旧版本能列出、删除新版本写的条目，不同版本的工作台可以同时写。
+- **条目清单**：`format`（本版本 1）、`entry_id`、`rev`（新建为 1，每次替换 +1）、`added_at`（替换也算一次新加入）、`source`（来源项目的绝对路径与 Work id）、`identity`（DOI、去版本号的 arXiv、OpenAlex 短号，规范化同 Library；arXiv 的 DataCite DOI 记作 arXiv 号）、`bibliography`（书目快照：Work 的书目字段，不含 `SHELF_EXCLUDED_WORK_FIELDS`，存储层拒收）、`docs`（按 Work 顺序，第一个是来源项目里的主 Doc；每个含 id、种类 latex/pdf/text、字节数、对文件列表的 SHA-256、逐文件 `path`/`bytes`/`sha256`、标注副本 `{count, bytes, sha256}` 或 null）、`argument_graph`、`note`（各为 `{bytes, sha256}` 或 null）。
+- **书目快照排除的字段**：id、doc_ids（取入时重建）、cite_key（按目标项目重新分配）、tags、label、read、star、note（另作可选项），以及「这个 Work 何时、如何进入本项目」的项目语境：`added_at`、`origin`（ingested/manual/graph-node/bib）、`acquisition`（全文获取计划，`ingested_doc` 写的是本项目的 Doc id，目标项目的库构建会重算）。`resolution`（书目数据由哪个来源给出）保留：它是书目数据本身的出处。
+- **不设索引文件**：列表逐个读 `entries/` 下的清单（体积由清单记的字节数相加，不 hash），文献仓是人手挑的文献、条目数有限；少一个要与条目保持一致的文件，就少一种「索引与条目不符」的损坏。
+- **LaTeX Doc 带 `<id>.json` 与 `assets/`，略去 `src/` 与 `build/`**：阅读、标注指纹与图片只用 IR 和 `assets/`；`src/` 和 `build/`（aux/bbl/latexmk 中间产物、插桩事件流）在 IR 生成后没有读者，重新摄入会重新取源或解包并先清空 `src/`；两者常比 IR 大得多。PDF Doc 带 `<id>.json` 与 `original.pdf`，工作台标注 sidecar 作为该 Doc 的标注副本（不是 Doc 文件），`reading-position.json` 不带。文本 Doc 带 `text-source.json`、已生成的 `<id>.json`（没有也合法）与 `assets/`。规则只有一处：contracts `shelfDocFileAllowed` / `shelfDocRequiredFiles`，加入按它挑文件，存储层按它拒收，取入按原相对路径写回。
+- **接口**（infra `createShelfStore({dir?})`，全部异步；目录每次调用只解析一次）：
+  - `list()`：每条的 `status`——`ok`（带清单）、`incompatible`（声明的 format 与尽力读出的标题）、`damaged`（原因类别，如 `manifest_missing`、`manifest_not_a_file`、`manifest_invalid`）、`unreadable`（权限、I/O 等系统错误，带 errno code；不是损坏，条目可能完好，界面不得按「已损坏」提示删除，删除照样允许）——以及 `rev`、`bytes`；单条有问题不抛错。
+  - `findByIdentity({doi, arxiv, openalex})`：只在本版本格式的条目里按这三者匹配（无这三者不做同一篇判断）。
+  - `verify(id, {rev?})` / `read(id, {rev?})`：逐文件核对大小与 SHA-256，并要求目录里没有清单外的文件；`read` 交回核对过的字节；系统错误抛 `ShelfIoError`（带 code），不报成损坏或不存在。
+  - `put(input, {mode:"new"} | {mode:"replace", targets:[{entryId, rev}, …]})`：新建时，已有同一篇的条目（可能不止一个）回 `identity_taken`，列出每个条目及其当前 rev；替换的 `targets` 必须恰好是锁内重新算出的全部同一篇条目、各在其 rev，否则回 `identity_taken`（带当前集合）、`rev_mismatch {entryId, currentRev}` 或 `not_found {entryId}`；任一 target 是看不懂的格式回 `incompatible`；已损坏的条目身份未知，不算同一篇，只能删除（作为 target 回 `damaged {entryId, problem}`）；任一条目读不了（系统错误）时 `put` 抛 `ShelfIoError`，不当它是另一篇，免得不经确认建出重复条目。新条目沿用第一个 target 的 id（rev = 其 rev+1），其余 target 在新条目就位后移除。等锁超时回 `busy`；写入中途锁不再属于自己回 `lock_lost`（`written` 为 null 表示什么都没改）。
+  - `delete(id, rev)`：任何状态的条目都可删（需确认由上层负责），结果另有 `busy`、`lock_lost`。
+  - 上层的确认握手比对的就是 `entryId`＋`rev`（多目标替换时是整组）。
+- **并发范围**：`put`、`delete` 在一个覆盖整个文献仓的跨进程锁内「读—比对 rev 与身份—写」，锁内只用异步 I/O，让 proper-lockfile 的刷新计时器照常跑。锁可能失去：另一进程在本进程的刷新停滞超过 stale（默认 15 秒）时把它当过期锁接管。所以每个读者会看到变化的步骤（改名就位、移入 trash）之前都核对锁仍属自己——proper-lockfile 报告 compromised，或本进程的计时器停滞超过 stale 的一半时先等刷新计时器跑一轮再看；锁已失去就停下、删掉暂存、回 `lock_lost`，并且不再 release（release 会删掉别人的锁目录）。条目整个写在 `staging/` 下（文件 fsync），改名成一个还没有的名字 `<id>.r<rev>` 就位，所以要么整条出现、要么不出现；替换在新条目就位之后才把旧目录改名进 `trash/` 再删（先移被取代的低 rev 再移当前的，免得旧内容重新露面）；删除同样先改名进 `trash/`。就位前失败：删掉暂存目录（删除失败不盖住原错误），已有条目一字节不动；就位后移除旧目录失败：读者总取同一 id 的最高 rev，下一次写入时清掉——但多目标替换中第一个以外的 target 若没移除成功，会作为另一条目继续在列表里，下次加入同一篇时随 `identity_taken` 再出现。锁内每次写入先清 `trash/`、超过一小时的 `staging/` 与已被取代的旧目录（最高 rev 不是本版本完整条目的 id 整组不动）。**读不加锁**：就位后的文件不再原地改写，读者要么读到清单所写的字节，要么发现文件没了，这时再看一次目录以区分「刚被替换／删除」（`changed`/`not_found`，未指定 rev 时改读新 rev）与损坏。
+- **版本**：清单 `format` 不是 1 的条目只出现在列表（`incompatible`），`read`/`verify` 拒绝，替换拒绝，清理不碰它这个 id 的任何目录；只有删除会移除它。
+
 ### Settings 的 schema、两种读取与按行修改（desktop-app 票 09）
 
 本节是 `config.toml` 的键表、读取方式与修改方式的权威位置。票 09 只交付这几样底层能力；HTTP 接口、设置页、文件监视、`serve` 启动改用宽松读取和 `[ui]` 的使用是票 10 接上的，见下一小节[设置接口、文件监视与界面偏好](#设置接口文件监视与界面偏好desktop-app-票-10)；`contact_email` 自票 11 起发给 Crossref 与 OpenAlex（见「联系邮箱」）。`tex_dir` 自票 13 起是 TeX 查找的第一级（见下文「外部程序探测与环境检查」）。
@@ -484,7 +514,7 @@ pnpm workspace，ESM-only，TypeScript strict + noUncheckedIndexedAccess，Biome
 |---|---|
 | contracts | Zod 数据/REST/WS 契约，canonical annotation text 与 Writer 序列化纯函数，web runtime 可用；Job 的 payload 约定在 `job-payload.ts`（五种提交写法的判别式 `JobPayload` 与宽松读取的 `jobTarget`，`Job.payload` 在线上与磁盘上仍是 `unknown`），document busy 的判别值在 `document-busy.ts`（`DOCUMENT_BUSY`，抛出时以 `conflict: "busy"` 标记），设置修改中不需要文件的判定与拒绝顺序在纯函数 module `settings-change.ts`（见[设置接口、文件监视与界面偏好](#设置接口文件监视与界面偏好desktop-app-票-10)） |
 | core | tex facts/source/fuse/IR 编排；文档展示与引用；library store/seed/graph/build；acquire/upload；plans/annotations/writer store、导出和预览 |
-| infra | workspace/compile/instrument/figures/ingest；arXiv 抓取解包；ADS/Crossref/OpenAlex、config（`AppConfig` 由 contracts 的 settings schema 推导，只在类型上；dataDir 链与端口链在 `config-chain.ts` 的 `dataDirOf` / `portOf`，见[数据与配置](#数据与配置)）、zip、pyjson 缓存兼容；Writer opt-in 编译缓存；全局目录、凭据存储、Mail 协议、桌面应用命令行工具的启动脚本（`cli-launcher.ts`，票 24）；用户日志模块 `log/`（字段种类与隐私规则、logger、日志目录与文件、进程级异常的观察），server 与桌面宿主共用，见[用户日志](#用户日志) |
+| infra | workspace/compile/instrument/figures/ingest；arXiv 抓取解包；ADS/Crossref/OpenAlex、config（`AppConfig` 由 contracts 的 settings schema 推导，只在类型上；dataDir 链与端口链在 `config-chain.ts` 的 `dataDirOf` / `portOf`，见[数据与配置](#数据与配置)）、zip、pyjson 缓存兼容；Writer opt-in 编译缓存；全局目录、凭据存储、Mail 协议、桌面应用命令行工具的启动脚本（`cli-launcher.ts`，票 24）；文献仓存储（`shelf/store.ts`，shelf 票 01，见[数据与配置](#数据与配置)「文献仓的存储」）；用户日志模块 `log/`（字段种类与隐私规则、logger、日志目录与文件、进程级异常的观察），server 与桌面宿主共用，见[用户日志](#用户日志) |
 | server | REST/SPA/images/WS、jobs/watcher、领域锁、DocMutationRegistry、Writer single-flight/drain；`createApp` 与 `createNoProjectServer` 都从受保护的 Hono 底座 `protected-app.ts` 起（先 `logRequests`、再 cors），路由经它发的注册器 `ProtectedRoutes` 注册：写方法默认受跨站守卫、豁免须写明理由，GET 须声明才受守卫，子路由按前缀守除 GET 外的方法，来源规则与 `/ws` 共用一份（见[Web 与同步](#web-与同步)）；用户日志的事件目录（声明每个事件字段的事件表，见[用户日志](#用户日志)）与请求记录在 `log.ts`（一个只做记录的请求中间件，由底座最先注册，不给主应用装 `onError`，未处理的异常仍由 Hono 的默认处理应答；`serve` 才打开日志文件）；Copilot 一次运行可得的 tool 由注册表 `copilot-tool-registry` 一张表给出（各 tool 的开放条件、取共享宿主上下文的哪些字段、系统提示开关；session 的 tools、footprint 的工具集与 `copilot.tool_called` 的工具名枚举都由它推出）；Copilot 各 tool 的调用生命周期（operationId/journal 三态、begin/done）与真人确认请求流程（unsupported/declined/expired）统一在 `copilot-tool-kit`（论证图的 `argument` 工具在 `copilot-argument-tool`，其整理方法在 `copilot-argument-guide`，整图替换/清空的确认 kind 是 `replace_argument_graph`，见 [argument-graph](argument-graph.md)「Copilot」），tool 只决定调哪个业务操作和卡片怎么描述；每种真人确认 kind 的卡片字段、持久记录、点击时三态检查（读不到→error、没了/变了→changed）、后台复查触发类别与绑定 view 规则各是 `copilot-confirmations/` 下一个 adapter，host 只做持久化、等待与 decide（卡片与 tool 所给 Request 的字段形状由 contracts 的卡片 schema 推出，adapter 里逐 kind 的卡片字段即 `object` 的构造、持久记录即从卡片到记录字段的投影；卡片与记录由 `copilot-confirmations/index.ts` 的 `confirmationCard` / `confirmationRecord` 统一组装）；Doc 删除在 `doc-delete`（DELETE 路由与 Copilot `delete_doc` 共用一个实例）；获取/上传/导入在 `acquisition`（上传、刷新、导入、arXiv 获取路由与 Copilot `library` 的获取/导入共用一个实例）；PDF 访问在 `pdf-access`（owner、验证过的原件 source、Copilot PDF 工作台标注写入、页面的两条 PDF 写入〔`PUT …/pdf/annotations` 的整份保存在 annotationLock 上，`PUT …/pdf/reading-position` 的阅读位置保存在 app 的 readingPositionLock 上；HTTP 的包装留在 app〕与两张失败映射；PDF 路由、描述、文本 Doc 的 PDF 区域渲染、`reader` 的 PDF 读/图/写与 arXiv 描述共用一个实例） |
 | cli | 命令注册、冻结 agent 输出、磁盘读写；不在帮助里的 `desktop-host` 入口（[桌面宿主](#桌面宿主desktop-app-票-17)，宿主本身在 server 的 `desktop-host.ts`） |
 | desktop | 不是 pnpm 包、不进四门：Tauri 的 Rust 工程（[桌面壳](#桌面壳desktop-app-票-20)），只开窗口、看管宿主、处理原生请求，没有业务逻辑 |
