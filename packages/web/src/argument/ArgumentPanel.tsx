@@ -258,7 +258,7 @@ export function ArgumentPanel({
           <div className="ref-detail-actions">
             {!editing && <ActionButton unstyled mode="icon" iconName="pencil" className="btn icon ghost" data-ui="edit-argument" label={t("argument.edit.edit")} tooltip={t("argument.edit.edit")} onClick={() => { setDraft(draftOf(argument)); setBase(argument); setBaseRev(graph.rev); setEditing(true); }} />}
             {!isNew && <ActionButton unstyled mode="icon" iconName="trash-2" className="btn icon ghost" data-ui="delete-argument" label={t("argument.edit.delete")} tooltip={t("argument.edit.delete")} disabled={busy} onClick={onDelete} />}
-            <ActionButton unstyled mode="icon" iconName="x" className="btn icon ghost" data-ui="close-argument-detail" label={t("argument.view.panel.close")} tooltip={t("argument.view.panel.close")} onClick={onClose} />
+            <ActionButton unstyled mode="icon" iconSize="small" iconName="x" className="btn icon ghost" data-ui="close-argument-detail" label={t("argument.view.panel.close")} tooltip={t("argument.view.panel.close")} onClick={onClose} />
           </div>
         </div>
 

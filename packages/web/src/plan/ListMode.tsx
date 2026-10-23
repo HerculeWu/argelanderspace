@@ -180,7 +180,7 @@ export function ListMode({ plan, today, cb, onCompletedExpanded, onController }:
             >
               <div className="plan-list-group-head">
                 {isDone ? (
-                  <ActionButton unstyled mode="icon" iconName={doneOpen ? "chevron-down" : "chevron-right"} label={t("plan.list.toggleCompleted")} tooltip={t("plan.list.toggleCompleted")} className="plan-list-fold" data-ui="toggle-completed-tasks" aria-expanded={doneOpen} onClick={() => setDoneOpen((o) => !o)} />
+                  <ActionButton unstyled mode="icon" iconSize="small" iconName={doneOpen ? "chevron-down" : "chevron-right"} label={t("plan.list.toggleCompleted")} tooltip={t("plan.list.toggleCompleted")} className="plan-list-fold" data-ui="toggle-completed-tasks" aria-expanded={doneOpen} onClick={() => setDoneOpen((o) => !o)} />
                 ) : (
                   <StatusDot status={g.key} />
                 )}

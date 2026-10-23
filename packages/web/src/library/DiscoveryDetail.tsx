@@ -111,7 +111,7 @@ export function DiscoveryDetail({
                 <Icon name="external-link" cls="ico-sm" />
               </a>
             </Tooltip>
-            <ActionButton unstyled mode="icon" iconName="x" className="btn icon ghost" label={t("common.close")} tooltip={t("common.close")} onClick={onClose} data-testid="close-discovery-detail" data-ui="close-discovery-detail" />
+            <ActionButton unstyled mode="icon" iconSize="small" iconName="x" className="btn icon ghost" label={t("common.close")} tooltip={t("common.close")} onClick={onClose} data-testid="close-discovery-detail" data-ui="close-discovery-detail" />
           </div>
         </div>
 

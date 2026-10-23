@@ -278,7 +278,7 @@ export function ExploreMode({
   return (
     <div className="explore-root" data-ui="discovery-view">
       <div className="explore-header" data-ui="discovery-header">
-        <ActionButton unstyled mode="icon" iconName="arrow-left" className="btn icon ghost" label={t("explore.backLibrary")} tooltip={t("explore.backLibrary")} data-testid="back-to-library" data-ui="return-to-library" onClick={onExit} />
+        <ActionButton unstyled mode="icon" iconSize="small" iconName="arrow-left" className="btn icon ghost" label={t("explore.backLibrary")} tooltip={t("explore.backLibrary")} data-testid="back-to-library" data-ui="return-to-library" onClick={onExit} />
         <div className="explore-context">
           <div className="explore-eyebrow">
             <span>{t("shell.nav.library")}</span>
@@ -293,8 +293,8 @@ export function ExploreMode({
           <span className="history-count mono">
             {explore.index + 1} / {explore.sessions.length}
           </span>
-          <ActionButton unstyled mode="icon" iconName="chevron-left" className="btn icon ghost" label={t("explore.prev")} tooltip={t("explore.prev")} data-testid="explore-history-back" data-ui="discovery-back" disabled={explore.index <= 0 || !!explore.loading} onClick={() => explore.step(-1)} />
-          <ActionButton unstyled mode="icon" iconName="chevron-right" className="btn icon ghost" label={t("explore.next")} tooltip={t("explore.next")} data-testid="explore-history-forward" data-ui="discovery-forward" disabled={explore.index >= explore.sessions.length - 1 || !!explore.loading} onClick={() => explore.step(1)} />
+          <ActionButton unstyled mode="icon" iconSize="small" iconName="chevron-left" className="btn icon ghost" label={t("explore.prev")} tooltip={t("explore.prev")} data-testid="explore-history-back" data-ui="discovery-back" disabled={explore.index <= 0 || !!explore.loading} onClick={() => explore.step(-1)} />
+          <ActionButton unstyled mode="icon" iconSize="small" iconName="chevron-right" className="btn icon ghost" label={t("explore.next")} tooltip={t("explore.next")} data-testid="explore-history-forward" data-ui="discovery-forward" disabled={explore.index >= explore.sessions.length - 1 || !!explore.loading} onClick={() => explore.step(1)} />
         </div>
       </div>
 
@@ -402,7 +402,7 @@ export function ExploreMode({
             <div className="merge-note-bar" data-ui="discovery-graph-merges">
               <div className="merge-note-bar-head">
                 <strong>{t("library.graphMerge.title")}</strong>
-                <ActionButton unstyled mode="icon" iconName="x" className="btn icon ghost" label={t("library.graphMerge.dismiss")} tooltip={t("library.graphMerge.dismiss")} data-ui="dismiss-discovery-graph-merges" onClick={explore.dismissMergeNotes} />
+                <ActionButton unstyled mode="icon" iconSize="small" iconName="x" className="btn icon ghost" label={t("library.graphMerge.dismiss")} tooltip={t("library.graphMerge.dismiss")} data-ui="dismiss-discovery-graph-merges" onClick={explore.dismissMergeNotes} />
               </div>
               <MergeNoteList notes={explore.mergeNotes} uiId="discovery-graph-merge" />
             </div>
@@ -418,14 +418,14 @@ export function ExploreMode({
                 aria-label={t("explore.searchPlaceholder")}
               />
               {query && (
-                <ActionButton unstyled mode="icon" iconName="x" className="btn icon ghost" label={t("explore.clearSearch")} tooltip={t("explore.clearSearch")} data-ui="clear-discovery-search" onClick={() => setQuery("")} />
+                <ActionButton unstyled mode="icon" iconSize="small" iconName="x" className="btn icon ghost" label={t("explore.clearSearch")} tooltip={t("explore.clearSearch")} data-ui="clear-discovery-search" onClick={() => setQuery("")} />
               )}
             </div>
             <div style={{ flex: 1 }} />
             <span className="scope-chip mono">{t("explore.shown", { count: visible.length })}</span>
             <div className="mode-switch">
-              <ActionButton unstyled mode="icon" iconName="waypoints" label={t("explore.graphView")} tooltip={t("explore.graphView")} aria-pressed={display === "graph"} className={display === "graph" ? "on" : ""} data-testid="explore-graph-view" data-ui="show-discovery-graph" onClick={() => changeDisplay("graph")} />
-              <ActionButton unstyled mode="icon" iconName="list" label={t("explore.listView")} tooltip={t("explore.listView")} aria-pressed={display === "list"} className={display === "list" ? "on" : ""} data-testid="explore-list-view" data-ui="show-discovery-list" onClick={() => changeDisplay("list")} />
+              <ActionButton unstyled mode="icon" iconSize="small" iconName="waypoints" label={t("explore.graphView")} tooltip={t("explore.graphView")} aria-pressed={display === "graph"} className={display === "graph" ? "on" : ""} data-testid="explore-graph-view" data-ui="show-discovery-graph" onClick={() => changeDisplay("graph")} />
+              <ActionButton unstyled mode="icon" iconSize="small" iconName="list" label={t("explore.listView")} tooltip={t("explore.listView")} aria-pressed={display === "list"} className={display === "list" ? "on" : ""} data-testid="explore-list-view" data-ui="show-discovery-list" onClick={() => changeDisplay("list")} />
             </div>
           </div>
 
@@ -438,7 +438,7 @@ export function ExploreMode({
                 {errText(explore.error)}
               </span>
               <ActionButton unstyled mode="text" className="btn" label={t("explore.retry")} tooltip={t("explore.retry")} data-ui="retry-discovery" onClick={() => void explore.startExplore(explore.error!.seed)}>{t("explore.retry")}</ActionButton>
-              <ActionButton unstyled mode="icon" iconName="x" className="btn icon ghost" label={t("common.close")} tooltip={t("common.close")} data-testid="explore-error-dismiss" data-ui="dismiss-discovery-error" onClick={explore.dismissError} />
+              <ActionButton unstyled mode="icon" iconSize="small" iconName="x" className="btn icon ghost" label={t("common.close")} tooltip={t("common.close")} data-testid="explore-error-dismiss" data-ui="dismiss-discovery-error" onClick={explore.dismissError} />
             </div>
           )}
 

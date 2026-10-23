@@ -31,6 +31,7 @@ export function PinBtn({ focused, onToggle }: { focused: boolean; onToggle: () =
     <ActionButton
       unstyled
       mode="icon"
+      iconSize="small"
       iconName="pin"
       label={focused ? t("plan.bits.unpin") : t("plan.bits.pin")}
       tooltip={focused ? t("plan.bits.unpin") : t("plan.bits.pin")}

@@ -331,6 +331,7 @@ export function TextAnnotations() {
           <ActionButton
             unstyled
             mode="icon"
+            iconSize="small"
             iconName="highlighter"
             label={t("annotation.action.add")}
             tooltip={t("annotation.action.addTooltip")}

@@ -216,6 +216,7 @@ export function Dialog({
           </div>
           <ActionButton
             mode="icon"
+            iconSize="small"
             iconName="x"
             label={closeLabel}
             tooltip={closeLabel}

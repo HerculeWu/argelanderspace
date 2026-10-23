@@ -119,6 +119,7 @@ function AnnotationEntry({ a }: { a: Annotation }) {
         {(overflows || expanded) && (
           <ActionButton
             mode="icon"
+            iconSize="small"
             iconName={expanded ? "collapse" : "expand"}
             label={t(expanded ? "annotation.action.collapseBody" : "annotation.action.expandBody")}
             tooltip={t(expanded ? "annotation.action.collapseBody" : "annotation.action.expandBody")}
@@ -129,6 +130,7 @@ function AnnotationEntry({ a }: { a: Annotation }) {
         )}
         <ActionButton
           mode="icon"
+          iconSize="small"
           iconName="pencil"
           label={t("annotation.action.edit")}
           tooltip={t("annotation.action.edit")}
@@ -138,6 +140,7 @@ function AnnotationEntry({ a }: { a: Annotation }) {
         />
         <ActionButton
           mode="icon"
+          iconSize="small"
           iconName="trash-2"
           label={t("annotation.action.delete")}
           tooltip={t("annotation.action.delete")}

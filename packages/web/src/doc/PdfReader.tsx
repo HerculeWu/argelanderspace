@@ -97,7 +97,7 @@ export function PdfReader({ docId, description }: { docId: string; description: 
   if (state.phase === "error") {
     const message = state.code === "changed" ? t("pdfReader.changed") : state.code === "timeout" ? t("pdfReader.engineTimeout") : state.code === "engine" ? t("pdfReader.engineFailed") : t("pdfReader.failed");
     return <div className="pdf-reader-state" data-ui="pdf-error" role={errorDismissed ? "status" : "alert"}>
-      {!errorDismissed && <ActionButton mode="icon" iconName="x" variant="ghost" label={t("pdfReader.dismiss")} tooltip={t("pdfReader.dismiss")} data-ui="dismiss-pdf-error" onClick={() => setErrorDismissed(true)} />}
+      {!errorDismissed && <ActionButton mode="icon" iconSize="small" iconName="x" variant="ghost" label={t("pdfReader.dismiss")} tooltip={t("pdfReader.dismiss")} data-ui="dismiss-pdf-error" onClick={() => setErrorDismissed(true)} />}
       <p>{errorDismissed ? t("pdfReader.failedSummary") : message}</p>
       <ActionButton unstyled mode="text" data-ui="retry-pdf" label={t("pdfReader.retry")} tooltip={t("pdfReader.retry")} onClick={() => { setErrorDismissed(false); setAttempt((value) => value + 1); }}>{t("pdfReader.retry")}</ActionButton>
     </div>;
@@ -543,7 +543,7 @@ function LoadedPdfDocument({
     {(positionUi.failed || positionUi.saving || positionUi.saved) && <ReadingPositionWarning busy={positionUi.saving} retry={() => { void positionWriter.retry(); }} failed={positionUi.failed} saved={positionUi.saved} failure={positionUi.failure} />}
     <div ref={layoutRef} className="pdf-reader-layout" data-ui="pdf-reader" data-ui-key={docId} data-reading-position-state={positionUi.failed ? positionUi.failure ?? "failed" : positionUi.saving ? "saving" : positionUi.saved ? "saved" : "idle"}>
       <aside className={`pdf-side pdf-side-left${leftCollapsed ? " collapsed" : ""}`} aria-label={t("pdfReader.outlineTitle")} data-ui="pdf-outline-panel">
-        <ActionButton unstyled mode="icon" iconName={leftCollapsed ? "panel-left-open" : "panel-left-close"} className="pdf-panel-toggle" data-ui="toggle-pdf-outline" aria-expanded={!leftCollapsed} label={t(leftCollapsed ? "pdfReader.expandOutline" : "pdfReader.collapseOutline")} tooltip={t(leftCollapsed ? "pdfReader.expandOutline" : "pdfReader.collapseOutline")} onClick={() => setLeftCollapsed((value) => !value)} />
+        <ActionButton unstyled mode="icon" iconSize="small" iconName={leftCollapsed ? "panel-left-open" : "panel-left-close"} className="pdf-panel-toggle" data-ui="toggle-pdf-outline" aria-expanded={!leftCollapsed} label={t(leftCollapsed ? "pdfReader.expandOutline" : "pdfReader.collapseOutline")} tooltip={t(leftCollapsed ? "pdfReader.expandOutline" : "pdfReader.collapseOutline")} onClick={() => setLeftCollapsed((value) => !value)} />
         {!leftCollapsed && <div className="pdf-side-content"><h2>{t("pdfReader.outlineTitle")}</h2>{outlineEntries.length ? <OutlineList items={outlineEntries} onSelect={(id) => {
           markUserNavigation();
           const target = outlineTargets.get(id);
@@ -559,11 +559,11 @@ function LoadedPdfDocument({
           {toolFrameOpen && <div className="pdf-annotation-toolbar-frame" role="toolbar" aria-label={t("pdfReader.annotationTools")} data-ui="pdf-annotation-toolbar-frame">
             <PdfAnnotationToolButtons mode={selectionMode} blocked={sessionState.blocked || !session.isWritable()} onMode={changeSelectionMode} />
             {selectionMode === "highlight" && <PdfHighlightColorPicker value={nextHighlightColor} onChange={setNextHighlightColor} disabled={sessionState.blocked || !session.isWritable()} ui="pdf-new-highlight-color" />}
-            <ActionButton unstyled mode="icon" iconName="message-square-plus" data-ui="add-pdf-page-comment" disabled={sessionState.blocked || !session.isWritable()} label={t("pdfReader.commentThisPage")} tooltip={t("pdfReader.commentThisPage")} onClick={() => {
+            <ActionButton unstyled mode="icon" iconSize="small" iconName="message-square-plus" data-ui="add-pdf-page-comment" disabled={sessionState.blocked || !session.isWritable()} label={t("pdfReader.commentThisPage")} tooltip={t("pdfReader.commentThisPage")} onClick={() => {
               changeSelectionMode("read"); setRightCollapsed(false);
               setCommentRequest({ kind: "page_comment", pageIndex: currentPageIndex, key: ++commentRequestKey.current });
             }} />
-            <ActionButton unstyled mode="icon" iconName="book-open" data-ui="add-pdf-document-comment" disabled={sessionState.blocked || !session.isWritable()} label={t("pdfReader.addDocumentComment")} tooltip={t("pdfReader.addDocumentComment")} onClick={() => {
+            <ActionButton unstyled mode="icon" iconSize="small" iconName="book-open" data-ui="add-pdf-document-comment" disabled={sessionState.blocked || !session.isWritable()} label={t("pdfReader.addDocumentComment")} tooltip={t("pdfReader.addDocumentComment")} onClick={() => {
               changeSelectionMode("read"); setRightCollapsed(false);
               setCommentRequest({ kind: "document_comment", key: ++commentRequestKey.current });
             }} />
@@ -600,7 +600,7 @@ function LoadedPdfDocument({
         <PdfTextTools onSelection={setSelectionView} docId={docId} session={session} pages={pages} blocked={sessionState.blocked} kind={selectionMode === "highlight" || selectionMode === "underline" || selectionMode === "strikeout" ? selectionMode : null} highlightColor={nextHighlightColor} />
       </div>
       <aside className={`pdf-side pdf-side-right${rightCollapsed ? " collapsed" : ""}`} aria-label={t("pdfReader.annotationsTitle")} data-ui="pdf-annotations-panel">
-        <ActionButton unstyled mode="icon" iconName={rightCollapsed ? "chevron-left" : "chevron-right"} className="pdf-panel-toggle" data-ui="toggle-pdf-annotations" aria-expanded={!rightCollapsed} label={t(rightCollapsed ? "pdfReader.expandAnnotations" : "pdfReader.collapseAnnotations")} tooltip={t(rightCollapsed ? "pdfReader.expandAnnotations" : "pdfReader.collapseAnnotations")} onClick={() => setRightCollapsed((value) => !value)} />
+        <ActionButton unstyled mode="icon" iconSize="small" iconName={rightCollapsed ? "chevron-left" : "chevron-right"} className="pdf-panel-toggle" data-ui="toggle-pdf-annotations" aria-expanded={!rightCollapsed} label={t(rightCollapsed ? "pdfReader.expandAnnotations" : "pdfReader.collapseAnnotations")} tooltip={t(rightCollapsed ? "pdfReader.expandAnnotations" : "pdfReader.collapseAnnotations")} onClick={() => setRightCollapsed((value) => !value)} />
         <div className="pdf-side-content" hidden={rightCollapsed}><h2>{t("pdfReader.annotationsTitle")}</h2><PdfAnnotationsPanel
           session={session}
           currentPage={currentPageIndex}
@@ -853,7 +853,7 @@ function PdfTextTools({ docId, session, pages, blocked, kind, highlightColor, on
   return <>
     {selectedText && <div className="pdf-text-tools" data-ui="pdf-selection-tools" role="toolbar" aria-label={t("pdfReader.textSelectionTools")}>
       <blockquote>{selectedText}</blockquote>
-      <ActionButton unstyled mode="icon" iconName="copy" data-ui="copy-pdf-selection" label={t("pdfReader.copySelection")} tooltip={t("pdfReader.copySelection")} onClick={() => void copySelection()} />
+      <ActionButton unstyled mode="icon" iconSize="small" iconName="copy" data-ui="copy-pdf-selection" label={t("pdfReader.copySelection")} tooltip={t("pdfReader.copySelection")} onClick={() => void copySelection()} />
       {copyStatus && <span role="status">{copyStatus}</span>}
     </div>}
     {status && <div className="pdf-text-tools" data-ui="pdf-text-selection-status" role="status" aria-live="polite">{status}</div>}
@@ -922,7 +922,7 @@ function ReadingPositionWarning({ busy, retry, failed, saved, failure }: { busy:
           : "pdfReader.positionSaveFailed";
   return (
     <div className="pdf-position-warning" data-ui="pdf-reading-position-notice" role={failed && !dismissed ? "alert" : "status"}>
-      {failed && !dismissed && <ActionButton mode="icon" iconName="x" variant="ghost" label={t("pdfReader.dismissPositionError")} tooltip={t("pdfReader.dismissPositionError")} data-ui="dismiss-pdf-position-error" onClick={() => setDismissed(true)} />}
+      {failed && !dismissed && <ActionButton mode="icon" iconSize="small" iconName="x" variant="ghost" label={t("pdfReader.dismissPositionError")} tooltip={t("pdfReader.dismissPositionError")} data-ui="dismiss-pdf-position-error" onClick={() => setDismissed(true)} />}
       <span>{failed ? t(dismissed ? summaryMessage : failureMessage) : busy ? t("pdfReader.positionSaving") : saved ? t("pdfReader.positionSaved") : ""}</span>
       {failed && <ActionButton unstyled mode="text" disabled={busy} data-ui="retry-pdf-reading-position" label={t(failure === "revision-conflict" ? "pdfReader.positionCheckAgain" : "pdfReader.retry")} tooltip={t(failure === "revision-conflict" ? "pdfReader.positionCheckAgain" : "pdfReader.retry")} onClick={retry}>{t(failure === "revision-conflict" ? "pdfReader.positionCheckAgain" : "pdfReader.retry")}</ActionButton>}
     </div>

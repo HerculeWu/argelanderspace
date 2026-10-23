@@ -39,7 +39,7 @@ export function WModal({
       <div className="w-modal" data-ui={uiId} style={{ width }} onClick={(e) => e.stopPropagation()}>
         <div className="w-modal-head">
           <strong>{title}</strong>
-          <ActionButton unstyled mode="icon" iconName="x" className="btn icon ghost" data-ui="close-writer-dialog" label={t("common.close")} tooltip={t("common.close")} onClick={onClose} />
+          <ActionButton unstyled mode="icon" iconSize="small" iconName="x" className="btn icon ghost" data-ui="close-writer-dialog" label={t("common.close")} tooltip={t("common.close")} onClick={onClose} />
         </div>
         <div className="w-modal-body">{children}</div>
         {footer && <div className="w-modal-foot">{footer}</div>}
@@ -137,7 +137,7 @@ export function InfoModal({
               setAuthors((as) => as.map((x, j) => (j === i ? { ...x, email: e.target.value } : x)))
             }
           />
-          <ActionButton unstyled mode="icon" iconName="x" className="w-small-x" data-ui="remove-author"
+          <ActionButton unstyled mode="icon" iconSize="small" iconName="x" className="w-small-x" data-ui="remove-author"
             label={t("common.delete")} tooltip={t("common.delete")}
             onClick={() => setAuthors((as) => as.filter((_, j) => j !== i))} />
         </div>
@@ -156,7 +156,7 @@ export function InfoModal({
             value={a}
             onChange={(e) => setAffils((xs) => xs.map((x, j) => (j === i ? e.target.value : x)))}
           />
-          <ActionButton unstyled mode="icon" iconName="x" className="w-small-x" data-ui="remove-affiliation"
+          <ActionButton unstyled mode="icon" iconSize="small" iconName="x" className="w-small-x" data-ui="remove-affiliation"
             label={t("common.delete")} tooltip={t("common.delete")}
             onClick={() => setAffils((xs) => xs.filter((_, j) => j !== i))} />
         </div>

@@ -48,6 +48,7 @@ export function StatusBtn({ status, onCycle }: { status: TaskStatus; onCycle?: (
     <ActionButton
       unstyled
       mode="icon"
+      iconSize="small"
       iconName={STATUS_ICON[status]}
       label={label}
       tooltip={label}
@@ -78,6 +79,7 @@ export function DrawerStatusRow({
           key={s}
           unstyled
           mode="icon"
+          iconSize="small"
           iconName={STATUS_ICON[s]}
           label={statusLabel(s)}
           tooltip={statusLabel(s)}

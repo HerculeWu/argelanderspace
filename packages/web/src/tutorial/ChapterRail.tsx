@@ -120,6 +120,7 @@ export function ChapterRail(props: ChapterRailProps) {
         <ActionButton
           unstyled
           mode="icon"
+          iconSize="small"
           iconName={collapsed ? "panel-left-open" : "panel-left-close"}
           className="btn icon ghost"
           data-ui="toggle-tutorial-chapters"

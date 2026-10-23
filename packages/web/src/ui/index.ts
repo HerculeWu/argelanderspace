@@ -8,4 +8,4 @@ export { InlineMessage } from "./InlineMessage";
 export { Select, type SelectOption, type SelectProps } from "./Select";
 export { Tabs, type TabItem, type TabsProps } from "./Tabs";
 export { Tooltip, TooltipBubble, useSingleTooltip } from "./Tooltip";
-export type { ActionStyle, IconSize } from "./action-style";
+export { sizedIcon, type ActionStyle, type IconSize } from "./action-style";

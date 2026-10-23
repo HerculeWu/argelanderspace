@@ -43,6 +43,7 @@ export function AnnBlockEdge({ id }: { id: string }) {
       <ActionButton
         unstyled
         mode="icon"
+        iconSize="small"
         iconName="message-square-plus"
         label={t("annotation.action.add")}
         tooltip={t("annotation.action.add")}

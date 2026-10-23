@@ -583,7 +583,7 @@ function LibraryBody({
   return (
     <div className="view-row" data-ui="library-view" ref={rootRef}>
       {sideFolded ? (
-        <ActionButton unstyled mode="icon" iconName="panel-left-open" label={t("library.side.expand")} tooltip={t("library.side.expand")} data-ui="expand-library-sidebar" className="lib-rail" onClick={() => setSide(false)} />
+        <ActionButton unstyled mode="icon" iconSize="small" iconName="panel-left-open" label={t("library.side.expand")} tooltip={t("library.side.expand")} data-ui="expand-library-sidebar" className="lib-rail" onClick={() => setSide(false)} />
       ) : (
         <div className="lib-side" data-ui="library-sidebar">
           <div className="lib-import" data-ui="library-import">
@@ -652,7 +652,7 @@ function LibraryBody({
           <div className="lib-side-head">
             <span className="lib-side-title">{t("library.side.title")}</span>
             <span className="lib-side-count mono">{list.length}</span>
-            <ActionButton unstyled mode="icon" iconName="panel-left-close" label={t("library.side.collapse")} tooltip={t("library.side.collapse")} data-ui="collapse-library-sidebar" className="lib-side-collapse" onClick={() => setSide(true)} />
+            <ActionButton unstyled mode="icon" iconSize="small" iconName="panel-left-close" label={t("library.side.collapse")} tooltip={t("library.side.collapse")} data-ui="collapse-library-sidebar" className="lib-side-collapse" onClick={() => setSide(true)} />
           </div>
           <div className="side-reflist" data-ui="work-list">
             {list.map((r) => {

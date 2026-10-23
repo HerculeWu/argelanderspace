@@ -5,7 +5,7 @@ import type { PdfAnnotation } from "@argelanderspace/contracts";
 import { PdfAnnotationSession } from "./PdfAnnotationSession";
 import { PdfHighlightColorPicker } from "./PdfHighlightColorPicker";
 import { mdWithMath } from "../lib/mdWithMath";
-import { ActionButton, Button, getConfiguredIcon, InlineMessage } from "../ui";
+import { ActionButton, Button, getConfiguredIcon, InlineMessage, sizedIcon } from "../ui";
 import { docRouteUrl } from "../lib/deeplink";
 import { copyPlainText } from "./copy-text";
 
@@ -31,6 +31,7 @@ export function PdfAnnotationToolButtons({ mode, blocked, onMode }: {
     {tools.map((tool) => <ActionButton
       key={tool.mode}
       mode="icon"
+      iconSize="small"
       iconName={tool.icon}
       data-ui={tool.ui}
       aria-pressed={mode === tool.mode}
@@ -125,8 +126,8 @@ export function PdfAnnotationsPanel({ session, currentPage, onNavigatePage, comm
   }, [state.drafts]);
   return <div className="pdf-workbench-panel" data-ui="pdf-annotation-workbench">
     <div className="pdf-workbench-history" data-ui="pdf-annotation-history">
-      <ActionButton unstyled mode="icon" iconName="undo-2" className="pdf-icon-action" disabled={!state.canUndo || blocked} data-ui="undo-pdf-annotation" label={t("pdfReader.undo")} tooltip={t("pdfReader.undo")} onClick={session.undo} />
-      <ActionButton unstyled mode="icon" iconName="corner-up-right" className="pdf-icon-action" disabled={!state.canRedo || blocked} data-ui="redo-pdf-annotation" label={t("pdfReader.redo")} tooltip={t("pdfReader.redo")} onClick={session.redo} />
+      <ActionButton unstyled mode="icon" iconSize="small" iconName="undo-2" className="pdf-icon-action" disabled={!state.canUndo || blocked} data-ui="undo-pdf-annotation" label={t("pdfReader.undo")} tooltip={t("pdfReader.undo")} onClick={session.undo} />
+      <ActionButton unstyled mode="icon" iconSize="small" iconName="corner-up-right" className="pdf-icon-action" disabled={!state.canRedo || blocked} data-ui="redo-pdf-annotation" label={t("pdfReader.redo")} tooltip={t("pdfReader.redo")} onClick={session.redo} />
     </div>
     {newComment && <section className="pdf-workbench-new-comment" data-ui="pdf-comment-draft" data-ui-instance={newComment.id}>
       <h3>{t("pdfReader.newComment")}{newComment.kind === "page_comment" ? ` · ${t("pdfReader.pageTarget", { page: (newComment.pageIndex ?? 0) + 1 })}` : ` · ${t("pdfReader.documentTarget")}`}</h3>
@@ -153,7 +154,7 @@ export function PdfAnnotationsPanel({ session, currentPage, onNavigatePage, comm
           <Button data-ui="discard-pdf-pending" disabled={state.saving} onClick={discard}>{t("pdfReader.discardPending")}</Button>
         </div>
       : <InlineMessage tone={failure.kind === "busy" ? "warning" : "danger"} title={t(failure.kind === "busy" ? "pdfReader.saveBusy" : "pdfReader.saveFailed")}>
-          <ActionButton mode="icon" iconName="x" data-ui="dismiss-pdf-save-error" variant="ghost" label={t("pdfReader.dismissSaveError")} tooltip={t("pdfReader.dismissSaveError")} onClick={session.dismissFailure} />
+          <ActionButton mode="icon" iconSize="small" iconName="x" data-ui="dismiss-pdf-save-error" variant="ghost" label={t("pdfReader.dismissSaveError")} tooltip={t("pdfReader.dismissSaveError")} onClick={session.dismissFailure} />
           <span>{failure.detail}</span>
           <details><summary>{t("pdfReader.saveFailureDetails")}</summary><code>{failure.kind} · {failure.detail}</code></details>
           <Button data-ui="retry-pdf-annotation-save" disabled={state.saving} onClick={() => void session.retry()}>{t("pdfReader.retrySave")}</Button>
@@ -171,7 +172,7 @@ export function PdfAnnotationsPanel({ session, currentPage, onNavigatePage, comm
           <button type="button" className="pdf-workbench-target" data-ui="navigate-pdf-annotation" aria-label={`${kindName} · ${targetTitle}`} disabled={blocked || annotation.kind === "document_comment"} onClick={() => {
             if (typeof targetPage === "number") onNavigatePage(targetPage);
           }}>
-            {getConfiguredIcon(targetIcon, "navigate-pdf-annotation")}
+            {sizedIcon(getConfiguredIcon(targetIcon, "navigate-pdf-annotation"), "small")}
             <span>{targetTitle}</span>
           </button>
           {annotation.kind === "highlight" && <PdfHighlightColorPicker value={(annotation.color ?? "#ffd228") as import("@argelanderspace/contracts").PdfHighlightColor} disabled={blocked || !session.isWritable()} ui="pdf-highlight-color-picker" onChange={(color) => updateHighlightColor(annotation, color)} />}
@@ -207,10 +208,10 @@ export function PdfAnnotationsPanel({ session, currentPage, onNavigatePage, comm
           {editing[annotation.id] ? <>
             <Button disabled={blocked || !hasDraft || !draft.trim()} data-ui="save-pdf-annotation-body" onClick={() => { session.saveBody(annotation.id); }}>{t("pdfReader.saveBody")}</Button>
             <Button disabled={state.saving || state.pending > 0} data-ui="cancel-pdf-annotation-edit" onClick={() => { session.clearDraft(annotation.id); setEditing((value) => ({ ...value, [annotation.id]: false })); }}>{t("common.cancel")}</Button>
-          </> : <ActionButton unstyled mode="icon" iconName="pencil" className="pdf-icon-action" disabled={blocked} data-ui="edit-pdf-annotation-body" label={t("pdfReader.editComment")} tooltip={t("pdfReader.editComment")} onClick={() => { session.setDraft(annotation.id, annotation.body); setEditing((value) => ({ ...value, [annotation.id]: true })); }} />}
+          </> : <ActionButton unstyled mode="icon" iconSize="small" iconName="pencil" className="pdf-icon-action" disabled={blocked} data-ui="edit-pdf-annotation-body" label={t("pdfReader.editComment")} tooltip={t("pdfReader.editComment")} onClick={() => { session.setDraft(annotation.id, annotation.body); setEditing((value) => ({ ...value, [annotation.id]: true })); }} />}
           {hasDraft && <Button data-ui="copy-pdf-draft" onClick={() => copyDraft(annotation.id, annotation.body)}>{t("pdfReader.copyDraft")}</Button>}
-          <ActionButton unstyled mode="icon" iconName="copy" className="pdf-icon-action" data-ui="copy-pdf-annotation-link" label={t("pdfReader.copyAnnotationLink")} tooltip={t("pdfReader.copyAnnotationLink")} onClick={() => void copyAnnotationLink(annotation.id)} />
-          <ActionButton unstyled mode="icon" iconName="trash-2" className="pdf-icon-action" disabled={blocked || !session.isWritable()} data-ui="delete-pdf-annotation" label={t("pdfReader.deleteAnnotation")} tooltip={t("pdfReader.deleteAnnotation")} onClick={() => session.remove(annotation.id)} />
+          <ActionButton unstyled mode="icon" iconSize="small" iconName="copy" className="pdf-icon-action" data-ui="copy-pdf-annotation-link" label={t("pdfReader.copyAnnotationLink")} tooltip={t("pdfReader.copyAnnotationLink")} onClick={() => void copyAnnotationLink(annotation.id)} />
+          <ActionButton unstyled mode="icon" iconSize="small" iconName="trash-2" className="pdf-icon-action" disabled={blocked || !session.isWritable()} data-ui="delete-pdf-annotation" label={t("pdfReader.deleteAnnotation")} tooltip={t("pdfReader.deleteAnnotation")} onClick={() => session.remove(annotation.id)} />
         </div>
       </article>;
     })}

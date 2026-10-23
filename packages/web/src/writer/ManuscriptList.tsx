@@ -56,7 +56,7 @@ function NewManuscriptModal({
       <div className="w-modal" data-ui="new-manuscript-dialog" style={{ width: 440 }} onClick={(e) => e.stopPropagation()}>
         <div className="w-modal-head">
           <strong>{t("writer.newModal.title")}</strong>
-          <ActionButton unstyled mode="icon" iconName="x" className="btn icon ghost" data-ui="close-new-manuscript" label={t("common.close")} tooltip={t("common.close")} onClick={onClose} />
+          <ActionButton unstyled mode="icon" iconSize="small" iconName="x" className="btn icon ghost" data-ui="close-new-manuscript" label={t("common.close")} tooltip={t("common.close")} onClick={onClose} />
         </div>
         <div className="w-modal-body">
           <div className="w-field">
@@ -231,7 +231,7 @@ export function ManuscriptList({
                   <td>{fmtUpdated(m.updated_at, i18n.language)}</td>
                   <td>
                     <ActionButton
-                      unstyled mode="icon" iconName="trash-2" className="btn icon ghost"
+                      unstyled mode="icon" iconSize="small" iconName="trash-2" className="btn icon ghost"
                       data-ui="delete-manuscript"
                       label={t("common.delete")} tooltip={t("common.delete")}
                       onClick={(e) => {

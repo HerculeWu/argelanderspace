@@ -695,7 +695,7 @@ export function RefDetail({
         {tab === "bib" && (
           <div className="bib-block" data-ui="work-bibtex">
             <div className="bib-toolbar">
-              <ActionButton mode="icon" iconName="copy" data-ui="copy-work-bibtex" variant="ghost" label={t("library.detail.copy.bib")} tooltip={t("library.detail.copy.bib")} onClick={() => void copyText("bib", bibtexOf(r))} />
+              <ActionButton mode="icon" iconSize="small" iconName="copy" data-ui="copy-work-bibtex" variant="ghost" label={t("library.detail.copy.bib")} tooltip={t("library.detail.copy.bib")} onClick={() => void copyText("bib", bibtexOf(r))} />
             </div>
             <pre className="mono">{bibtexOf(r)}</pre>
           </div>
@@ -733,6 +733,7 @@ export function RefDetail({
               </ActionButton>
               <ActionButton
                 mode="icon"
+                iconSize="small"
                 iconName="file-up"
                 data-ui="gather-doc"
                 variant="ghost"
@@ -749,7 +750,7 @@ export function RefDetail({
                   <div key={notice.jobId} className="merge-note-bar" data-ui="task-graph-merges" data-ui-key={notice.jobId}>
                     <div className="merge-note-bar-head">
                       <strong>{t("library.graphMerge.title")}</strong>
-                      <ActionButton mode="icon" iconName="x" data-ui="dismiss-task-graph-merges" variant="ghost" label={t("library.graphMerge.dismiss")} tooltip={t("library.graphMerge.dismiss")} onClick={() => jobs.dismissMergeNotice(notice.jobId)} />
+                      <ActionButton mode="icon" iconSize="small" iconName="x" data-ui="dismiss-task-graph-merges" variant="ghost" label={t("library.graphMerge.dismiss")} tooltip={t("library.graphMerge.dismiss")} onClick={() => jobs.dismissMergeNotice(notice.jobId)} />
                     </div>
                     <MergeNoteList notes={notice.notes} uiId="task-graph-merge" />
                   </div>
@@ -761,7 +762,7 @@ export function RefDetail({
                 )}
                 {arxivPdfError && (
                   <InlineMessage uiId="arxiv-pdf-error" tone="danger" title={t("library.detail.arxivPdf.failedTitle")}>
-                    {!arxivPdf.dismissed && <ActionButton mode="icon" iconName="x" data-ui="dismiss-arxiv-pdf-error" variant="ghost" label={t("library.detail.arxivPdf.dismiss")} tooltip={t("library.detail.arxivPdf.dismiss")} onClick={arxivPdf.dismiss} />}
+                    {!arxivPdf.dismissed && <ActionButton mode="icon" iconSize="small" iconName="x" data-ui="dismiss-arxiv-pdf-error" variant="ghost" label={t("library.detail.arxivPdf.dismiss")} tooltip={t("library.detail.arxivPdf.dismiss")} onClick={arxivPdf.dismiss} />}
                     <p>{arxivPdf.dismissed ? t("library.detail.arxivPdf.failedSummary") : arxivPdfError}</p>
                     <ActionButton mode="text" data-ui="retry-arxiv-pdf" variant="ghost" label={t("library.detail.arxivPdf.retry")} tooltip={t("library.detail.arxivPdf.retry")} onClick={() => openAcquisition("pdf")}>{t("library.detail.arxivPdf.retry")}</ActionButton>
                   </InlineMessage>
@@ -778,7 +779,7 @@ export function RefDetail({
                   </InlineMessage>
                 ) : (
                   <InlineMessage tone="danger" title={t("library.detail.pdfUpload.failedTitle")}>
-                    <ActionButton mode="icon" iconName="x" data-ui="dismiss-pdf-upload-error" variant="ghost" label={t("library.detail.pdfUpload.dismiss")} tooltip={t("library.detail.pdfUpload.dismiss")} onClick={pdfUpload.dismiss} />
+                    <ActionButton mode="icon" iconSize="small" iconName="x" data-ui="dismiss-pdf-upload-error" variant="ghost" label={t("library.detail.pdfUpload.dismiss")} tooltip={t("library.detail.pdfUpload.dismiss")} onClick={pdfUpload.dismiss} />
                     <p>{pdfUploadError}</p>
                     <ActionButton mode="text" data-ui="retry-pdf-upload" variant="ghost" label={t("library.detail.pdfUpload.retry")} tooltip={t("library.detail.pdfUpload.retry")} onClick={() => openAcquisition("pdf-upload")}>{t("library.detail.pdfUpload.retry")}</ActionButton>
                   </InlineMessage>
@@ -815,7 +816,7 @@ export function RefDetail({
                 )}
                 {uploadErr && (
                   <InlineMessage uiId="latex-upload-error" tone="danger" title={t("library.detail.jobs.uploadFailed")}>
-                    {!zipUpload.dismissed && <ActionButton mode="icon" iconName="x" data-ui="dismiss-latex-upload-error" variant="ghost" label={t("library.detail.upload.dismiss")} tooltip={t("library.detail.upload.dismiss")} onClick={zipUpload.dismiss} />}
+                    {!zipUpload.dismissed && <ActionButton mode="icon" iconSize="small" iconName="x" data-ui="dismiss-latex-upload-error" variant="ghost" label={t("library.detail.upload.dismiss")} tooltip={t("library.detail.upload.dismiss")} onClick={zipUpload.dismiss} />}
                     <p>{zipUpload.dismissed ? t("library.detail.upload.failedSummary") : uploadErr}</p>
                     {!zipUpload.dismissed && mainDoc && <p>{t("library.detail.jobs.existingDocumentLink")}</p>}
                   </InlineMessage>
@@ -831,7 +832,7 @@ export function RefDetail({
                           : "library.detail.jobs.fetchFailed"
                     )}
                   >
-                    {!arxivSource.dismissed && <ActionButton mode="icon" iconName="x" data-ui="dismiss-arxiv-source-error" variant="ghost" label={t("library.detail.arxiv.dismiss")} tooltip={t("library.detail.arxiv.dismiss")} onClick={arxivSource.dismiss} />}
+                    {!arxivSource.dismissed && <ActionButton mode="icon" iconSize="small" iconName="x" data-ui="dismiss-arxiv-source-error" variant="ghost" label={t("library.detail.arxiv.dismiss")} tooltip={t("library.detail.arxiv.dismiss")} onClick={arxivSource.dismiss} />}
                     <p>{arxivSource.dismissed ? t("library.detail.arxiv.failedSummary") : arxivErr}</p>
                     {!arxivSource.dismissed && arxivErrCode === "arxiv_pdf_only" && (
                       <p>{t("library.detail.arxiv.pdfOnlyHint")}</p>
@@ -911,10 +912,11 @@ export function RefDetail({
                         >
                           <DocActionsToggle label={t("library.detail.files.actions")} />
                           <div className="ref-document-action-list" data-ui="doc-action-list">
-                            <ActionButton mode="icon" iconName="book-open" data-ui="open-doc" variant="ghost" label={t("library.detail.files.openDoc")} tooltip={t("library.detail.files.openDoc")} onClick={() => onOpenDoc(docId)} />
+                            <ActionButton mode="icon" iconSize="small" iconName="book-open" data-ui="open-doc" variant="ghost" label={t("library.detail.files.openDoc")} tooltip={t("library.detail.files.openDoc")} onClick={() => onOpenDoc(docId)} />
                             {!isMain && (
                               <ActionButton
                                 mode="icon"
+                                iconSize="small"
                                 iconName="check"
                                 data-ui="set-main-doc"
                                 variant="ghost"

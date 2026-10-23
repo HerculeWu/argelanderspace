@@ -357,7 +357,7 @@ function AnnotationToast() {
   return (
     <div className="ann-toast view-in" role="status" data-ui="latex-annotation-notice">
       <span>{ann.notice}</span>
-      <ActionButton unstyled mode="icon" iconName="x" label={t("common.close")} tooltip={t("common.close")} className="ann-toast-x" data-ui="dismiss-annotation-notice" onClick={ann.dismissNotice} />
+      <ActionButton unstyled mode="icon" iconSize="small" iconName="x" label={t("common.close")} tooltip={t("common.close")} className="ann-toast-x" data-ui="dismiss-annotation-notice" onClick={ann.dismissNotice} />
     </div>
   );
 }
@@ -368,6 +368,6 @@ function UndoFab() {
   const canUndo = useCanUndo();
   if (!canUndo) return null;
   return (
-    <ActionButton unstyled mode="icon" iconName="undo-2" label={t("doc.actions.undoNavigation")} tooltip={t("doc.actions.undoNavigation")} data-ui="undo-latex-navigation" className="undo-fab" onClick={store.undo} />
+    <ActionButton unstyled mode="icon" iconSize="small" iconName="undo-2" label={t("doc.actions.undoNavigation")} tooltip={t("doc.actions.undoNavigation")} data-ui="undo-latex-navigation" className="undo-fab" onClick={store.undo} />
   );
 }

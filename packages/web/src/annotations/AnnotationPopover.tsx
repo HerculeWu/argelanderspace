@@ -135,7 +135,7 @@ export function AnnotationPopover() {
         <span className="ann-popover-target" title={headLabel}>
           {headLabel}
         </span>
-        <ActionButton unstyled mode="icon" iconName="x" label={t("common.close")} tooltip={t("common.close")} className="btn icon ghost" data-ui="close-latex-annotation" onClick={ann.closePopover} />
+        <ActionButton unstyled mode="icon" iconSize="small" iconName="x" label={t("common.close")} tooltip={t("common.close")} className="btn icon ghost" data-ui="close-latex-annotation" onClick={ann.closePopover} />
       </div>
 
       {popover.mode === "create" && (
@@ -151,8 +151,8 @@ export function AnnotationPopover() {
             dangerouslySetInnerHTML={{ __html: mdWithMath(viewed.body, { safe: true }) }}
           />
           <div className="ann-popover-foot">
-            <ActionButton unstyled mode="icon" iconName="pencil" className="ann-editor-btn" label={t("annotation.action.edit")} tooltip={t("annotation.action.edit")} data-ui="edit-latex-annotation" disabled={!ann.canAnnotate} onClick={() => { controller.beginEdit(viewed); setEditSession(viewed); }} />
-            <ActionButton unstyled mode="icon" iconName="trash-2" className="ann-editor-btn danger" label={t("annotation.action.delete")} tooltip={t("annotation.action.delete")} data-ui="delete-latex-annotation" disabled={ann.busy} onClick={() => void ann.removeAnnotation(viewed.id)} />
+            <ActionButton unstyled mode="icon" iconSize="small" iconName="pencil" className="ann-editor-btn" label={t("annotation.action.edit")} tooltip={t("annotation.action.edit")} data-ui="edit-latex-annotation" disabled={!ann.canAnnotate} onClick={() => { controller.beginEdit(viewed); setEditSession(viewed); }} />
+            <ActionButton unstyled mode="icon" iconSize="small" iconName="trash-2" className="ann-editor-btn danger" label={t("annotation.action.delete")} tooltip={t("annotation.action.delete")} data-ui="delete-latex-annotation" disabled={ann.busy} onClick={() => void ann.removeAnnotation(viewed.id)} />
           </div>
         </>
       )}

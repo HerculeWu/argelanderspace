@@ -175,7 +175,7 @@ export function ImportDialog({
             <div className="plan-modal-title">{t(`library.importDialog.${mode}Title`)}</div>
             <div className="plan-modal-sub">{t(`library.importDialog.${mode}Sub`)}</div>
           </div>
-          <ActionButton unstyled mode="icon" iconName="x" className="btn icon ghost" data-ui="close-import" label={t("common.close")} tooltip={t("common.close")} onClick={close} />
+          <ActionButton unstyled mode="icon" iconSize="small" iconName="x" className="btn icon ghost" data-ui="close-import" label={t("common.close")} tooltip={t("common.close")} onClick={close} />
         </div>
         <div className="plan-modal-body">
           <div className="plan-field">

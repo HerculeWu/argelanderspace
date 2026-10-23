@@ -349,6 +349,7 @@ ul.doc-list li, ol.doc-list li { margin: 2px 0; }
 }
 .icon-btn:hover { color: var(--accent); border-color: var(--accent); }
 .icon-btn.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.icon-btn:has(> svg.ui-icon) { padding: 0 4px; } /* small18 artwork in place of the 14px glyph: keep the button box */
 
 .refcard-expand { border-top: 1px solid var(--line); padding: 10px; background: var(--panel-bg); font-family: var(--font-body); font-size: 14px; }
 .refcard-expand .fig-cap { font-family: var(--font-ui); }
@@ -378,6 +379,7 @@ ul.doc-list li, ol.doc-list li { margin: 2px 0; }
 .reader-col > .ui-tooltip-anchor { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); }
 .reader-col > .ui-tooltip-anchor .undo-fab { position: static; transform: none; }
 .undo-fab:hover { opacity: 0.88; }
+.undo-fab:has(> svg.ui-icon) { padding: 5px 12px; } /* small18 artwork in place of the 14px glyph: keep the button box */
 
 /* ---------- misc ---------- */
 .loading, .error { padding: 40px; font-family: var(--font-ui); color: var(--muted); }
@@ -471,6 +473,7 @@ ul.doc-list li, ol.doc-list li { margin: 2px 0; }
 .ann-editor-btn.primary:disabled { opacity: 0.45; cursor: default; filter: none; }
 .ann-editor-btn.danger:hover { color: var(--err); border-color: var(--err); }
 .ann-editor-btn svg { width: 13px; height: 13px; }
+.ann-editor-btn:has(> svg.ui-icon) { padding: 0 7.5px; } /* small18 artwork in place of the 13px glyph: keep the button box */
 
 /* Right-panel tabs: 引用 | 标注 */
 .right-tabs { display: flex; gap: 4px; margin: 0 0 10px; border-bottom: 1px solid var(--line); }

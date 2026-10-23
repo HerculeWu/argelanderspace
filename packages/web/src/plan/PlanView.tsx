@@ -582,6 +582,7 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
                     key={m.k}
                     unstyled
                     mode="icon"
+                    iconSize="small"
                     iconName={m.ic}
                     label={m.label}
                     tooltip={m.label}
@@ -719,7 +720,7 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
           <ActionButton unstyled mode="text" label={t("plan.undo.action")} tooltip={t("plan.undo.action")} className="plan-undo-btn" data-ui="undo-task-delete" onClick={undoDelete}>
             {t("plan.undo.action")}
           </ActionButton>
-          <ActionButton unstyled mode="icon" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} className="plan-undo-x" data-ui="dismiss-task-delete-undo" onClick={dismissUndo} />
+          <ActionButton unstyled mode="icon" iconSize="small" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} className="plan-undo-x" data-ui="dismiss-task-delete-undo" onClick={dismissUndo} />
         </div>
       )}
       {notice && <div className="plan-notice view-in" data-ui="plan-notice">{notice}</div>}

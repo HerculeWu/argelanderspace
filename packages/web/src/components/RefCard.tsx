@@ -70,6 +70,7 @@ export const RefCard = forwardRef<HTMLDivElement, Props>(function RefCard(
             {canExpand && (
               <ActionButton
                 mode="icon"
+                iconSize="small"
                 unstyled
                 iconName={expanded ? "minus" : "plus"}
                 label={t(expanded ? "components.referenceCard.collapse" : "components.referenceCard.expand")}
@@ -82,6 +83,7 @@ export const RefCard = forwardRef<HTMLDivElement, Props>(function RefCard(
             {canGoto && gotoId && (
               <ActionButton
                 mode="icon"
+                iconSize="small"
                 unstyled
                 iconName="corner-up-right"
                 label={t("components.referenceCard.jump")}

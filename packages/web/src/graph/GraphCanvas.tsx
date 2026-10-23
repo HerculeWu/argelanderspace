@@ -470,9 +470,9 @@ export function GraphCanvas({
       </div>
 
       <div className="graph-top-actions" data-ui="graph-actions">
-        <ActionButton unstyled mode="icon" iconName="text" className={"btn icon ghost hide-small" + (labelsOn ? " on" : "")} data-ui="toggle-graph-labels" label={t("graph.showLabels")} tooltip={t("graph.showLabels")} aria-pressed={labelsOn} onClick={() => setLabelsOn((v) => !v)} />
+        <ActionButton unstyled mode="icon" iconSize="small" iconName="text" className={"btn icon ghost hide-small" + (labelsOn ? " on" : "")} data-ui="toggle-graph-labels" label={t("graph.showLabels")} tooltip={t("graph.showLabels")} aria-pressed={labelsOn} onClick={() => setLabelsOn((v) => !v)} />
         {seedId && (
-          <ActionButton unstyled mode="icon" iconName="target" className="btn icon" label={t("graph.jumpSeed")} tooltip={t("graph.jumpSeed")} data-ui="focus-graph-seed" onClick={focusSeed} />
+          <ActionButton unstyled mode="icon" iconSize="small" iconName="target" className="btn icon" label={t("graph.jumpSeed")} tooltip={t("graph.jumpSeed")} data-ui="focus-graph-seed" onClick={focusSeed} />
         )}
       </div>
 

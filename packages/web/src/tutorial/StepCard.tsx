@@ -207,6 +207,7 @@ export function StepCard(props: StepCardProps) {
         <ActionButton
           unstyled
           mode="icon"
+          iconSize="small"
           iconName="x"
           className="btn icon ghost"
           data-ui="exit-tutorial"
@@ -236,6 +237,7 @@ export function StepCard(props: StepCardProps) {
             <ActionButton
               unstyled
               mode="icon"
+              iconSize="small"
               iconName="x"
               className="btn icon ghost"
               data-ui="dismiss-tutorial-progress-notice"

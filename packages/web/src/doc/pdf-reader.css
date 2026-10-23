@@ -93,6 +93,7 @@
 .pdf-reader-state button { min-height: 32px; padding: 4px 12px; border: 1px solid var(--border); border-radius: 5px; color: var(--text); background: var(--surface); cursor: pointer; }
 .pdf-text-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; max-width: min(520px, calc(100vw - 24px)); padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 4px 18px rgb(0 0 0 / 24%); }
 .pdf-text-tools blockquote { flex-basis: 100%; margin: 0; max-height: 3em; overflow: auto; white-space: pre-wrap; }
+[data-ui="copy-pdf-selection"] > svg.ui-icon { margin: -2px; } /* small18 artwork in place of the 14px glyph: keep the bare button box */
 .pdf-link-hit-layer { position: absolute; inset: 0; z-index: 2147483000; pointer-events: none; }
 .pdf-link-hit-layer .pdf-native-link { z-index: 2147483000; pointer-events: auto !important; }
 .pdf-native-link { position: absolute; border: 0; padding: 0; background: transparent; cursor: pointer; pointer-events: auto; }

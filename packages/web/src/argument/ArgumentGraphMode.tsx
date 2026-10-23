@@ -396,7 +396,7 @@ export function ArgumentGraphMode({
   return (
     <div className="explore-root" ref={rootRef} tabIndex={-1} style={{ outline: "none" }} data-ui="argument-graph-view" data-ui-key={workId} data-phase={state.phase}>
       <div className="explore-header" data-ui="argument-graph-header">
-        <ActionButton unstyled mode="icon" iconName="arrow-left" className="btn icon ghost" data-ui="argument-return-to-library" label={t("argument.view.back")} tooltip={t("argument.view.backTooltip")} onClick={exit} />
+        <ActionButton unstyled mode="icon" iconSize="small" iconName="arrow-left" className="btn icon ghost" data-ui="argument-return-to-library" label={t("argument.view.back")} tooltip={t("argument.view.backTooltip")} onClick={exit} />
         <div className="explore-context">
           <div className="explore-eyebrow">
             <span>{t("shell.nav.library")}</span>
@@ -424,6 +424,7 @@ export function ArgumentGraphMode({
             <ActionButton
               unstyled
               mode="icon"
+              iconSize="small"
               iconName="trash-2"
               className="btn icon ghost"
               data-ui="clear-argument-graph"
@@ -453,12 +454,12 @@ export function ArgumentGraphMode({
 
       <div className="view-row ag-view-row" data-layout={layout.panel} data-outline={layout.outlineFolded ? "folded" : "open"}>
         {hasArguments && graph && audit && (layout.outlineFolded ? (
-          <ActionButton unstyled mode="icon" iconName="panel-left-open" label={t("argument.view.outline.unfoldSide")} tooltip={t("argument.view.outline.unfoldSide")} data-ui="expand-argument-outline" className="lib-rail" onClick={() => setOutlineFolded(false)} />
+          <ActionButton unstyled mode="icon" iconSize="small" iconName="panel-left-open" label={t("argument.view.outline.unfoldSide")} tooltip={t("argument.view.outline.unfoldSide")} data-ui="expand-argument-outline" className="lib-rail" onClick={() => setOutlineFolded(false)} />
         ) : (
           <div className="lib-side wide" data-ui="argument-side">
             <div className="lib-side-head">
               <span className="lib-side-title ag-side-title">{t("argument.view.outline.title")}</span>
-              <ActionButton unstyled mode="icon" iconName="panel-left-close" label={t("argument.view.outline.foldSide")} tooltip={t("argument.view.outline.foldSide")} data-ui="collapse-argument-outline" className="lib-side-collapse" onClick={() => setOutlineFolded(true)} />
+              <ActionButton unstyled mode="icon" iconSize="small" iconName="panel-left-close" label={t("argument.view.outline.foldSide")} tooltip={t("argument.view.outline.foldSide")} data-ui="collapse-argument-outline" className="lib-side-collapse" onClick={() => setOutlineFolded(true)} />
             </div>
             <ArgumentOutline graph={graph} audit={audit} selectedId={selectedId} onSelect={choose} openState={outlineOpen} setOpenState={setOutlineOpen} />
           </div>

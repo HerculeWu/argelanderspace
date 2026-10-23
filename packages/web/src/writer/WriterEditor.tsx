@@ -719,7 +719,7 @@ export function WriterEditor({
       }}
     >
       <div className="w-topbar">
-        <ActionButton unstyled mode="icon" iconName="chevron-left" className="btn icon ghost" data-ui="return-to-manuscripts" label={t("writer.topbar.back")} tooltip={t("writer.topbar.back")} onClick={() => {
+        <ActionButton unstyled mode="icon" iconSize="small" iconName="chevron-left" className="btn icon ghost" data-ui="return-to-manuscripts" label={t("writer.topbar.back")} tooltip={t("writer.topbar.back")} onClick={() => {
           if (!dirtyRef.current) writeFailed.current = false;
           void flushSave().then(() => { if (!dirtyRef.current && !writeFailed.current) onBack(); });
         }} />
@@ -751,7 +751,7 @@ export function WriterEditor({
       {templateWarnings.length > 0 && !warningsDismissed && (
         <div className="w-note w-padded w-warnings" data-ui="writer-template-warning">
           <span>{t("writer.editor.templateWarnings", { warnings: templateWarnings.join("; ") })}</span>
-          <ActionButton unstyled mode="icon" iconName="x" className="btn icon ghost" data-ui="dismiss-template-warning" label={t("common.close")} tooltip={t("common.close")} onClick={() => setWarningsDismissed(true)} />
+          <ActionButton unstyled mode="icon" iconSize="small" iconName="x" className="btn icon ghost" data-ui="dismiss-template-warning" label={t("common.close")} tooltip={t("common.close")} onClick={() => setWarningsDismissed(true)} />
         </div>
       )}
 
@@ -763,7 +763,7 @@ export function WriterEditor({
       ) : null}
       <div className="w-main" data-ui="writer-layout">
         <aside data-ui="writer-outline-panel" className={"w-side left" + (leftCollapsed ? " collapsed" : "")}>
-          <ActionButton unstyled mode="icon" iconName={leftCollapsed ? "panel-left-open" : "panel-left-close"} className="w-panel-toggle"
+          <ActionButton unstyled mode="icon" iconSize="small" iconName={leftCollapsed ? "panel-left-open" : "panel-left-close"} className="w-panel-toggle"
             data-ui="toggle-writer-outline" label={t("writer.outline.title")} tooltip={t("writer.outline.title")}
             onClick={() => setLeftCollapsed((v) => !v)} />
           <span className="w-rail-label">{t("writer.outline.title")}</span>
@@ -806,7 +806,7 @@ export function WriterEditor({
                   <div className="w-cells-empty">
                     <p>{t("writer.editor.emptyCells")}</p>
                     <div className="w-add-row">
-                      <ActionButton unstyled mode="icon" iconName="plus" className="w-add-cell"
+                      <ActionButton unstyled mode="icon" iconSize="small" iconName="plus" className="w-add-cell"
                         data-add-index={0} data-ui="add-first-cell" label={t("writer.cell.addCell")} tooltip={t("writer.cell.addCell")}
                         onClick={(e) => openAddMenu(0, e)} />
                     </div>
@@ -821,7 +821,7 @@ export function WriterEditor({
                       ctx={ctx}
                     />
                     <div className="w-add-row">
-                      <ActionButton unstyled mode="icon" iconName="plus" className="w-add-cell"
+                      <ActionButton unstyled mode="icon" iconSize="small" iconName="plus" className="w-add-cell"
                         data-add-index={idx + 1} data-ui="add-cell-after" label={t("writer.cell.addCell")} tooltip={t("writer.cell.addCell")}
                         onClick={(e) => openAddMenu(idx + 1, e)} />
                     </div>
@@ -833,7 +833,7 @@ export function WriterEditor({
         </div>
 
         <aside data-ui="writer-reference-panel" className={"w-side right" + (rightCollapsed ? " collapsed" : "")}>
-          <ActionButton unstyled mode="icon" iconName="columns-2" className="w-panel-toggle"
+          <ActionButton unstyled mode="icon" iconSize="small" iconName="columns-2" className="w-panel-toggle"
             data-ui="toggle-writer-reference-panel" label={t("writer.tabs.references")} tooltip={t("writer.tabs.references")}
             onClick={() => setRightCollapsed((v) => !v)} />
           <span className="w-rail-label">{t("writer.tabs.references")}</span>

@@ -76,6 +76,7 @@ export function FinishCard({ desktop, yielded = false, onReview, onClose, onLeav
         <ActionButton
           unstyled
           mode="icon"
+          iconSize="small"
           iconName="x"
           className="btn icon ghost"
           data-ui="exit-tutorial"

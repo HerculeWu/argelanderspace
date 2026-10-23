@@ -1368,7 +1368,1786 @@
         "modifications": [
           "lucide-react 0.460.0 icon nodes as inline SVG with Lucide's default root attributes; React keys omitted; provenance recorded 2026-10-23 after an element-by-element match with the installed package"
         ]
+      },
+      "expand": {
+        "set": "dazzle-line-icons",
+        "file": "chevron-down.svg",
+        "originalHash": "20eb3fb9cbc974af084f83a6a2b7cb2f0c861e5048c864b324b43113e790acc1",
+        "normalizedHash": "8b1f9927e505ef0ff34b46bca8d2b741fcabc8607213140f8f725e1c2d28a03c",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
       }
+    },
+    "add-cell-after": {
+      "set": "dazzle-line-icons",
+      "file": "plus.svg",
+      "originalHash": "0bbfe14e3ce712a704c692f92a989612620142ec7aac8949a65c3cd54c2be136",
+      "normalizedHash": "7a529be4abdf82832557a5193683b558163aa9ff7a1b3cc9362d910df978dc2e",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "add-first-cell": {
+      "set": "dazzle-line-icons",
+      "file": "plus.svg",
+      "originalHash": "0bbfe14e3ce712a704c692f92a989612620142ec7aac8949a65c3cd54c2be136",
+      "normalizedHash": "7a529be4abdf82832557a5193683b558163aa9ff7a1b3cc9362d910df978dc2e",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "expand-reference-card": {
+      "plus": {
+        "set": "dazzle-line-icons",
+        "file": "plus.svg",
+        "originalHash": "0bbfe14e3ce712a704c692f92a989612620142ec7aac8949a65c3cd54c2be136",
+        "normalizedHash": "7a529be4abdf82832557a5193683b558163aa9ff7a1b3cc9362d910df978dc2e",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      },
+      "minus": {
+        "set": "dazzle-line-icons",
+        "file": "minus.svg",
+        "originalHash": "33784ff796533b2898a5e188fadb516beb83c201a40d816ca8cf3b6fd7539afa",
+        "normalizedHash": "3e6f607a258a8a607df0fbb4e67a007e366866a237846308642e1225fc34c863",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      }
+    },
+    "insert-cite-key": {
+      "set": "dazzle-line-icons",
+      "file": "plus.svg",
+      "originalHash": "0bbfe14e3ce712a704c692f92a989612620142ec7aac8949a65c3cd54c2be136",
+      "normalizedHash": "7a529be4abdf82832557a5193683b558163aa9ff7a1b3cc9362d910df978dc2e",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "insert-crossref": {
+      "set": "dazzle-line-icons",
+      "file": "plus.svg",
+      "originalHash": "0bbfe14e3ce712a704c692f92a989612620142ec7aac8949a65c3cd54c2be136",
+      "normalizedHash": "7a529be4abdf82832557a5193683b558163aa9ff7a1b3cc9362d910df978dc2e",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "add-pdf-document-comment": {
+      "set": "dazzle-line-icons",
+      "file": "book-open.svg",
+      "originalHash": "97b1613181cc81f1b2e08a8015a7b1d0016afaa758da8fccfd037aa63fea2842",
+      "normalizedHash": "ffe08c39f01b667b3cbd9bef6a7dfa0e781c35c64cb5e3b1487873f9fd29930f",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "navigate-pdf-annotation": {
+      "book-open": {
+        "set": "dazzle-line-icons",
+        "file": "book-open.svg",
+        "originalHash": "97b1613181cc81f1b2e08a8015a7b1d0016afaa758da8fccfd037aa63fea2842",
+        "normalizedHash": "ffe08c39f01b667b3cbd9bef6a7dfa0e781c35c64cb5e3b1487873f9fd29930f",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      },
+      "message-square-plus": {
+        "set": "dazzle-line-icons",
+        "file": "message-square-plus.svg",
+        "originalHash": "6a4df7e609942eda9bd37bf2bdbc2a4f51324c51a08732438940e97199d79733",
+        "normalizedHash": "3b699b5a9af96336b73e7c3ff9ae295e4aff99df81a1ef0513928b81ba65e890",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      },
+      "target": {
+        "set": "dazzle-line-icons",
+        "file": "crosshair.svg",
+        "originalHash": "ec1d7bea8cfeb4b65f4726c34d1ee481c826955f0762ccf4a5180ca58cdf0288",
+        "normalizedHash": "f515cd0f8804f7ec31ff5562f6aea350ba77b4bdc157d4964d3802ea7ada1dce",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      },
+      "highlight-mark": {
+        "set": "dazzle-line-icons",
+        "file": "marker.svg",
+        "originalHash": "5e116751fe78d14bd2307564fe7b0ad2abb0a6adab2fc2309e6d1bc74c896e8a",
+        "normalizedHash": "98993cdcfc1e4e0c4ff79beeda7a759f7ac7c09a9ac77f41b18ab93eecffcbbb",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      },
+      "strikeout-mark": {
+        "set": "dazzle-line-icons",
+        "file": "strikethrough.svg",
+        "originalHash": "47400da7b7afeb5e57619eb79222b113ab9d7dac5509a08dc87b2c889797f809",
+        "normalizedHash": "09bed14dcc0305d816af8c1baa53366b9b2ad2365453081c60b1f55379c49366",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      },
+      "underline-mark": {
+        "set": "dazzle-line-icons",
+        "file": "underline.svg",
+        "originalHash": "697cce538bc989e16615db81d6165e9a2ea800ce47489b218144dfb711e94b90",
+        "normalizedHash": "2f1996fd9052ebc49cdafa5ea15d489f9d0bc4df64ab9ec23beca1bc64916f93",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      }
+    },
+    "open-doc": {
+      "set": "dazzle-line-icons",
+      "file": "book-open.svg",
+      "originalHash": "97b1613181cc81f1b2e08a8015a7b1d0016afaa758da8fccfd037aa63fea2842",
+      "normalizedHash": "ffe08c39f01b667b3cbd9bef6a7dfa0e781c35c64cb5e3b1487873f9fd29930f",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "add-pdf-page-comment": {
+      "set": "dazzle-line-icons",
+      "file": "message-square-plus.svg",
+      "originalHash": "6a4df7e609942eda9bd37bf2bdbc2a4f51324c51a08732438940e97199d79733",
+      "normalizedHash": "3b699b5a9af96336b73e7c3ff9ae295e4aff99df81a1ef0513928b81ba65e890",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "annotate-latex-block": {
+      "set": "dazzle-line-icons",
+      "file": "message-square-plus.svg",
+      "originalHash": "6a4df7e609942eda9bd37bf2bdbc2a4f51324c51a08732438940e97199d79733",
+      "normalizedHash": "3b699b5a9af96336b73e7c3ff9ae295e4aff99df81a1ef0513928b81ba65e890",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "comment-on-cell": {
+      "set": "dazzle-line-icons",
+      "file": "message-square-plus.svg",
+      "originalHash": "6a4df7e609942eda9bd37bf2bdbc2a4f51324c51a08732438940e97199d79733",
+      "normalizedHash": "3b699b5a9af96336b73e7c3ff9ae295e4aff99df81a1ef0513928b81ba65e890",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "annotate-selected-text": {
+      "set": "dazzle-line-icons",
+      "file": "marker.svg",
+      "originalHash": "5e116751fe78d14bd2307564fe7b0ad2abb0a6adab2fc2309e6d1bc74c896e8a",
+      "normalizedHash": "98993cdcfc1e4e0c4ff79beeda7a759f7ac7c09a9ac77f41b18ab93eecffcbbb",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "cancel-task-note": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "clear-discovery-search": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "close-dialog": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "close-discovery-detail": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "close-import": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "close-latex-annotation": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "close-new-manuscript": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "close-pane": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "close-task-doc-picker": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "close-task-drawer": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "close-writer-dialog": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "dismiss-annotation-notice": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "dismiss-arxiv-pdf-error": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "dismiss-arxiv-source-error": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "dismiss-latex-upload-error": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "dismiss-discovery-error": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "dismiss-discovery-graph-merges": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "dismiss-task-graph-merges": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "dismiss-pdf-error": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "dismiss-pdf-position-error": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "dismiss-pdf-save-error": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "dismiss-pdf-upload-error": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "dismiss-task-delete-undo": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "copilot-undo-dismiss": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "copilot-undo-result-dismiss": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "copilot-confirmation-problem-dismiss": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "dismiss-template-warning": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "remove-affiliation": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "remove-author": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "close-argument-detail": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "exit-tutorial": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "dismiss-tutorial-progress-notice": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "collapse-library-sidebar": {
+      "set": "dazzle-line-icons",
+      "file": "sidebar.svg",
+      "originalHash": "08d645b61ae3912c3985a3356d0cc443b02a01850fff323e52c6b19033fd0ddc",
+      "normalizedHash": "76e7fb6cb86bea65e7e4103d42fb4143c07b064edbb42b5afab2ff8fba821a84",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "toggle-pdf-outline": {
+      "panel-left-close": {
+        "set": "dazzle-line-icons",
+        "file": "sidebar.svg",
+        "originalHash": "08d645b61ae3912c3985a3356d0cc443b02a01850fff323e52c6b19033fd0ddc",
+        "normalizedHash": "76e7fb6cb86bea65e7e4103d42fb4143c07b064edbb42b5afab2ff8fba821a84",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      },
+      "panel-left-open": {
+        "set": "dazzle-line-icons",
+        "file": "sidebar.svg",
+        "originalHash": "08d645b61ae3912c3985a3356d0cc443b02a01850fff323e52c6b19033fd0ddc",
+        "normalizedHash": "76e7fb6cb86bea65e7e4103d42fb4143c07b064edbb42b5afab2ff8fba821a84",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      }
+    },
+    "toggle-writer-outline": {
+      "panel-left-close": {
+        "set": "dazzle-line-icons",
+        "file": "sidebar.svg",
+        "originalHash": "08d645b61ae3912c3985a3356d0cc443b02a01850fff323e52c6b19033fd0ddc",
+        "normalizedHash": "76e7fb6cb86bea65e7e4103d42fb4143c07b064edbb42b5afab2ff8fba821a84",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      },
+      "panel-left-open": {
+        "set": "dazzle-line-icons",
+        "file": "sidebar.svg",
+        "originalHash": "08d645b61ae3912c3985a3356d0cc443b02a01850fff323e52c6b19033fd0ddc",
+        "normalizedHash": "76e7fb6cb86bea65e7e4103d42fb4143c07b064edbb42b5afab2ff8fba821a84",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      }
+    },
+    "collapse-argument-outline": {
+      "set": "dazzle-line-icons",
+      "file": "sidebar.svg",
+      "originalHash": "08d645b61ae3912c3985a3356d0cc443b02a01850fff323e52c6b19033fd0ddc",
+      "normalizedHash": "76e7fb6cb86bea65e7e4103d42fb4143c07b064edbb42b5afab2ff8fba821a84",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "toggle-tutorial-chapters": {
+      "panel-left-close": {
+        "set": "dazzle-line-icons",
+        "file": "sidebar.svg",
+        "originalHash": "08d645b61ae3912c3985a3356d0cc443b02a01850fff323e52c6b19033fd0ddc",
+        "normalizedHash": "76e7fb6cb86bea65e7e4103d42fb4143c07b064edbb42b5afab2ff8fba821a84",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      },
+      "panel-left-open": {
+        "set": "dazzle-line-icons",
+        "file": "sidebar.svg",
+        "originalHash": "08d645b61ae3912c3985a3356d0cc443b02a01850fff323e52c6b19033fd0ddc",
+        "normalizedHash": "76e7fb6cb86bea65e7e4103d42fb4143c07b064edbb42b5afab2ff8fba821a84",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      }
+    },
+    "copy-pdf-annotation-link": {
+      "set": "dazzle-line-icons",
+      "file": "clone.svg",
+      "originalHash": "bb8bdf2275151fc0e72e981fdb58c07d506d222fcb8d3e028eae85748a44314f",
+      "normalizedHash": "4cdbf2596c6136e276fd228e07cbb595a58f65a52ae54ed24042ee5c7be1affa",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "copy-pdf-selection": {
+      "set": "dazzle-line-icons",
+      "file": "clone.svg",
+      "originalHash": "bb8bdf2275151fc0e72e981fdb58c07d506d222fcb8d3e028eae85748a44314f",
+      "normalizedHash": "4cdbf2596c6136e276fd228e07cbb595a58f65a52ae54ed24042ee5c7be1affa",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "copy-work-bibtex": {
+      "set": "dazzle-line-icons",
+      "file": "clone.svg",
+      "originalHash": "bb8bdf2275151fc0e72e981fdb58c07d506d222fcb8d3e028eae85748a44314f",
+      "normalizedHash": "4cdbf2596c6136e276fd228e07cbb595a58f65a52ae54ed24042ee5c7be1affa",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "cycle-task-status": {
+      "circle": {
+        "set": "dazzle-line-icons",
+        "file": "circle.svg",
+        "originalHash": "392909fb9bb2b42b3bca898abe7088810d2978e75655b78d4e16411efbf43c9e",
+        "normalizedHash": "7ea7326827dab0fba4f802df0d53c0107027250d438dc0dc1144c9ffe9db80d0",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      },
+      "circle-alert": {
+        "set": "dazzle-line-icons",
+        "file": "circle-exclamation.svg",
+        "originalHash": "8f2b6b50f9a66ad794b5b58d5d979a8584bda20fa010bce3782cda73abb47b8c",
+        "normalizedHash": "2d21da099294a8e584b85618443a9f3fa0d18f471735443350f8cf6ff83196f3",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      },
+      "circle-check": {
+        "set": "dazzle-line-icons",
+        "file": "circle-check.svg",
+        "originalHash": "0f7dc8764edcc9661582e20ee1a462d4e8d8fd87f4876df75add37e95615de53",
+        "normalizedHash": "4aa9f7a7d894c3c0389c08a6de84494b3d1eb1fb0c03aac0515d689d406c265c",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      },
+      "circle-dot": {
+        "set": "dazzle-line-icons",
+        "file": "bullseye-arrow.svg",
+        "originalHash": "7cc4bfd5245f1244d04f344cecd017ff9cbbeb412899f73dfa3c6b120d80514e",
+        "normalizedHash": "d27b1250e9600fa2b63d75690d9e53242a3f54c52d4a963627a5142debd18613",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      }
+    },
+    "set-task-status": {
+      "circle": {
+        "set": "dazzle-line-icons",
+        "file": "circle.svg",
+        "originalHash": "392909fb9bb2b42b3bca898abe7088810d2978e75655b78d4e16411efbf43c9e",
+        "normalizedHash": "7ea7326827dab0fba4f802df0d53c0107027250d438dc0dc1144c9ffe9db80d0",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      },
+      "circle-alert": {
+        "set": "dazzle-line-icons",
+        "file": "circle-exclamation.svg",
+        "originalHash": "8f2b6b50f9a66ad794b5b58d5d979a8584bda20fa010bce3782cda73abb47b8c",
+        "normalizedHash": "2d21da099294a8e584b85618443a9f3fa0d18f471735443350f8cf6ff83196f3",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      },
+      "circle-check": {
+        "set": "dazzle-line-icons",
+        "file": "circle-check.svg",
+        "originalHash": "0f7dc8764edcc9661582e20ee1a462d4e8d8fd87f4876df75add37e95615de53",
+        "normalizedHash": "4aa9f7a7d894c3c0389c08a6de84494b3d1eb1fb0c03aac0515d689d406c265c",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      },
+      "circle-dot": {
+        "set": "dazzle-line-icons",
+        "file": "bullseye-arrow.svg",
+        "originalHash": "7cc4bfd5245f1244d04f344cecd017ff9cbbeb412899f73dfa3c6b120d80514e",
+        "normalizedHash": "d27b1250e9600fa2b63d75690d9e53242a3f54c52d4a963627a5142debd18613",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      }
+    },
+    "set-work-label": {
+      "set": "dazzle-line-icons",
+      "file": "circle.svg",
+      "originalHash": "392909fb9bb2b42b3bca898abe7088810d2978e75655b78d4e16411efbf43c9e",
+      "normalizedHash": "7ea7326827dab0fba4f802df0d53c0107027250d438dc0dc1144c9ffe9db80d0",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "delete-latex-annotation": {
+      "set": "dazzle-line-icons",
+      "file": "trash.svg",
+      "originalHash": "ee71c06713db40da2823e1f7e9656016c8d550d801a65853bb9b7e5de5f39661",
+      "normalizedHash": "eff543f9291c71383b9a469a041e50ea7cceda4151729acd441e2f225c899b93",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "delete-manuscript": {
+      "set": "dazzle-line-icons",
+      "file": "trash.svg",
+      "originalHash": "ee71c06713db40da2823e1f7e9656016c8d550d801a65853bb9b7e5de5f39661",
+      "normalizedHash": "eff543f9291c71383b9a469a041e50ea7cceda4151729acd441e2f225c899b93",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "delete-pdf-annotation": {
+      "set": "dazzle-line-icons",
+      "file": "trash.svg",
+      "originalHash": "ee71c06713db40da2823e1f7e9656016c8d550d801a65853bb9b7e5de5f39661",
+      "normalizedHash": "eff543f9291c71383b9a469a041e50ea7cceda4151729acd441e2f225c899b93",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "delete-task": {
+      "set": "dazzle-line-icons",
+      "file": "trash.svg",
+      "originalHash": "ee71c06713db40da2823e1f7e9656016c8d550d801a65853bb9b7e5de5f39661",
+      "normalizedHash": "eff543f9291c71383b9a469a041e50ea7cceda4151729acd441e2f225c899b93",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "clear-argument-graph": {
+      "set": "dazzle-line-icons",
+      "file": "trash.svg",
+      "originalHash": "ee71c06713db40da2823e1f7e9656016c8d550d801a65853bb9b7e5de5f39661",
+      "normalizedHash": "eff543f9291c71383b9a469a041e50ea7cceda4151729acd441e2f225c899b93",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "discovery-back": {
+      "set": "dazzle-line-icons",
+      "file": "chevron-left.svg",
+      "originalHash": "8a6dba262f1953e41eb86e9e975c0e48670ebb0f7fae325694e9fbfcb612f37b",
+      "normalizedHash": "b645a7e018d87691159ca87c158ab1b08099cfbd06e4f9c552f3122d2395a5ea",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "return-to-manuscripts": {
+      "set": "dazzle-line-icons",
+      "file": "chevron-left.svg",
+      "originalHash": "8a6dba262f1953e41eb86e9e975c0e48670ebb0f7fae325694e9fbfcb612f37b",
+      "normalizedHash": "b645a7e018d87691159ca87c158ab1b08099cfbd06e4f9c552f3122d2395a5ea",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "toggle-pdf-annotations": {
+      "chevron-left": {
+        "set": "dazzle-line-icons",
+        "file": "chevron-left.svg",
+        "originalHash": "8a6dba262f1953e41eb86e9e975c0e48670ebb0f7fae325694e9fbfcb612f37b",
+        "normalizedHash": "b645a7e018d87691159ca87c158ab1b08099cfbd06e4f9c552f3122d2395a5ea",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      },
+      "chevron-right": {
+        "set": "dazzle-line-icons",
+        "file": "chevron-right.svg",
+        "originalHash": "c567b5f70897bb00de90444a567c878c2062ce6388cb5f5ac41898865fd34414",
+        "normalizedHash": "1b1d5b7f4dcd987ff9eeefd0d77baf1356e6be1c13f84a31851a267aba1971d9",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      }
+    },
+    "discovery-forward": {
+      "set": "dazzle-line-icons",
+      "file": "chevron-right.svg",
+      "originalHash": "c567b5f70897bb00de90444a567c878c2062ce6388cb5f5ac41898865fd34414",
+      "normalizedHash": "1b1d5b7f4dcd987ff9eeefd0d77baf1356e6be1c13f84a31851a267aba1971d9",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "toggle-completed-tasks": {
+      "chevron-right": {
+        "set": "dazzle-line-icons",
+        "file": "chevron-right.svg",
+        "originalHash": "c567b5f70897bb00de90444a567c878c2062ce6388cb5f5ac41898865fd34414",
+        "normalizedHash": "1b1d5b7f4dcd987ff9eeefd0d77baf1356e6be1c13f84a31851a267aba1971d9",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      },
+      "chevron-down": {
+        "set": "dazzle-line-icons",
+        "file": "chevron-down.svg",
+        "originalHash": "20eb3fb9cbc974af084f83a6a2b7cb2f0c861e5048c864b324b43113e790acc1",
+        "normalizedHash": "8b1f9927e505ef0ff34b46bca8d2b741fcabc8607213140f8f725e1c2d28a03c",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      }
+    },
+    "toggle-argument-outline-node": {
+      "chevron-right": {
+        "set": "dazzle-line-icons",
+        "file": "chevron-right.svg",
+        "originalHash": "c567b5f70897bb00de90444a567c878c2062ce6388cb5f5ac41898865fd34414",
+        "normalizedHash": "1b1d5b7f4dcd987ff9eeefd0d77baf1356e6be1c13f84a31851a267aba1971d9",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      },
+      "chevron-down": {
+        "set": "dazzle-line-icons",
+        "file": "chevron-down.svg",
+        "originalHash": "20eb3fb9cbc974af084f83a6a2b7cb2f0c861e5048c864b324b43113e790acc1",
+        "normalizedHash": "8b1f9927e505ef0ff34b46bca8d2b741fcabc8607213140f8f725e1c2d28a03c",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      }
+    },
+    "edit-cell": {
+      "set": "dazzle-line-icons",
+      "file": "pen-line.svg",
+      "originalHash": "fe018db09f448c8dc7a91e7ca34dbb3ef8e933958ce2140184faefbf55ce74bc",
+      "normalizedHash": "61d23c2ac2428ed68f01bb2ee5d1f5910b28d386e287d58f791e79aa2704a094",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "edit-latex-annotation": {
+      "set": "dazzle-line-icons",
+      "file": "pen-line.svg",
+      "originalHash": "fe018db09f448c8dc7a91e7ca34dbb3ef8e933958ce2140184faefbf55ce74bc",
+      "normalizedHash": "61d23c2ac2428ed68f01bb2ee5d1f5910b28d386e287d58f791e79aa2704a094",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "edit-pdf-annotation-body": {
+      "set": "dazzle-line-icons",
+      "file": "pen-line.svg",
+      "originalHash": "fe018db09f448c8dc7a91e7ca34dbb3ef8e933958ce2140184faefbf55ce74bc",
+      "normalizedHash": "61d23c2ac2428ed68f01bb2ee5d1f5910b28d386e287d58f791e79aa2704a094",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "edit-task": {
+      "set": "dazzle-line-icons",
+      "file": "pen-line.svg",
+      "originalHash": "fe018db09f448c8dc7a91e7ca34dbb3ef8e933958ce2140184faefbf55ce74bc",
+      "normalizedHash": "61d23c2ac2428ed68f01bb2ee5d1f5910b28d386e287d58f791e79aa2704a094",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "edit-task-note": {
+      "set": "dazzle-line-icons",
+      "file": "pen-line.svg",
+      "originalHash": "fe018db09f448c8dc7a91e7ca34dbb3ef8e933958ce2140184faefbf55ce74bc",
+      "normalizedHash": "61d23c2ac2428ed68f01bb2ee5d1f5910b28d386e287d58f791e79aa2704a094",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "expand-library-sidebar": {
+      "set": "dazzle-line-icons",
+      "file": "sidebar.svg",
+      "originalHash": "08d645b61ae3912c3985a3356d0cc443b02a01850fff323e52c6b19033fd0ddc",
+      "normalizedHash": "76e7fb6cb86bea65e7e4103d42fb4143c07b064edbb42b5afab2ff8fba821a84",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "expand-argument-outline": {
+      "set": "dazzle-line-icons",
+      "file": "sidebar.svg",
+      "originalHash": "08d645b61ae3912c3985a3356d0cc443b02a01850fff323e52c6b19033fd0ddc",
+      "normalizedHash": "76e7fb6cb86bea65e7e4103d42fb4143c07b064edbb42b5afab2ff8fba821a84",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "fit-graph": {
+      "set": "dazzle-line-icons",
+      "file": "expand.svg",
+      "originalHash": "37a383fea373f896483e3b856d9187f3377ae2f6c8a69c8eb99ccb5bfedb4ba4",
+      "normalizedHash": "6658020cceda8022f83e608accacdaaba06e5b98e02d21377671a4449bb3cf9f",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "focus-graph-seed": {
+      "set": "dazzle-line-icons",
+      "file": "crosshair.svg",
+      "originalHash": "ec1d7bea8cfeb4b65f4726c34d1ee481c826955f0762ccf4a5180ca58cdf0288",
+      "normalizedHash": "f515cd0f8804f7ec31ff5562f6aea350ba77b4bdc157d4964d3802ea7ada1dce",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "select-pdf-area-tool": {
+      "set": "dazzle-line-icons",
+      "file": "crosshair.svg",
+      "originalHash": "ec1d7bea8cfeb4b65f4726c34d1ee481c826955f0762ccf4a5180ca58cdf0288",
+      "normalizedHash": "f515cd0f8804f7ec31ff5562f6aea350ba77b4bdc157d4964d3802ea7ada1dce",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "gather-doc": {
+      "set": "dazzle-line-icons",
+      "file": "file-arrow-up.svg",
+      "originalHash": "654fd98421b48794a48b7458d44239ea44c79f54c48f73ee7b18976d04e37244",
+      "normalizedHash": "719ade3cbc4d81b9df3553eab06d5725f1ee646c953097a98261f693dd7752d4",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "text-source-import": {
+      "set": "dazzle-line-icons",
+      "file": "file-arrow-up.svg",
+      "originalHash": "654fd98421b48794a48b7458d44239ea44c79f54c48f73ee7b18976d04e37244",
+      "normalizedHash": "719ade3cbc4d81b9df3553eab06d5725f1ee646c953097a98261f693dd7752d4",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "invert-latex-figure": {
+      "sun": {
+        "set": "dazzle-line-icons",
+        "file": "sun.svg",
+        "originalHash": "1723f13b3636ff4f639edb1b218251dfd9d787e60829d692e94cecc37a1892e3",
+        "normalizedHash": "8b45bf1e5600952812292b7a160c1ddee1d97427c94d6f8822ec9697dfead9f2",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      }
+    },
+    "jump-to-reference-target": {
+      "set": "dazzle-line-icons",
+      "file": "corner-up-right.svg",
+      "originalHash": "a1288d748158e24ef01d8c2f348390ab29242b5b230ea3b129da5a5c25879498",
+      "normalizedHash": "80c76c8c83e0e3719fb25f4a960066aa3580ba5a24a02a23e23b05be5c60c112",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "redo-pdf-annotation": {
+      "set": "dazzle-line-icons",
+      "file": "corner-up-right.svg",
+      "originalHash": "a1288d748158e24ef01d8c2f348390ab29242b5b230ea3b129da5a5c25879498",
+      "normalizedHash": "80c76c8c83e0e3719fb25f4a960066aa3580ba5a24a02a23e23b05be5c60c112",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "select-pdf-highlight-tool": {
+      "set": "dazzle-line-icons",
+      "file": "marker.svg",
+      "originalHash": "5e116751fe78d14bd2307564fe7b0ad2abb0a6adab2fc2309e6d1bc74c896e8a",
+      "normalizedHash": "98993cdcfc1e4e0c4ff79beeda7a759f7ac7c09a9ac77f41b18ab93eecffcbbb",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "select-pdf-strikeout-tool": {
+      "set": "dazzle-line-icons",
+      "file": "strikethrough.svg",
+      "originalHash": "47400da7b7afeb5e57619eb79222b113ab9d7dac5509a08dc87b2c889797f809",
+      "normalizedHash": "09bed14dcc0305d816af8c1baa53366b9b2ad2365453081c60b1f55379c49366",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "select-pdf-underline-tool": {
+      "set": "dazzle-line-icons",
+      "file": "underline.svg",
+      "originalHash": "697cce538bc989e16615db81d6165e9a2ea800ce47489b218144dfb711e94b90",
+      "normalizedHash": "2f1996fd9052ebc49cdafa5ea15d489f9d0bc4df64ab9ec23beca1bc64916f93",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "plan-display-mode": {
+      "columns-3": {
+        "set": "dazzle-line-icons",
+        "file": "columns-3.svg",
+        "originalHash": "01cc68d091ae7025f40b382c7d78bff12ee67f5c3f7260618f481fc4da135ae2",
+        "normalizedHash": "22b1873deaa24e021617f0285737c61b89bf5f7572ae167ef47d5140b66331e1",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      },
+      "list": {
+        "set": "dazzle-line-icons",
+        "file": "list.svg",
+        "originalHash": "e92a2ce3ab7116c8f9a86b4ecffab16b25928d333605e81f234f216accd85791",
+        "normalizedHash": "7bce36d6e0cbaba84ef34177874819ada54e4a93f998b0ec148120cbf8ed6b92",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      }
+    },
+    "show-discovery-list": {
+      "set": "dazzle-line-icons",
+      "file": "list.svg",
+      "originalHash": "e92a2ce3ab7116c8f9a86b4ecffab16b25928d333605e81f234f216accd85791",
+      "normalizedHash": "7bce36d6e0cbaba84ef34177874819ada54e4a93f998b0ec148120cbf8ed6b92",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "relayout-graph": {
+      "set": "dazzle-line-icons",
+      "file": "rotate-ccw.svg",
+      "originalHash": "03739634037913586a5190493fe8f8b3cbd4985e86f16301578874db47034fd8",
+      "normalizedHash": "42b8ef5c925815bb52747283c5c11b37a9c738c9dd021e7e634bc28151ffe4ed",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "return-to-library": {
+      "set": "dazzle-line-icons",
+      "file": "arrow-left.svg",
+      "originalHash": "333e6fa6e1365dee6fee297a77436397f4aea5106dcaed5bd4cb175e0e40c087",
+      "normalizedHash": "1a5dda37ed900229416d99f7330c84da76ce0244389c8cff3322bc0cfe66d1e2",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "argument-return-to-library": {
+      "set": "dazzle-line-icons",
+      "file": "arrow-left.svg",
+      "originalHash": "333e6fa6e1365dee6fee297a77436397f4aea5106dcaed5bd4cb175e0e40c087",
+      "normalizedHash": "1a5dda37ed900229416d99f7330c84da76ce0244389c8cff3322bc0cfe66d1e2",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "save-task-note": {
+      "set": "dazzle-line-icons",
+      "file": "check.svg",
+      "originalHash": "b3bf82beb36f81c77e86ee7cf8f080ba3f2715dbbde3ef71f6b6b17c78875f82",
+      "normalizedHash": "39a4e6ab3389bce84b7a8bd5af3fb226b60151c0574750dc037be290304d8de9",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "set-main-doc": {
+      "set": "dazzle-line-icons",
+      "file": "check.svg",
+      "originalHash": "b3bf82beb36f81c77e86ee7cf8f080ba3f2715dbbde3ef71f6b6b17c78875f82",
+      "normalizedHash": "39a4e6ab3389bce84b7a8bd5af3fb226b60151c0574750dc037be290304d8de9",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "show-discovery-graph": {
+      "set": "dazzle-line-icons",
+      "file": "chart-network.svg",
+      "originalHash": "db16c04a05a48d6d864d09a8962ee785249c1430801a41d941a57a9c5390dceb",
+      "normalizedHash": "ae48db9a0a73259f9b5386feb55bd51956cfbed603cc8cce1dc39c7f0c1620d0",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "toggle-graph-labels": {
+      "set": "dazzle-line-icons",
+      "file": "text.svg",
+      "originalHash": "96f36d5ad44acce7ec52bd42310c8e93b54f5b19f24e167afb70b98c5799f42e",
+      "normalizedHash": "baec6fbe1d59d1a1d867e051549425510a36500235bc8ce29f68c5daff52cbec",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "toggle-task-focus": {
+      "set": "dazzle-line-icons",
+      "file": "thumbtack.svg",
+      "originalHash": "77f64248c13be7b59603d71ccaade2fcfe668b8f4f12c33f0dd886960292e59c",
+      "normalizedHash": "affb5a2c6bb9c10d4625ffc3ee465902f03127fa688167afd70c8105aa9869fb",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "toggle-writer-reference-panel": {
+      "set": "dazzle-line-icons",
+      "file": "columns-2.svg",
+      "originalHash": "8f590dc6616cd949d77111b275c852a02abd91f5bde7b97292a6d2fa2a48399e",
+      "normalizedHash": "3bceb44065586607a9d724405402c0bc47b036d560a57aee46b8842510c044b4",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "undo-latex-navigation": {
+      "set": "dazzle-line-icons",
+      "file": "corner-up-left.svg",
+      "originalHash": "b307cba47c8c8e50f1d060759568059feaae9423a853349afe35cf26a9e3fed1",
+      "normalizedHash": "4d94bcdc3284529e9d6a7ca5c0fc2f9601953f193f1544d3077c0fd4730720e9",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "undo-pdf-annotation": {
+      "set": "dazzle-line-icons",
+      "file": "corner-up-left.svg",
+      "originalHash": "b307cba47c8c8e50f1d060759568059feaae9423a853349afe35cf26a9e3fed1",
+      "normalizedHash": "4d94bcdc3284529e9d6a7ca5c0fc2f9601953f193f1544d3077c0fd4730720e9",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
     }
   }
 }

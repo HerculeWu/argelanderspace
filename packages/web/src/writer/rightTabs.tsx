@@ -71,7 +71,7 @@ function ReferencesPanel({ onInsertCite }: { onInsertCite: (key: string) => void
           </div>
           <div className="w-ref-foot">
             <span className="w-key">{r.cite}</span>
-            <ActionButton unstyled mode="icon" iconName="plus" className="w-insert-key"
+            <ActionButton unstyled mode="icon" iconSize="small" iconName="plus" className="w-insert-key"
               data-ref-key={r.cite} data-ui="insert-cite-key"
               label={t("writer.refs.insert")} tooltip={t("writer.refs.insert")}
               onClick={() => onInsertCite(r.cite)} />
@@ -134,7 +134,7 @@ function CrossrefsPanel({
           </div>
           <div className="w-ref-foot">
             <span className="w-key">{x.label || t("writer.xref.noLabel")}</span>
-            <ActionButton unstyled mode="icon" iconName="plus" className="w-insert-key"
+            <ActionButton unstyled mode="icon" iconSize="small" iconName="plus" className="w-insert-key"
               data-xref-insert={x.label} data-ui="insert-crossref" data-target-cell={x.cell}
               label={t(x.insertable === false ? "writer.xref.needsLabel" : "writer.xref.insert")}
               tooltip={t(x.insertable === false ? "writer.xref.needsLabel" : "writer.xref.insert")}

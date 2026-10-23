@@ -162,7 +162,7 @@ export function FigureImage({ imgPath, alt, controls = false, width, height }: {
         style={{ width: boxWidth ?? "100%", aspectRatio: boxWidth && boxHeight ? `${boxWidth} / ${boxHeight}` : undefined, minHeight: boxHeight ? undefined : 120 }}>
         {ready ? t("components.figure.pending") : t("components.figure.unavailable")}
       </span>}
-    {controls && dark && current && <ActionButton unstyled mode="icon" iconName={inverted ? "sun" : "contrast"}
+    {controls && dark && current && <ActionButton unstyled mode="icon" iconSize="small" iconName={inverted ? "sun" : "contrast"}
       className="fig-invert-btn" data-ui="invert-latex-figure"
       label={inverted ? t("components.figure.showOriginal") : t("components.figure.invert")}
       tooltip={inverted ? t("components.figure.showOriginal") : t("components.figure.invert")} aria-pressed={inverted}

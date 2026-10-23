@@ -150,3 +150,16 @@ recorded, so no record may be invented for them; `promote` leaves them untouched
 only shrinks: a changed glyph or a new `data-ui` needs a real record, and migrating one
 removes its line. `tests/icon-provenance.test.ts` checks hashes, this list and the notice's
 Dazzle mappings against the shipped files.
+
+Legacy migration (user decision 2026-10-23, reviewed per glyph in a private candidate
+overview): the other 117 pre-provenance resources now use Dazzle artwork, rendered with the
+`small` preset (the old glyphs were mostly 10–15 CSSpx; 18 is the nearest preset). Button
+boxes are unchanged: where a button sized to its content (Plan display-mode segments, LaTeX
+annotation editor buttons, the Task-note edit button, the reader undo FAB, RefCard icon
+buttons, PDF selection copy), a local rule trims padding (or, for the bare copy button, the
+artwork's margin) by the artwork growth. One user-decided exception: the Library label
+swatch (`set-work-label`, 20 px circle with a 16 px interior) keeps the original 14 px
+`ico-sm` rendering of its Dazzle circle, without a preset. Only two pre-provenance glyphs stay: the Plan telescope
+(the existing preservation exception above, no Dazzle artwork) and the figure-invert
+`contrast` state, kept by the user; its `sun` state is Dazzle, and both states share the
+button's `small` preset.
