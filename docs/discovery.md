@@ -93,7 +93,7 @@ Explore 是文献工作区内临时模式，有返回库、面包屑、前进/�
 
 从探索模式打开 Doc 新增一条历史（规则见 [architecture](architecture.md)「Web 与同步」的「打开 Doc 与浏览器历史」），Back 回到该探索；popstate/hashchange 到 `#explore/…` 而没有 Library 窗格时先建一个（与启动路径一致），到 Doc 地址时探索模式退出（会话仍可继续）。用活动栏、窗格菜单、命令面板，或 Copilot（`switch_view`，以及页面动作经 `ensurePane` 为自己的页面切换窗格）把探索所在的窗格切到别的视图同样算离开探索，新增一条反映新画面的历史，Back 回到该探索（规则见同一处的局部修订）。
 
-内存 snapshot 恢复选择/视口/filter/滚动等；F5 或深链打开按 hash 重查当前 seed，UI 状态可回默认。hash 指向活跃探索，不编码 pane id；优先合适的 Library pane，无则切 active pane 为 Library。坏 hash/ADS 失败是可返回 Library 的正常错误态，不能让 shell 损坏。
+内存 snapshot 恢复选择/视口/filter/滚动等；F5 或深链打开按 hash 重查当前 seed，UI 状态可回默认。hash 指向活跃探索，不编码 pane id；优先合适的 Library pane，无则切 active pane 为 Library。Back 按记录恢复探索时请求指名原来的窗格，只有它的 Library 页接手（票 09，规则见 [architecture](architecture.md)「Web 与同步」票 08–09 的局部修订）。坏 hash/ADS 失败是可返回 Library 的正常错误态，不能让 shell 损坏。
 
 ### 候选与图
 

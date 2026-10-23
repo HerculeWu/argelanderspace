@@ -288,14 +288,23 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
     browser.setState({ ...stateObject(), argelanderEntry: token });
     return token;
   };
-  /** The current entry's record: none, void (its pane left that view session), or one that applies, with its pane. */
+  /** The Docs deleted in this page load (`docDeleted`): a record that would put one back is void. */
+  const deletedDocs = new Set<string>();
+  /** The current entry's record: none, void (its pane left that view session, or the Doc it names was deleted), or one that applies, with its pane. */
   type RecordLookup = { kind: "none" } | { kind: "invalid"; paneId: number } | { kind: "valid"; left: LeftRecord; pane: Pane };
   const leftRecord = (): RecordLookup => {
     const state = browser.state() as { argelanderReplaced?: Partial<LeftRecord> } | null;
     const left = state?.argelanderReplaced;
     if (!left || typeof left.paneId !== "number" || typeof left.view !== "string" || typeof left.session !== "string") return { kind: "none" };
     const pane = manager.getState().panes.find((p) => p.id === left.paneId);
-    if (!pane || sessionOf(pane.id) !== left.session) return { kind: "invalid", paneId: left.paneId };
+    // Applied already: a Back put this record's view back and the pane is still in the session that Back made (its
+    // parking says so). The same traversal's second event (popstate, then hashchange) finds it so, and the record still
+    // names the pane the mode reappears in (ticket 09); there is nothing left to change.
+    const park = parks.get(left.session);
+    const applied = !!pane && park?.paneId === pane.id && park.restored === sessionOf(pane.id) && pane.view === left.view;
+    if (!pane || (sessionOf(pane.id) !== left.session && !applied)) return { kind: "invalid", paneId: left.paneId };
+    // a record that would put back a Doc deleted since is void (ticket 08): a deleted Doc never comes back
+    if (typeof left.prevDocId === "string" && deletedDocs.has(left.prevDocId)) return { kind: "invalid", paneId: left.paneId };
     return { kind: "valid", left: { paneId: left.paneId, view: left.view, session: left.session, ...(typeof left.prevDocId === "string" ? { prevDocId: left.prevDocId } : {}) }, pane };
   };
   /**
@@ -383,8 +392,9 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
     };
     // A refused switch puts a URL the browser already moved back; a click from the argument graph view has not moved
     // it (the view is still open, and its URL must still say so).
+    // The entry keeps its history state (its records and its shown session: it is the same entry, ticket 08).
     const restoreUrl = () => {
-      if (own.currentDoc && parseArgumentHash(browser.location().hash) === null) browser.replace(docRouteUrl(own.currentDoc));
+      if (own.currentDoc && parseArgumentHash(browser.location().hash) === null) replaceKeepingState(docRouteUrl(own.currentDoc));
     };
     // A late no puts the address back only while it is still the one the question was asked at: once a later navigation
     // (a Back with its own question) moved it, that entry is not this open's to rewrite (as leaveDocPane).
@@ -496,15 +506,16 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
   /**
    * A Doc was physically deleted (the Library page's delete, or the Copilot's): the paper list loses it and the current Doc
    * moves per the three-state rule (applyDocDeletion); the address follows (the new main Doc, or `/` with nothing left).
+   * The entry keeps its history state (ticket 08): the Doc pane stays in its view session, so the records and the shown
+   * session on it still apply. A record that names the deleted Doc as the one to put back is void (`leftRecord`): Back
+   * never shows a deleted Doc again.
    */
   const docDeleted = (docId: string, remaining: string[]) => {
+    deletedDocs.add(docId);
     const next = applyDocDeletion({ papers: own.papers, currentDoc: own.currentDoc }, docId, remaining);
     const moved = next.currentDoc !== own.currentDoc;
     setOwn(moved ? { papers: next.papers, currentDoc: next.currentDoc } : { papers: next.papers });
-    if (moved) {
-      if (next.currentDoc) browser.replace(docRouteUrl(next.currentDoc));
-      else browser.replace("/"); // nothing left to show
-    }
+    if (moved) replaceKeepingState(next.currentDoc ? docRouteUrl(next.currentDoc) : "/"); // `/`: nothing left to show
   };
 
   /** The Copilot approval that would take `docId` away: only the open Doc asks the leave guard (unsaved drafts), as the delete dialog does. */
@@ -597,11 +608,12 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
     const seed = parseExploreHash(location.hash);
     // Back to an exploration with no Library pane (the Reader replaced it): make one first, as the boot path does
     if (seed) {
-      // the pane the Doc took over first gets its view back (a Plan page stays a Plan page next to the exploration)
+      // the pane the Doc took over first gets its view back (a Plan page stays a Plan page next to the exploration); a
+      // Library page a record put back takes the exploration, not another Library page (ticket 09)
       withLeftView((lookup) => {
-        if (manager.getState().panes.some((p) => p.view === "library")) return exploreBus.request(seed);
+        if (manager.getState().panes.some((p) => p.view === "library")) return exploreBus.request(seed, { paneId: restoredLibrary(lookup) });
         const pane = fallbackModePane(lookup);
-        if (pane) leaveDocPane(pane, paneTo(pane, "library"), () => exploreBus.request(seed));
+        if (pane) leaveDocPane(pane, paneTo(pane, "library"), () => exploreBus.request(seed, { paneId: pane.id }));
       });
       return;
     }
@@ -609,21 +621,28 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
     // Back to a graph URL with no Library pane (the Reader replaced it): make one first, as the boot path does
     if (argumentWork) {
       withLeftView((lookup) => {
-        const request = () => argumentBus.request(argumentWork, { confirmed: leavingView });
+        // the pane the request names, when one was chosen here (ticket 09): the Library page a record put back, else the
+        // pane the fallback made one; none keeps the bus's own rule
+        const request = (paneId?: number) => argumentBus.request(argumentWork, { confirmed: leavingView, ...(paneId === undefined ? {} : { paneId }) });
         if (lookup.kind !== "invalid") {
-          if (ensureLibraryPane(true)) request();
+          const made = !manager.getState().panes.some((p) => p.view === "library");
+          if (ensureLibraryPane(true)) request(made ? manager.getState().activeId : restoredLibrary(lookup));
           return;
         }
         if (manager.getState().panes.some((p) => p.view === "library")) return request();
         // a void record: the pane an exploration would take (never another Doc pane; the active pane stays active), and
         // with none left nothing changes (the address names the graph, the screen keeps its Doc)
         const pane = fallbackModePane(lookup);
-        if (pane) leaveDocPane(pane, paneTo(pane, "library"), request);
+        if (pane) leaveDocPane(pane, paneTo(pane, "library"), () => request(pane.id));
       });
       return;
     }
     libraryForPlainUrl();
   };
+
+  /** The pane a record put back as a Library page (where the exploration or the graph it left is to reappear), if any. */
+  const restoredLibrary = (lookup: RecordLookup): number | undefined =>
+    lookup.kind === "valid" && lookup.left.view === "library" ? lookup.pane.id : undefined;
 
   /**
    * `pane`'s Doc is left for a Back/Forward that moved the URL away from it: `change` runs after the Doc's leave guard, as
