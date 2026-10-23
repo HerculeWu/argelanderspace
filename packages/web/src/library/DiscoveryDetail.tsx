@@ -9,6 +9,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { DiscoveryGraph, DiscoveryPaper } from "@argelanderspace/contracts";
 import { Icon } from "../lib/icons";
+import { type ShelfHit, ShelfHint } from "../shelf/already-on-shelf";
 import { ActionButton, Tooltip } from "../ui";
 import { AbstractHtml } from "../lib/abstract";
 import { cgKfmt } from "../graph/graphPhysics";
@@ -29,6 +30,8 @@ export function DiscoveryDetail({
   addFailed,
   tab: controlledTab,
   onTabChange,
+  shelfHint = null,
+  addBlocked = false,
 }: {
   paper: DiscoveryPaper;
   graph: DiscoveryGraph;
@@ -42,6 +45,10 @@ export function DiscoveryDetail({
   /** Controlled tab (the Copilot can set it); uncontrolled when absent. */
   tab?: "abstract" | "citations";
   onTabChange?: (tab: "abstract" | "citations") => void;
+  /** The Shelf already has this paper (shelf ticket 06): the hint, and the take / add-as-usual actions in place of Add. */
+  shelfHint?: { hits: readonly ShelfHit[]; onTake: () => void; onAddAsUsual: () => void } | null;
+  /** Another candidate is being added or looked up on the Shelf: this Add waits (as the list display's does). */
+  addBlocked?: boolean;
 }) {
   const { t } = useTranslation();
   const [ownTab, setOwnTab] = useState<"abstract" | "citations">("abstract");
@@ -134,6 +141,11 @@ export function DiscoveryDetail({
             {t("explore.sourceLine.head")}
             {" · "}
             {sourceLine}
+          </div>
+        )}
+        {shelfHint && !saved && (
+          <div className="shelf-hint-gap">
+            <ShelfHint hits={shelfHint.hits} />
           </div>
         )}
 
@@ -234,8 +246,13 @@ export function DiscoveryDetail({
         )}
         {saved ? (
           <ActionButton unstyled mode="text" label={t("explore.savedInLibrary")} tooltip={t("explore.savedInLibrary")} className="btn success large" data-testid="view-in-library" data-ui="view-saved-work" onClick={() => onViewInLibrary(paper.libraryId!)}>{t("explore.savedInLibrary")}</ActionButton>
+        ) : shelfHint ? (
+          <>
+            <ActionButton unstyled mode="text" label={t("shelf.hint.take")} tooltip={t("shelf.hint.take")} className="btn primary large" data-ui="take-from-shelf-instead" disabled={adding} onClick={shelfHint.onTake}>{t("shelf.hint.take")}</ActionButton>
+            <ActionButton unstyled mode="text" label={t(adding ? "explore.adding" : "shelf.hint.addAsUsual")} tooltip={t(adding ? "explore.adding" : "shelf.hint.addAsUsual")} className="btn large" data-ui="save-discovery-paper-as-usual" disabled={adding} busy={adding} onClick={shelfHint.onAddAsUsual}>{t(adding ? "explore.adding" : "shelf.hint.addAsUsual")}</ActionButton>
+          </>
         ) : (
-          <ActionButton unstyled mode="text" label={t(adding ? "explore.adding" : "explore.add")} tooltip={t(adding ? "explore.adding" : "explore.add")} className="btn primary large" data-testid="add-to-library" data-ui="save-discovery-paper" disabled={adding} busy={adding} onClick={() => onAdd(paper.bibcode)}>{t(adding ? "explore.adding" : "explore.add")}</ActionButton>
+          <ActionButton unstyled mode="text" label={t(adding ? "explore.adding" : "explore.add")} tooltip={t(adding ? "explore.adding" : "explore.add")} className="btn primary large" data-testid="add-to-library" data-ui="save-discovery-paper" disabled={adding || addBlocked} busy={adding} onClick={() => onAdd(paper.bibcode)}>{t(adding ? "explore.adding" : "explore.add")}</ActionButton>
         )}
         {seed ? (
           <div className="detail-footer-note">{t("explore.originNow")}</div>

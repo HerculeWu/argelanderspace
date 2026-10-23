@@ -22,6 +22,7 @@ import type { ArgumentPage } from "../argument/page";
 import type { LibraryData, LibraryRef } from "./types";
 import { useShelfAvailable } from "../shelf/availability";
 import { ShelfDialog } from "../shelf/ShelfDialog";
+import { shelfTakeTarget } from "../shelf/already-on-shelf";
 
 // color labels users assign by right-clicking a reference (replaces the star)
 const LABEL_COLORS = [
@@ -298,7 +299,9 @@ function LibraryBody({
   const [importMode, setImportMode] = useState<ImportMode | null>(null);
   // The Shelf dialog (shelf ticket 05): the import menu's fourth item; never in the tutorial Project.
   const shelfAvailable = useShelfAvailable();
-  const [shelfOpen, setShelfOpen] = useState<{ entryId?: string; take?: boolean } | null>(null);
+  // `candidate`: opened from an exploration candidate's already-on-Shelf hint (ticket 06); a take of one of its hits
+  // (`hitIds`) marks it as saved, a take of any other entry does not.
+  const [shelfOpen, setShelfOpen] = useState<{ entryId?: string; take?: boolean; candidate?: { bibcode: string; hitIds: string[] } } | null>(null);
   const onImportResolved = (r: LibraryRef) => {
     setSelNode(r.id);
     onReload();
@@ -521,6 +524,29 @@ function LibraryBody({
     onReload(); // the new member's node arrives with the fresh payload
   };
 
+  // The Shelf dialog, from the import menu, the identifier dialog's hint or an exploration candidate's hint (tickets
+  // 05, 06). A take from the exploration stays there: the candidate is marked as in the Library; only "View in
+  // Library" leaves it, as the candidate's own button does.
+  const shelfDialog = shelfOpen && shelfAvailable && (
+    <ShelfDialog
+      entryId={shelfOpen.entryId}
+      take={shelfOpen.take}
+      works={refs}
+      onClose={() => setShelfOpen(null)}
+      onTaken={(result, entryId) => {
+        const c = shelfOpen.candidate;
+        if (c?.hitIds.includes(entryId)) explore.markSaved(c.bibcode, result.work.id);
+      }}
+      onViewWork={(workId) => {
+        setShelfOpen(null);
+        if (explore.active) explore.exitExplore();
+        setSelNode(refToNode[workId] ?? workId);
+        setDetailTab("files");
+        onReload();
+      }}
+    />
+  );
+
   if (argumentWorkId !== null && !explore.active) {
     return (
       <ArgumentGraphMode
@@ -538,14 +564,19 @@ function LibraryBody({
 
   if (explore.active) {
     return (
-      <ExploreMode
-        key={explore.current?.key ?? "explore-pending"}
-        explore={explore}
-        onExit={explore.exitExplore}
-        onViewInLibrary={viewInLibrary}
-        onPage={onExplorePage}
-        onControl={registerExploreControl}
-      />
+      <>
+        <ExploreMode
+          key={explore.current?.key ?? "explore-pending"}
+          explore={explore}
+          onExit={explore.exitExplore}
+          onViewInLibrary={viewInLibrary}
+          onPage={onExplorePage}
+          onControl={registerExploreControl}
+          works={refs}
+          onTakeFromShelf={(bibcode, hits) => setShelfOpen({ ...shelfTakeTarget(hits), candidate: { bibcode, hitIds: hits.map((h) => h.entryId) } })}
+        />
+        {shelfDialog}
+      </>
     );
   }
 
@@ -668,22 +699,15 @@ function LibraryBody({
           mode={importMode}
           onClose={() => setImportMode(null)}
           onResolved={onImportResolved}
-        />
-      )}
-
-      {shelfOpen && shelfAvailable && (
-        <ShelfDialog
-          {...shelfOpen}
           works={refs}
-          onClose={() => setShelfOpen(null)}
-          onViewWork={(workId) => {
-            setShelfOpen(null);
-            setSelNode(refToNode[workId] ?? workId);
-            setDetailTab("files");
-            onReload();
+          onTakeFromShelf={(target) => {
+            setImportMode(null);
+            setShelfOpen(target);
           }}
         />
       )}
+
+      {shelfDialog}
 
       {labelMenu && (
         <div

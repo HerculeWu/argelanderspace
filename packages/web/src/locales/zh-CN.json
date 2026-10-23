@@ -3635,6 +3635,18 @@
       "text_source": "文本源不合格式",
       "future_version": "由较新版本写入",
       "schema": "不合格式"
+    },
+    "hint": {
+      "title": "文献仓里已有这一篇",
+      "titleMany_one": "文献仓里有 {{count}} 个条目是这一篇",
+      "titleMany_other": "文献仓里有 {{count}} 个条目是这一篇",
+      "body": "{{docs}}、{{annotations}}。直接取入，免重新摄入？",
+      "bodyGraph": "{{docs}}、{{annotations}}、论证图。直接取入，免重新摄入？",
+      "bodyPlain": "直接取入，免重新摄入？",
+      "bodyMany": "在文献仓里选一条取入，免重新摄入？",
+      "take": "从文献仓取入…",
+      "createAsUsual": "照常创建条目",
+      "addAsUsual": "照常加入"
     }
   }
 }

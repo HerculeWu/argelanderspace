@@ -3635,6 +3635,18 @@
       "text_source": "the text source is not valid",
       "future_version": "a newer version wrote it",
       "schema": "it is not in the expected format"
+    },
+    "hint": {
+      "title": "This paper is already on your Shelf",
+      "titleMany_one": "{{count}} Shelf entry is this paper",
+      "titleMany_other": "{{count}} Shelf entries are this paper",
+      "body": "{{docs}}, {{annotations}}. Take it directly and skip ingesting?",
+      "bodyGraph": "{{docs}}, {{annotations}}, argument graph. Take it directly and skip ingesting?",
+      "bodyPlain": "Take it directly and skip ingesting?",
+      "bodyMany": "Pick one on the Shelf to take and skip ingesting?",
+      "take": "Take from Shelf…",
+      "createAsUsual": "Create entry as usual",
+      "addAsUsual": "Add as usual"
     }
   }
 }

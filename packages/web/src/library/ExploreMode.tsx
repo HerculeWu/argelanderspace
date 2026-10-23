@@ -21,10 +21,13 @@ import {
 import { captureDiscoveryPage } from "../copilot/discovery-context";
 import type { GraphCanvasController } from "../graph/GraphCanvas";
 import { Icon } from "../lib/icons";
+import { findOnShelf, projectHas, type ShelfHit } from "../shelf/already-on-shelf";
+import { useShelfAvailable } from "../shelf/availability";
 import { ActionButton } from "../ui";
 import { DiscoveryDetail } from "./DiscoveryDetail";
 import { DiscoveryGraphView } from "./DiscoveryGraphView";
 import { MergeNoteList } from "./MergeNotes";
+import type { LibraryRef } from "./types";
 import {
   exploreReport,
   type ExploreError,
@@ -47,6 +50,8 @@ export function ExploreMode({
   onViewInLibrary,
   onPage,
   onControl,
+  onTakeFromShelf,
+  works = [],
 }: {
   explore: ExploreStack;
   onExit: () => void;
@@ -55,6 +60,10 @@ export function ExploreMode({
   /** The page as the Copilot should see it (null when this page goes away). */
   onPage?: (page: DiscoveryPage | null) => void;
   onControl?: (control: ExploreControl | null) => void;
+  /** "Take from Shelf…" in a candidate's already-on-Shelf hint (shelf ticket 06). Absent: no hint. */
+  onTakeFromShelf?: (bibcode: string, hits: readonly ShelfHit[]) => void;
+  /** The project's Works: a candidate the project already has (same DOI or arXiv id) is not looked up. */
+  works?: readonly LibraryRef[];
 }) {
   const { t } = useTranslation();
   const session = explore.current;
@@ -72,7 +81,55 @@ export function ExploreMode({
   /** Opening another candidate always starts on its abstract (the inspector used to remount per candidate). */
   const select = (bibcode: string | null) => {
     if (bibcode !== selection) setDetailTab("abstract"); // choosing the open candidate again keeps its tab
+    if (bibcode !== shelfHint?.bibcode) setShelfHint(null);
     setSelection(bibcode);
+  };
+  // The already-on-Shelf hint (shelf ticket 06): an Add asks the Shelf first (DOI / arXiv only, read-only); with a hit
+  // the candidate's detail shows the hint instead of adding. Never in the tutorial Project; no mark on the graph or
+  // the candidate list (spec Q22).
+  const shelfAvailable = useShelfAvailable() && onTakeFromShelf !== undefined;
+  const [shelfHint, setShelfHint] = useState<{ bibcode: string; hits: ShelfHit[] } | null>(null);
+  const [checkingShelf, setCheckingShelf] = useState<string | null>(null);
+  const lookup = useRef<AbortController | null>(null);
+  useEffect(() => () => lookup.current?.abort(), []);
+  // read after the lookup's await: the stack's latest adding guard and the selection the person has now
+  const exploreRef = useRef(explore);
+  exploreRef.current = explore;
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+  const requestAdd = async (bibcode: string) => {
+    if (explore.adding !== null || checkingShelf !== null) return;
+    const node = session?.graph.nodes.find((n) => n.bibcode === bibcode);
+    const ids = node ? { doi: node.doi, arxiv: node.arxivId } : null;
+    if (shelfAvailable && ids && (ids.doi || ids.arxiv) && !projectHas(ids, works)) {
+      const controller = new AbortController();
+      lookup.current = controller;
+      const selectedThen = selection;
+      setCheckingShelf(bibcode);
+      let found: ShelfHit[] | null;
+      try {
+        found = await findOnShelf(ids, controller.signal);
+      } catch {
+        return; // aborted: this page is gone
+      } finally {
+        if (!controller.signal.aborted) setCheckingShelf(null);
+      }
+      // Another candidate was opened, or the detail closed, while the Shelf was asked: the answer is dropped (no hint
+      // that pulls the selection back, no add the person no longer looks at).
+      if (selectionRef.current !== selectedThen) return;
+      // Not known (the Shelf could not be asked): added as usual, without a word about the Shelf.
+      if (found && found.length > 0) {
+        select(bibcode);
+        setShelfHint({ bibcode, hits: found });
+        return;
+      }
+    }
+    if (exploreRef.current.adding !== null) return;
+    void exploreRef.current.addToLibrary(bibcode);
+  };
+  const addAsUsual = (bibcode: string) => {
+    setShelfHint(null);
+    void explore.addToLibrary(bibcode);
   };
   /** The graph is only drawn in the graph display: leaving it resets the label toggle, as unmounting the canvas always did. */
   const changeDisplay = (next: "graph" | "list") => {
@@ -446,7 +503,7 @@ export function ExploreMode({
                             <Icon name="check" cls="ico-sm" />
                           </span>
                         ) : (
-                          <ActionButton unstyled mode="text" className="btn" label={t("explore.add")} tooltip={t("explore.add")} data-ui="save-discovery-paper" data-ui-key={n.bibcode} disabled={explore.adding !== null} onClick={() => void explore.addToLibrary(n.bibcode)}>{t("explore.add")}</ActionButton>
+                          <ActionButton unstyled mode="text" className="btn" label={t("explore.add")} tooltip={t("explore.add")} data-ui="save-discovery-paper" data-ui-key={n.bibcode} disabled={explore.adding !== null || checkingShelf !== null} busy={checkingShelf === n.bibcode} onClick={() => void requestAdd(n.bibcode)}>{t("explore.add")}</ActionButton>
                         )}
                       </td>
                     </tr>
@@ -485,11 +542,13 @@ export function ExploreMode({
             onClose={() => select(null)}
             tab={detailTab}
             onTabChange={setDetailTab}
-            onAdd={(b) => void explore.addToLibrary(b)}
+            onAdd={(b) => void requestAdd(b)}
             onExploreHere={(b) => void explore.startExplore(b)}
             onViewInLibrary={onViewInLibrary}
-            adding={explore.adding === selected.bibcode}
+            adding={explore.adding === selected.bibcode || checkingShelf === selected.bibcode}
             addFailed={explore.addError === selected.bibcode}
+            addBlocked={explore.adding !== null || checkingShelf !== null}
+            shelfHint={shelfHint?.bibcode === selected.bibcode && selected.libraryId === null && onTakeFromShelf ? { hits: shelfHint.hits, onTake: () => onTakeFromShelf(selected.bibcode, shelfHint.hits), onAddAsUsual: () => addAsUsual(selected.bibcode) } : null}
           />
         )}
       </div>

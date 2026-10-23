@@ -8,11 +8,13 @@
  * Stage 9 scope); only status labels and chrome are localized.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type ArgumentGraphMergeNote, libraryImportRequest } from "@argelanderspace/contracts";
 import { createWorks } from "../api/library";
 import { Icon } from "../lib/icons";
+import { findOnShelf, identifierIds, projectHas, type ShelfHit, ShelfHint, shelfTakeTarget } from "../shelf/already-on-shelf";
+import { useShelfAvailable } from "../shelf/availability";
 import { ActionButton } from "../ui";
 import { MergeNoteList } from "./MergeNotes";
 import type { LibraryRef, ManualWorkRequest, ManualWorkResult } from "./types";
@@ -55,12 +57,18 @@ export function ImportDialog({
   mode,
   onClose,
   onResolved,
+  works = [],
+  onTakeFromShelf,
 }: {
   mode: ImportMode;
   onClose: () => void;
   /** A created/existing work to select + open (single modes: on submit;
    *  batch mode: the first created entry, on close). */
   onResolved: (ref: LibraryRef) => void;
+  /** The project's Works: an identifier the project already has is not looked up on the Shelf. */
+  works?: readonly LibraryRef[];
+  /** "Take from Shelf…" in the already-on-Shelf hint (shelf ticket 06; identifier mode only). Absent: no hint. */
+  onTakeFromShelf?: (target: { entryId: string; take: boolean }) => void;
 }) {
   const { t } = useTranslation();
   const [input, setInput] = useState("");
@@ -68,6 +76,14 @@ export function ImportDialog({
   const [results, setResults] = useState<ManualWorkResult[] | null>(null);
   const [merges, setMerges] = useState<ArgumentGraphMergeNote[]>([]);
   const [fatal, setFatal] = useState<string | null>(null);
+  // The already-on-Shelf hint (shelf ticket 06): asked only after a submit, never while typing (review Q6).
+  const shelfAvailable = useShelfAvailable();
+  const checkShelf = mode === "identifier" && shelfAvailable && onTakeFromShelf !== undefined;
+  const [hits, setHits] = useState<ShelfHit[] | null>(null);
+  const lookup = useRef<AbortController | null>(null);
+  useEffect(() => () => lookup.current?.abort(), []);
+  const inputRef = useRef(input);
+  inputRef.current = input;
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -78,11 +94,36 @@ export function ImportDialog({
   }, [onClose, busy]);
 
   const batch = mode === "bib";
-  const submit = async () => {
+  /** `asUsual`: the hint was declined (or is up and Enter was pressed): add without asking the Shelf again. */
+  const submit = async (asUsual = hits !== null) => {
     const req = requestFor(mode, input);
     if (!req || busy) return;
     setBusy(true);
     setFatal(null);
+    const ids = checkShelf && !asUsual ? identifierIds(input) : null;
+    if (ids && !projectHas(ids, works)) {
+      const controller = new AbortController();
+      lookup.current = controller;
+      let found: ShelfHit[] | null;
+      try {
+        found = await findOnShelf(ids, controller.signal);
+      } catch {
+        return; // aborted: the dialog is gone
+      }
+      // The identifier was edited while the Shelf was asked: this answer is about another paper. Nothing is shown or
+      // created; the person submits the new input when ready.
+      if (inputRef.current !== input) {
+        setBusy(false);
+        return;
+      }
+      // Not known (the Shelf could not be asked): the add goes ahead as usual, without a word about the Shelf.
+      if (found && found.length > 0) {
+        setBusy(false);
+        setHits(found);
+        return;
+      }
+    }
+    setHits(null);
     const resp = await createWorks(req);
     setBusy(false);
     if (resp === null) {
@@ -153,13 +194,17 @@ export function ImportDialog({
                 data-ui="import-input"
                 className="plan-field-input"
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  setHits(null);
+                }}
                 onKeyDown={onKeyDown}
                 placeholder={t(`library.importDialog.${mode}Placeholder`)}
               />
             )}
           </div>
           {fatal && <div className="plan-modal-warning" data-ui="import-error">{fatal}</div>}
+          {hits && <ShelfHint hits={hits} />}
           {results && (
             <div className="import-results" data-ui="import-results">
               {results.map((r, i) => (
@@ -173,6 +218,16 @@ export function ImportDialog({
           <ActionButton unstyled mode="text" className="btn" data-ui="cancel-import" label={t("library.importDialog.close")} tooltip={t("library.importDialog.close")} onClick={close}>
             {t("library.importDialog.close")}
           </ActionButton>
+          {hits && onTakeFromShelf ? (
+            <>
+              <ActionButton unstyled mode="text" className="btn" data-ui="import-as-usual" label={t("shelf.hint.createAsUsual")} tooltip={t("shelf.hint.createAsUsual")} busy={busy} disabled={busy} onClick={() => void submit(true)}>
+                {t("shelf.hint.createAsUsual")}
+              </ActionButton>
+              <ActionButton unstyled mode="text" className="btn primary" data-ui="take-from-shelf-instead" label={t("shelf.hint.take")} tooltip={t("shelf.hint.take")} disabled={busy} onClick={() => onTakeFromShelf(shelfTakeTarget(hits))}>
+                {t("shelf.hint.take")}
+              </ActionButton>
+            </>
+          ) : (
           <ActionButton
             unstyled
             mode="text"
@@ -186,6 +241,7 @@ export function ImportDialog({
           >
             {t(busy ? "library.importDialog.busy" : batch ? "library.importDialog.submitMany" : "library.importDialog.submit")}
           </ActionButton>
+          )}
         </div>
       </div>
     </div>

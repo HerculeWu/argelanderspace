@@ -28,6 +28,11 @@ export interface ShelfDialogProps {
   onClose: () => void;
   /** "View in Library" after a take: select the Work and show its Full text tab. */
   onViewWork: (workId: string) => void;
+  /**
+   * A take finished: `entryId` is the entry actually taken — any entry of the Shelf can be chosen here, so it need not
+   * be the one the dialog opened on (the exploration marks its candidate only for one of its hits, ticket 06).
+   */
+  onTaken?: (result: ShelfTakeResult, entryId: string) => void;
 }
 
 type ListState = { state: "loading" } | { state: "error"; failure: ShelfFailure } | { state: "ok"; rows: ShelfListRow[] };
@@ -54,7 +59,7 @@ function matches(row: ShelfListRow, q: string): boolean {
 const titleOf = (row: ShelfListRow, t: Translate) => (row.status === "ok" ? row.title : row.status === "incompatible" && row.title ? row.title : t("shelf.untitled", { id: row.entryId.slice(0, 8) }));
 const firstAuthor = (authors: string[]) => authors[0] ?? "";
 
-export function ShelfDialog({ entryId, take, works, onClose, onViewWork }: ShelfDialogProps) {
+export function ShelfDialog({ entryId, take, works, onClose, onViewWork, onTaken }: ShelfDialogProps) {
   const { t } = useTranslation();
   const [list, setList] = useState<ListState>({ state: "loading" });
   const [query, setQuery] = useState("");
@@ -155,7 +160,10 @@ export function ShelfDialog({ entryId, take, works, onClose, onViewWork }: Shelf
             {!row ? (
               <div className="shelf-center shelf-dim">{list.state === "ok" && rows.length > 0 ? t("shelf.browse.select") : ""}</div>
             ) : pane.kind === "take" && row.status === "ok" ? (
-              <TakePane key={`${row.entryId}:${row.rev}`} row={row} onBusy={setBusy} onBack={() => setPane({ kind: "summary" })} onDone={(result) => setPane({ kind: "result", result })} onStale={() => void load()} />
+              <TakePane key={`${row.entryId}:${row.rev}`} row={row} onBusy={setBusy} onBack={() => setPane({ kind: "summary" })} onDone={(result) => {
+                setPane({ kind: "result", result });
+                onTaken?.(result, row.entryId);
+              }} onStale={() => void load()} />
             ) : pane.kind === "result" ? (
               <ResultPane row={row} result={pane.result} onDone={() => setPane({ kind: "summary" })} onView={() => onViewWork(pane.result.work.id)} />
             ) : (
