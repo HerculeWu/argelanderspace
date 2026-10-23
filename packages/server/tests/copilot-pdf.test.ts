@@ -1114,9 +1114,15 @@ test("B1: the history's image total is enforced: images already there make a fur
   const first = await send("one more page");
   if (first.status !== 202) throw new Error(await first.clone().text());
   expect(first.status).toBe(202);
-  await vi.waitFor(async () => {
-    expect((await host.snapshot(id)).conversation.run?.status).not.toBe("running");
-  });
+  // The run renders page 1 at longEdge 2048 before the total refuses it: alone that takes 1.4 to 4 s, about 1.1 to
+  // 1.4 s of it holding the event loop (measured, shelf-followups 05), so vi.waitFor's default 1 s ran out under
+  // load ("expected 'running' not to be 'running'"). It waits as long as `run` does; what it waits for is unchanged.
+  await vi.waitFor(
+    async () => {
+      expect((await host.snapshot(id)).conversation.run?.status).not.toBe("running");
+    },
+    { timeout: 20000 }
+  );
   const refused = lastResult(seenAt(1));
   expect(refused).toMatchObject({ ok: false, status: "rejected" });
   expect(refused.detail).toMatch(/together/);
@@ -1130,9 +1136,13 @@ test("B1: the history's image total is enforced: images already there make a fur
   seen = [];
   const res = await send("more");
   expect(res.status).toBe(202);
-  await vi.waitFor(async () => {
-    expect((await host.snapshot(id)).conversation.run?.status).not.toBe("running");
-  });
+  // 0.6 to 0.8 s alone (measured, shelf-followups 05): the same bound as above, not the default 1 s.
+  await vi.waitFor(
+    async () => {
+      expect((await host.snapshot(id)).conversation.run?.status).not.toBe("running");
+    },
+    { timeout: 20000 }
+  );
   expect(stats().imageBytes).toBe(0);
   expect(imageBlocks(seenAt(0))).toHaveLength(0);
   expect(JSON.stringify(seenAt(0).messages)).toMatch(/read_page_image/);

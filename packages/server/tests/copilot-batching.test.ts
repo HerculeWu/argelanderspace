@@ -1204,10 +1204,30 @@ test("a tool-call id of 225 characters is mapped to a bounded key: the ledger is
   expect(reloaded.messages.flatMap((m) => m.operations ?? [])[0]?.status).toBe("ok");
 });
 
-test("a window barely above the instruction (41740 tokens): a read that finds no room is an honest gap, not a failed run", async () => {
+// The window of the case below follows the footprint it is measured against (shelf-followups 05), instead of a
+// constant re-measured whenever a tool description or the instruction changes. Both edges of the passing range are
+// the request-size check of a model turn (2 * (tokens - 3072) bytes, the measure of the whole request), not the
+// held-back eighth of a tool's room: below, the first request (instruction, tool schemas, the message with the reading
+// left out) does not fit and the run fails with capacity; above, the reader's own rejection fits the second request,
+// so the run's "no room is left" substitution is not needed. Both move byte for byte with the footprint (1/2 token per
+// byte), so the window is the footprint plus a fixed margin. Measured at footprint 76520 B (window bytes minus
+// footprint): 3386 fails, 3436 passes, ..., 4136 passes, 4186 fails; the margin is the middle, 3786, about 375 B from
+// either edge (that slack is for changes outside the footprint: this message, the reader's rejection, the envelope).
+// Checked by lengthening and shortening the reader tool's description by 400, 800 and 3000 B: the derived window
+// passes at each, while the old constant 43_200 failed at -800, +400 and +800.
+const BARELY_ABOVE_MARGIN_BYTES = 3_786;
+const barelyAboveWindow = () => {
+  const measured = host as unknown as {
+    systemFootprint(): number;
+    fileToolsFootprint(): number;
+  };
+  const footprint = measured.systemFootprint() + measured.fileToolsFootprint();
+  return 3072 + Math.round((footprint + BARELY_ABOVE_MARGIN_BYTES) / 2);
+};
+test("a window barely above the instruction: a read that finds no room is an honest gap, not a failed run", async () => {
   writeDoc(docIr(900));
   await withWindow(
-    43_200, // shelf ticket 07: 41_740 + 1_710 (see WINDOW_BIG_DOC) left room for a part, so measured: 42_900 leaves no room for the message and 43_450 lets a part fit, 43_100 to 43_300 pass, the middle; 40_940 + 800 (copilot ticket 58, see WINDOW_BIG_DOC); before: 39_500 + 1_440 for the argument tool (footprint +2520 B, times 4/7 because the held-back eighth of the window grows with it; see WINDOW_BIG_DOC). ticket 32: retry_plans +100 tokens; ticket 33 lane 1 (attachment tools removed) -1300, lane 3 (download_original) +300, lane 4 (undo_delete_task) +300
+    barelyAboveWindow(), // 43_225 tokens at footprint 76520 B; before shelf-followups 05 a measured constant (43_200)
     async () => {
       script = [() => ({ call: { action: "read", docId: DOC } }), () => ({ text: "gap noted" })];
       const { snapshot } = await run(page(), "read it");
