@@ -29,7 +29,8 @@ import { decodePng } from "./png-decode.js";
 
 // Every case drives the real PDFium engine in a worker, and the huge page renders and encodes about 12 million pixels:
 // on a loaded machine (the packages' suites in parallel) that case ran past 5 s, and the render it left in the one
-// serialized queue then made the next cases wait or see it still active (shelf-followups 07). No assertion is timed.
+// serialized queue then made the next cases wait or see it still active (shelf-followups 07). Only the timeout grows;
+// the event-loop and deadline cases keep their own time bounds (shelf-followups 08).
 vi.setConfig({ testTimeout: 30_000 });
 
 const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
