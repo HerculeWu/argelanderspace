@@ -159,6 +159,31 @@ CLI 裸 arXiv id 正文摄入路径不变。裸 id 只在 Web identifier 建条�
 - **`DELETE /api/shelf/entries/:entryId?rev=<n>`**：删除页面显示的那个 rev 的条目（确认由页面负责，接口带 rev）。200 `{deleted}`；rev 不是正整数 400；没有该条目 404 `not_found`；已被替换 409 `rev_mismatch {currentRev}`；503 `shelf_busy`；500 `lock_lost`。只删文献仓那份，不碰任何项目；看不懂格式的条目也可以删。
 - **未做**（后续票）：页面与确认卡（票 05）、Copilot 工具（票 07，必须经真人确认卡）、教程 Project 中隐藏入口（票 05）；server 不判断当前是不是教程 Project。
 
+### 取入与查询（shelf 票 04）
+
+（shelf 票 04；契约见 [contracts](contracts.md)「文献仓」（含 2026-10-23 局部修订二），决定见 [ADR 0013](adr/0013-shelf-copy-not-global-library.md)，存储见 [architecture](architecture.md#数据与配置)「文献仓的存储」。代码 `server/src/shelf-take.ts`，应答形状 contracts `shelf-take.ts`。）
+
+**只读接口**（读的是用户的全局数据，与 `/api/tutorial` 一样受跨站守卫，`no-store`）：
+
+- `GET /api/shelf`：`{entries}`，每条带 `status`：`ok`（书目摘要、`identity`、各 Doc 的 id/种类/字节数/带的标注数、标注总数、有无论证图/笔记、`bytes`、来源项目路径与 Work id）、`incompatible`（`needsUpdate: true`、声明的 `format`、尽力读出的标题——页面标「需要更新工作台」，不能取入）、`damaged`（原因类别）、`unreadable`（errno，系统错误，不是损坏）。整个文献仓读不了 → 500 `shelf_unreadable`，不答空列表。
+- `GET /api/shelf/entries/:id`：该条目的摘要加整份书目快照，取自清单（与列表同一次读取，不逐文件 hash）；看不懂的版本、损坏、读不了各有 `status`；没有该条目 404。逐文件核对留给预演与取入。
+- `GET /api/shelf/entries/:id/annotations[?rev=]`：逐 Doc 列出条目带的每条标注：`id`、种类、位置（LaTeX/文本：由条目内 IR 推出的节路径「1 Introduction › 2.1 …」与结构目标的印刷号；PDF：零基页号，文字目标取首页，整篇批注为 null）、片段（引文或快照文字，至多 200 字符）、批注正文、时间。给页面的「逐条取消」用；这是唯一带标注正文的文献仓应答，Copilot 工具（票 07）不经它暴露正文。读条目逐文件核对；版本、损坏、替换的答法同取入。
+- `GET /api/shelf/lookup?doi=&arxiv=&openalex=`：同一篇（只认这三者，规范化同存储层）的条目，供添加时「文献仓已有」提示（票 06）；三者都没给 400。
+- 其余应答不带标注正文；任何应答都不带笔记文字与论证图内容。
+
+**预演与取入**：`POST /api/shelf/entries/:id/take/preview` 与 `POST /api/shelf/entries/:id/take` 同一请求体 `{rev, excludeAnnotations?: {<docId>: "all" | [标注 id…]}, argumentGraph?: bool, note?: bool, planDigest?}`（后两者缺省为取；标注缺省全取，spec Q6）。两者都先不加锁地 `read(id, {rev})`（逐文件大小与 SHA-256），再由同一个不写盘的计划函数（`planTake`）对着项目现状算出计划：预演直接返回 `{plan, planDigest}`、零写入；取入在锁内重算计划并照它执行。取入带了 `planDigest` 而重算的不同 → 409 `plan_changed`（附新计划与摘要），零写入——供票 07 的真人确认卡绑定确认时看到的内容。计划与取入成功的应答是同一形状：`{work: {id, title（填充后的值）, created, citeKey, filled（写入的书目字段）}, mainDoc: {before, after, changed}, docs: {taken: [{docId, kind, annotations, stamped}], skipped: [{docId, kind, reason, wouldJoin?}]}, argumentGraph, note}`；摘要是 `{entryId, rev, result}`（`result` 即计划）的 SHA-256。
+
+- **条目与内容检查**：条目被替换 → 409 `changed`（带 `currentRev`）；看不懂的格式 → 409 `incompatible`（绝不改写）；损坏 → 422 `damaged`。只检查要取入的 Doc（注定跳过的 Doc 不检查、不会因它失败）：PDF 元数据合 schema、`doc_id` 相符、`original.pdf` 的字节数与 SHA-256 符合元数据；LaTeX/文本 IR 里的 `docId` 是这个 Doc；文本源合 schema 且 `doc_id` 相符；标注副本合各自 schema（PDF 的还要 `doc_id` 与原件 SHA-256 相符）；论证图合 schema、不是更新的版本。内容对不上 → 422 `entry_invalid`（`docId`/`part`/`problem`；取消那一部分的标注或论证图可以绕开）。`excludeAnnotations` 只认条目里的 Doc 与标注 id（按自有键查，`constructor` 一类名字不会误中），不认识 → 400。
+- **锁**：取入的重算与写入在 `libraryLock` 内套 `argumentGraphLock` 的一个同步段里（中间没有 await，其他请求、任务和文件监视都插不进来）。
+- **目标 Work**：项目里按 DOI、arXiv、OpenAlex 找同一篇（规范化同文献仓）。恰好一个 → 并入：书目只填库里为空（缺、null、""、[]、{}）的字段（core `fillWorkNarrow`，原始 JSON 窄写，未知键、项目字段、其他 Work 不动），Doc 按条目顺序追加，主 Doc 不变，原本无 Doc 时条目的第一个取入的 Doc 成为主位；cite key 保留。不止一个（如 DOI 命中一个、arXiv 命中另一个）→ 整次 409 `multiple_works`（`workIds`），先在 Library 合并（同导入的 bridge reject，用户 2026-10-23 裁决）。没有 → 新建：id 按 canonicalId（DOI > arXiv > OpenAlex > 标题 slug＋年）从快照推出，已被另一 Work 占用 → 409 `id_taken`（同手动导入，不造后缀）；字段取快照里类型化模型认识的那些，`origin: "manual"`、`added_at` 为取入时间，cite key 按本项目规则分配（有 bibcode 用 bibcode，否则姓＋年避让），`acquisition` 按 `planFor` 现算。
+- **笔记**：只在新建 Work 且用户选取时写入；并入时一律不写，项目笔记非空时为 `kept_local`，为空时 `existing_work`。
+- **Doc 跳过（本地字节一个不动，`docs.skipped` 说明）**：`exists`（`output/<id>` 已存在，任何类型）、`linked`（某 Work 的 `doc_ids` 已列着这个 id，目录不在——再挂上会让 PDF 归属不唯一）、`annotations_present`（`annotations/<id>/` 已存在，绕过入口删 Doc 后留下的孤儿标注；不覆盖）、`seed_conflict`（见下）。要写的 Doc 正被上传任务写或正被删除（`isDocumentContentBusy`）→ 整次 409 `busy`。
+- **下次 `library build` 落回目标 Work（身份焊接）**：库构建对每个 LaTeX Doc 按其 IR 的 DOI/arXiv/标题做 `upsert`（core `seedWorkFor`，从 `seedFromOutput` 抽出、行为不变）。计划在「写入后的库」的类型化副本上按名字顺序模拟同样的 `upsert`，要求只匹配到目标 Work 一个。不是时，按上传路径的做法（core `stampSourceData`，即 `stampSource` 的内存版）把目标 Work 的 DOI/arXiv 写进这份 IR 的 `source`（`acquired_via` 保持原值，Work 详情的来源标签不变），目标 Work 没有这两者时用其标题覆盖 `meta.title`，再模拟一次；只改 `source`/`meta`，sections/blocks、图片、Doc id 与标注不变（它们本不进指纹），文献仓里的条目不改（契约局部修订二，用户 2026-10-23 裁决）。`docs.taken[].stamped` 如实报告。焊接后仍会落到别的 Work、新 Work，或会让构建经 IR 的标题把另一个本地 Work 折叠进目标（bridging）时，不取这个 Doc，记为 `seed_conflict`（`wouldJoin` 为那个 Work，新 Work 为 null）——宁可不取也不让取入引发合并。PDF 与文本 Doc 不按标题 seed，不受影响。
+- **标注**：LaTeX/文本 Doc 的副本写成 `annotations/<id>/current.json`；PDF 的副本写回 `output/<id>/annotations.json`；PDF 一律新建 `reading-position.json`（rev 0、`position: null`、绑定原件 SHA-256）；PDF 不带标注或全部取消时新建空 sidecar（rev 0、同一绑定）。没有取消任何一条时写副本原字节（含未知键）；取消了部分时只从原始对象里滤掉那几条，其余键与 `rev` 不变；全部取消时 LaTeX/文本不写文件。计划时对 LaTeX/文本 Doc 用条目内的字节现算内容指纹（core `docContentFingerprintOfFiles`，与磁盘上的算法同一投影）：算得出且与副本的 `content_fingerprint` 不同 → 422 `entry_invalid`（`problem: "stale"`），因为下一次访问会把它们整批归档；算不出（本版本读不了那份 IR）时照项目既有规则原样放下、不碰。取入本身从不归档、不读 archive。
+- **论证图**：未选或条目没带分别为 `not_chosen`、`not_carried`；该 Work 已有非空图 → 保留本地（`kept_local`，文件字节不动）；本地图读不了 → 500 `argument_graph_unreadable`（不覆盖）；否则把 `work_id` 改成目标 Work、以本地 rev 写入（`replaceArgumentGraph`，rev+1）。出处指向未取入的 Doc 时只剩显示文字（Q19）。
+- **写入顺序与回滚**：先清掉崩溃留下的 `output/.shelf-take-*`、`annotations/.shelf-take-*`（本进程的取入都在一个同步段里，此时不会有别的取入在写；跨进程不支持，I013）。全部 Doc 先写到 `output/.shelf-take-<uuid>/`（`wx`）→ 逐个改名为 `output/<id>` → 标注目录暂存后改名为 `annotations/<id>` → 论证图 → 库（新建用 `saveWorksNarrow` 追加，并入用 `fillWorkNarrow`；json 与 bib 同既有窄写）。任一步失败按相反顺序撤销本次新增（删掉放下的目录、恢复论证图与库文件的原字节、删掉本次新建的空目录），返回 500 `write_failed`；撤销有一步失败时 `cleanedUp: false`，`detail` 说有部分没能删掉（不带路径），否则 `cleanedUp: true`。成功后尽力更新库图缓存（失败等下次刷新）。确实写了东西（新建或补字段、追加 Doc、写论证图）才在锁外广播 `library.changed{add}`，写了论证图时再广播 `argument-graph.changed`；全部跳过、无可补字段、图保留本地的取入不广播。
+- **并发范围**：只在本 server 进程内串行；与 CLI 或另一进程同时改同一项目不支持（I013 不扩展）。
+
 ## 离线与派生数据
 
 `library build --offline` 已 gate ADS、Crossref、OpenAlex，缓存仍可读；不推断所有 CLI 命令全局断网。DOI stub 富化、摄入缓存命中和 arXiv 恒新鲜 job 各自按路径判断。

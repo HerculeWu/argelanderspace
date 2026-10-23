@@ -303,6 +303,13 @@ const CREATE_APP_GUARDED: Array<[string, string]> = [
   ["POST", "/api/shelf/entries"],
   ["POST", "/api/shelf/entries/preview"],
   ["DELETE", "/api/shelf/entries/:entryId"],
+  // Shelf ticket 04: the Shelf is the person's global data, so its reads are guarded too.
+  ["GET", "/api/shelf"],
+  ["GET", "/api/shelf/lookup"],
+  ["GET", "/api/shelf/entries/:entry_id"],
+  ["GET", "/api/shelf/entries/:entry_id/annotations"],
+  ["POST", "/api/shelf/entries/:entry_id/take/preview"],
+  ["POST", "/api/shelf/entries/:entry_id/take"],
   ["PUT", "/api/paper/:doc_id/pdf/reading-position"], // user decision 1 (2026-10-20)
   ["PUT", "/api/paper/:doc_id/pdf/annotations"], // user decision 1 (2026-10-20)
   ["PUT", "/api/paper/:doc_id/annotations"],

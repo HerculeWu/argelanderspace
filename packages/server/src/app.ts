@@ -175,6 +175,7 @@ import { mountProviderRoutes } from "./provider-routes.js";
 import { ProviderSettings } from "./providers.js";
 import { mountSettingsRoutes, readSettings, shownPath, withAppearance } from "./settings.js";
 import { createShelfWriter, mountShelfWriteRoutes, shelfStoreOf } from "./shelf-add.js";
+import { mountShelfRoutes } from "./shelf-take.js";
 import {
   mountTextDocRoutes,
   type PdfRegionOutcome,
@@ -807,6 +808,16 @@ export function createApp(deps: AppDeps): Hono {
     pdfOwners: pdfAccess.owners,
     acquisitionWaitMs: deps.acquisitionWaitMs,
     log,
+  });
+  // The Shelf's reads and the take (shelf-take.ts): on the app's libraryLock, argumentGraphLock and registry.
+  mountShelfRoutes(app, {
+    paths,
+    store: () => deps.shelf ?? shelfStoreOf(deps.configPath),
+    libraryLock,
+    argumentGraphLock,
+    docMutations,
+    libraryChanged: () => libraryChanged("add"),
+    argumentGraphChanged: (workId) => argumentGraphChanged(workId),
   });
   // The Copilot `library` tool shares the library lock, the narrow work patch and library.changed with
   // PATCH /api/library/refs, and reads the same payload as GET /api/library.

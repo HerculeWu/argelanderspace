@@ -93,11 +93,25 @@ export function uploadDocId(workId: string): string {
  */
 export function stampSource(docJson: string, w: Work, via: string): void {
   const data = JSON.parse(readFileSync(docJson, "utf8")) as Record<string, unknown>;
+  stampSourceData(data, w, via);
+  writeFileSync(docJson, JSON.stringify(data, null, 2), "utf8");
+}
+
+/**
+ * {@link stampSource} on an already parsed stored doc (in place): only `source` (doi, arxiv_id, acquired_via) and
+ * `meta.title` change. Shared with the Shelf take (shelf ticket 04, contracts「文献仓」局部修订二), which passes no
+ * `via`: a taken Doc keeps the provenance it was acquired with.
+ */
+export function stampSourceData(
+  data: Record<string, unknown>,
+  w: Pick<Work, "doi" | "arxiv_id" | "title">,
+  via?: string
+): void {
   if (data.source === null || data.source === undefined) data.source = {};
   const src = data.source as Record<string, unknown>;
   if (w.doi) src.doi = w.doi;
   if (w.arxiv_id) src.arxiv_id = w.arxiv_id;
-  src.acquired_via = via;
+  if (via !== undefined) src.acquired_via = via;
   if (data.meta === null || data.meta === undefined) data.meta = {};
   const meta = data.meta as Record<string, unknown>;
   if (!w.doi && !w.arxiv_id) {
@@ -107,7 +121,6 @@ export function stampSource(docJson: string, w: Work, via: string): void {
   } else if (!meta.title && w.title) {
     meta.title = w.title;
   }
-  writeFileSync(docJson, JSON.stringify(data, null, 2), "utf8");
 }
 
 /** Unpack + ingest *zipPath* and link the doc to the matching work. */

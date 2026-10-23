@@ -57,11 +57,11 @@ function iterDocs(outputDir: string): [string, Record<string, unknown>][] {
  * A text Doc is never seeded by title: its Work is the one the user created it under. Recognized by any of its explicit
  * marks (a source file, a text IR, the `text-` id), so a damaged or half-removed text Doc cannot become a new Work.
  */
-function isTextDocEntry(docId: string, doc: Record<string, unknown>, outputDir: string): boolean {
+function isTextDocEntry(docId: string, doc: Record<string, unknown>, docDir: string): boolean {
   return (
     docId.startsWith("text-") ||
     asRecord(doc.source).type === "text" ||
-    existsSync(join(outputDir, docId, "text-source.json"))
+    existsSync(join(docDir, "text-source.json"))
   );
 }
 
@@ -110,42 +110,57 @@ export function findDamagedTextDocs(outputDir: string): string[] {
   return bad;
 }
 
+/**
+ * The Work the library build seeds for one ingested Doc (its stored JSON `doc`, its directory `docDir`), or null when
+ * the build never seeds that Doc (a PDF or a text Doc: their Work is the one the Library lists them under). The build
+ * `upsert`s this Work, so it lands in whichever stored Work shares an identity key with it, or becomes a new one.
+ * Exported so a writer that places a Doc (the Shelf take, shelf ticket 04) can tell beforehand where the next build
+ * puts it.
+ */
+export function seedWorkFor(
+  docId: string,
+  doc: Record<string, unknown>,
+  docDir: string
+): Work | null {
+  // PDF identity/ownership is sourced only from Library associations, never
+  // title-based seeding. The bundle markers keep corrupt/partial metadata from
+  // being reinterpreted as a first-time LaTeX Doc.
+  // A text Doc's Work relation is the user's explicit choice (the source it was created under), never its title.
+  if (
+    doc.format === "pdf" ||
+    isTextDocEntry(docId, doc, docDir) ||
+    existsSync(join(docDir, "original.pdf")) ||
+    existsSync(join(docDir, "annotations.json")) ||
+    existsSync(join(docDir, "reading-position.json"))
+  )
+    return null;
+  const src = asRecord(doc.source);
+  const meta = asRecord(doc.meta);
+  const title = ((pyOr(meta.title) as string | undefined) ?? "").trim();
+  const doi = asStr(src.doi);
+  let arxiv = asStr(src.arxiv_id);
+  // the PDF pipeline names the dir by the arXiv id itself
+  if (!arxiv && ARXIV_RE.test(docId)) arxiv = docId;
+  const venue =
+    src.publisher === "aanda" || (doi ?? "").startsWith("10.1051/0004-6361") ? "A&A" : null;
+
+  const wid = canonicalId({ doi, arxiv, title });
+  return {
+    ...emptyWork(wid),
+    title,
+    doi: doi ?? null,
+    arxiv_id: arxiv ?? null,
+    venue,
+    doc_ids: [docId],
+    origin: "ingested",
+  };
+}
+
 /** Create/merge a work per ingested paper. Idempotent (re-runnable). */
 export function seedFromOutput(store: LibraryStore, outputDir: string): LibraryStore {
   for (const [docId, doc] of iterDocs(outputDir)) {
-    // PDF identity/ownership is sourced only from Library associations, never
-    // title-based seeding. The bundle markers keep corrupt/partial metadata from
-    // being reinterpreted as a first-time LaTeX Doc.
-    // A text Doc's Work relation is the user's explicit choice (the source it was created under), never its title.
-    if (
-      doc.format === "pdf" ||
-      isTextDocEntry(docId, doc, outputDir) ||
-      existsSync(join(outputDir, docId, "original.pdf")) ||
-      existsSync(join(outputDir, docId, "annotations.json")) ||
-      existsSync(join(outputDir, docId, "reading-position.json"))
-    )
-      continue;
-    const src = asRecord(doc.source);
-    const meta = asRecord(doc.meta);
-    const title = ((pyOr(meta.title) as string | undefined) ?? "").trim();
-    const doi = asStr(src.doi);
-    let arxiv = asStr(src.arxiv_id);
-    // the PDF pipeline names the dir by the arXiv id itself
-    if (!arxiv && ARXIV_RE.test(docId)) arxiv = docId;
-    const venue =
-      src.publisher === "aanda" || (doi ?? "").startsWith("10.1051/0004-6361") ? "A&A" : null;
-
-    const wid = canonicalId({ doi, arxiv, title });
-    const w: Work = {
-      ...emptyWork(wid),
-      title,
-      doi: doi ?? null,
-      arxiv_id: arxiv ?? null,
-      venue,
-      doc_ids: [docId],
-      origin: "ingested",
-    };
-    store.upsert(w);
+    const w = seedWorkFor(docId, doc, join(outputDir, docId));
+    if (w !== null) store.upsert(w);
   }
   pruneMissingDocs(store, outputDir);
   return store;

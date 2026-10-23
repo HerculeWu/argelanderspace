@@ -443,6 +443,33 @@ export function docContentFingerprint(ir: DocIr, ctx: DocContentContext): string
     .digest("hex");
 }
 
+/**
+ * {@link docContentFingerprint} of a Doc held in memory (the Shelf take, shelf ticket 04): `files` maps each path
+ * relative to the Doc directory (`assets/fig.png`) to its bytes. `imgPath` resolves as on disk (a bare name under
+ * `assets/`, a path with a `/` relative to the Doc directory) under the same traversal rule; an asset the IR names
+ * that is not in `files` throws (a fingerprint failure, never a mismatch).
+ */
+export function docContentFingerprintOfFiles(
+  ir: DocIr,
+  files: ReadonlyMap<string, Uint8Array>
+): string {
+  const projection = contentProjection(ir, (imgPath) => {
+    if (
+      imgPath.includes("\\") ||
+      imgPath.split("/").some((s) => s === "" || s === ".." || s.startsWith("."))
+    )
+      throw new AnnotationsError(
+        "fingerprint",
+        `annotations fingerprint: refusing unsafe asset path "${imgPath}"`
+      );
+    const bytes = files.get(imgPath.includes("/") ? imgPath : `assets/${imgPath}`);
+    if (bytes === undefined)
+      throw new AnnotationsError("fingerprint", `annotations fingerprint: no asset "${imgPath}"`);
+    return createHash("sha256").update(bytes).digest("hex");
+  });
+  return createHash("sha256").update(JSON.stringify(projection)).digest("hex");
+}
+
 // --------------------------------------------------------------------------- //
 // ensureCurrentAnnotations (roadmap §3 tri-state + §4 archive semantics)
 // --------------------------------------------------------------------------- //

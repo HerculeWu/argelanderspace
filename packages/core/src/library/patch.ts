@@ -140,6 +140,52 @@ export function appendDocIdNarrow(
   return "ok";
 }
 
+/** A stored value that counts as not filled in: absent, null, "", [] or {}. */
+function blankValue(value: unknown): boolean {
+  if (value === undefined || value === null || value === "") return true;
+  if (Array.isArray(value)) return value.length === 0;
+  return typeof value === "object" && Object.keys(value as object).length === 0;
+}
+
+/**
+ * Fill the blank fields of one stored Work and append Docs to it, changing nothing else (the Shelf take into an
+ * existing Work, shelf ticket 04): the file is re-read raw; each key of `fields` is written only where the stored
+ * value is blank (absent, null, "", [] or {}), a filled value is never replaced; `docIds` not yet listed are appended
+ * in order (an existing main Doc stays main; a Work without Docs gets the first one as main). Other Works, unknown
+ * keys and `project` stay as stored. library.json and library.bib are written the way `patchWorkNarrow` writes them;
+ * nothing is written when nothing changes. The caller holds the library write lock.
+ */
+export function fillWorkNarrow(
+  paths: LibraryPaths,
+  workId: string,
+  fields: Readonly<Record<string, unknown>>,
+  docIds: readonly string[]
+): { status: "ok" | "noop"; filled: string[] } | { status: "not_found" } {
+  if (!existsSync(paths.libraryJson)) return { status: "not_found" };
+  const data = JSON.parse(readFileSync(paths.libraryJson, "utf8")) as Raw;
+  const works = Array.isArray(data.works) ? (data.works as unknown[]) : [];
+  const work = works.find(
+    (candidate): candidate is Raw =>
+      candidate !== null &&
+      typeof candidate === "object" &&
+      !Array.isArray(candidate) &&
+      String((candidate as Raw).id) === workId
+  );
+  if (work === undefined) return { status: "not_found" };
+  const filled: string[] = [];
+  for (const [key, value] of Object.entries(fields)) {
+    if (key === "id" || key === "doc_ids" || blankValue(value) || !blankValue(work[key])) continue;
+    work[key] = value;
+    filled.push(key);
+  }
+  const listed = Array.isArray(work.doc_ids) ? work.doc_ids.map(String) : [];
+  const added = docIds.filter((id, i) => !listed.includes(id) && docIds.indexOf(id) === i);
+  if (added.length > 0) work.doc_ids = [...listed, ...added];
+  if (filled.length === 0 && added.length === 0) return { status: "noop", filled };
+  commit(paths, data, works);
+  return { status: "ok", filled };
+}
+
 export interface RemovedDocWork {
   id: string;
   title: string;
