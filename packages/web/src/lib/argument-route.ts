@@ -53,6 +53,11 @@ export const argumentBus = {
   /** The URL stopped naming a graph (popstate to a plain URL). */
   exit: (): void => bus.exit(),
   register: (t: ArgumentTarget): (() => void) => bus.register(t),
+  /** Whether pane `paneId` shows the open graph (the page an `exit` would act on; a page that names no pane counts as any). */
+  hostedBy(paneId: number): boolean {
+    const t = bus.peek();
+    return t !== undefined && (t.paneId === undefined || t.paneId === paneId);
+  },
   /**
    * The Library page whose open graph a navigation to `workId` (null: the URL no longer names a graph) would replace or
    * close, with the Work it shows; null when that navigation leaves every open graph as it is. This is per pane: which pane

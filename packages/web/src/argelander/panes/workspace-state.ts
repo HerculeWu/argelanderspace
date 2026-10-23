@@ -76,7 +76,14 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
 
   // A Doc pane's Reader actions name their Doc; one that is not open is opened through the workspace's own openDoc.
   const docHost: DocPaneHost = { currentDoc: () => own.currentDoc, openDoc: (docId) => openDocAction(docId) };
-  const manager = createPaneManager({ panes: deps.initial.panes, activeId: deps.initial.activeId, pages: deps.pages(docHost), confirmLeave: leave.ask });
+  const manager = createPaneManager({
+    panes: deps.initial.panes,
+    activeId: deps.initial.activeId,
+    pages: deps.pages(docHost),
+    confirmLeave: leave.ask,
+    // a Copilot page action that switches a pane to its page goes the workspace's way (switchView: history, leave_blocked)
+    switchPane: (id, view, origin) => setPaneView(id, view, origin),
+  });
 
   // ---- the snapshot ------------------------------------------------------------------------------ //
 
@@ -108,31 +115,41 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
   /** Each Library page's selected graph node, kept while a Doc pane has replaced the page (see `Workspace.librarySelection`). */
   const selections = new Map<number, string | null>();
   /**
-   * Each Doc pane's session: an opaque token minted when a pane becomes a Doc pane and dropped when it stops being one
-   * (another view, closed). A pane switched away by hand and back is a new session; the page-load prefix keeps a token
-   * written into history before a reload (which numbers the panes again) from matching any pane after it. See `LeftRecord`.
+   * Each pane's view session (ticket 07; first only Doc panes had one): an opaque token minted each time a pane changes
+   * view, kept while it stays in that view (a Doc pane switching Docs with `setCurrentDoc` stays in its session) and
+   * dropped when it changes view again or closes. A pane switched away by hand and back is a new session; the page-load
+   * prefix keeps a token written into history before a reload (which numbers the panes again) from matching any pane
+   * after it. See `LeftRecord`.
    */
   const pageLoad = newPageLoadId();
   let sessionSeq = 0;
-  const sessions = new Map<number, string>();
+  const sessions = new Map<number, { view: string; token: string }>();
   const mintSession = () => `${pageLoad}:${++sessionSeq}`;
+  const sessionOf = (paneId: number): string | undefined => sessions.get(paneId)?.token;
   /**
-   * The session a Back ended by putting the pane's earlier view back (`withLeftView`): the Forward that returns to that Doc
-   * entry makes the pane the same Doc pane again, so a later Back finds its record still applies. Any other way the pane
-   * becomes a Doc pane starts a new session and drops this.
+   * Parked view sessions, one per entry: when a Back puts a pane's recorded view back (`withLeftView`), the view session the
+   * pane leaves is parked under its token — the session the entry that Back left names (`ShownRecord`) — with the view it
+   * had (`prevView`) and the view session the Back put the pane into (`restored`). The Forward that returns to that entry
+   * finds its shown session here and, while the pane is still in `restored`, gives the pane that view and that session
+   * back: a Doc entry the Doc in that pane, whichever pane is active (ticket 06); a plain entry its Plan page, Writer, ….
+   * Because a Back also gives the restored view the session its own entry names, the records on either side keep
+   * applying along a chain of Backs and Forwards, pane by pane. A parking whose pane left `restored` (switched by hand,
+   * closed) is void: Forward then does what it did before.
    */
-  let parked: { paneId: number; session: string; view: string } | null = null;
+  const parks = new Map<string, { paneId: number; prevView: string; restored: string }>();
+  /** The current entry's parking, while it applies (see `parks`). */
+  const parkingHere = (): { session: string; paneId: number; prevView: string } | null => {
+    const shown = shownRecord();
+    const park = shown ? parks.get(shown.session) : undefined;
+    if (!shown || !park || park.paneId !== shown.paneId || sessionOf(park.paneId) !== park.restored) return null;
+    return { session: shown.session, paneId: park.paneId, prevView: park.prevView };
+  };
   const syncSessions = () => {
     const panes = manager.getState().panes;
-    const docPanes = new Set(panes.filter((pane) => pane.view === "doc").map((pane) => pane.id));
-    for (const id of [...sessions.keys()]) if (!docPanes.has(id)) sessions.delete(id);
-    for (const id of docPanes)
-      if (!sessions.has(id)) {
-        sessions.set(id, mintSession());
-        if (parked?.paneId === id) parked = null;
-      }
-    // a parked pane that is closed, or switched to another view by hand, is no longer the pane that Back put back
-    if (parked && !panes.some((pane) => pane.id === parked?.paneId && pane.view === parked.view)) parked = null;
+    const open = new Set(panes.map((pane) => pane.id));
+    for (const id of [...sessions.keys()]) if (!open.has(id)) sessions.delete(id);
+    for (const pane of panes) if (sessions.get(pane.id)?.view !== pane.view) sessions.set(pane.id, { view: pane.view, token: mintSession() });
+    for (const [session, park] of [...parks]) if (!open.has(park.paneId)) parks.delete(session);
   };
   syncSessions();
   manager.subscribe(() => {
@@ -197,12 +214,19 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
     return true;
   };
 
+  /** The current entry's address rewritten, its history state (records, the shown session) kept: it is the same entry. */
+  const replaceKeepingState = (url: string) => {
+    const kept = browser.state();
+    browser.replace(url);
+    if (kept !== null && kept !== undefined) browser.setState(kept);
+  };
+
   const setCurrentDoc = (id: string) => {
     if (id === own.currentDoc) return;
     const change = () => {
       if (id === own.currentDoc) return;
       setOwn({ currentDoc: id });
-      browser.replace(docRouteUrl(id)); // UI-driven switch: any stale #anchor no longer applies
+      replaceKeepingState(docRouteUrl(id)); // UI-driven switch: any stale #anchor no longer applies
       noteDocAddress();
     };
     // the Doc views' guard may answer later (their dialog): the switch waits for a yes, and a no leaves everything as it was
@@ -212,12 +236,13 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
   };
 
   /**
-   * What a pushed Doc entry writes into the history state of the entry it leaves, so Back there can put the pane the Doc
-   * took over back as it was: the pane (the Doc pane that already existed, else the active pane), the view it had (`doc`
-   * when it already showed a Doc, then `prevDocId` names that Doc), and the session of the Doc pane this open made or
-   * used (`session`). The record applies while that pane is still that same Doc pane, whichever Doc it shows now (a switch
-   * inside it with `setCurrentDoc` keeps it); a pane switched away by hand, or one numbered again after a reload, is not,
-   * and the record counts as none.
+   * What a pushed entry writes into the history state of the entry it leaves, so Back there can put the pane it changed
+   * back as it was: a Doc opened (`openDoc`: the Doc pane that already existed, else the active pane), or a pane switched
+   * away from an exploration or a graph to any view (`switchView`, tickets 01, 05, 07). It names the pane, the view it had
+   * (`doc` when it already showed a Doc, then `prevDocId` names that Doc), and the view session the change made or used
+   * (`session`). The record applies while that pane is still in that view session, whichever Doc it shows now (a switch
+   * inside a Doc pane with `setCurrentDoc` keeps it); a pane switched away by hand, or one numbered again after a reload,
+   * is not, and the record is void (`invalid`: the fallback then never takes another Doc pane).
    */
   interface LeftRecord {
     paneId: number;
@@ -225,17 +250,66 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
     session: string;
     prevDocId?: string;
   }
-  const leftRecordOf = (pane: Pane, session: string): { argelanderReplaced: LeftRecord } => ({
-    argelanderReplaced: { paneId: pane.id, view: pane.view, session, ...(pane.view === "doc" && own.currentDoc ? { prevDocId: own.currentDoc } : {}) },
-  });
-  /** The current entry's record, when the pane it names is still the Doc pane of that session; else null. */
-  const leftRecord = (): { left: LeftRecord; pane: Pane } | null => {
+  /** The current entry's history state as an object (what is there is kept when a record is added). */
+  const stateObject = (): Record<string, unknown> => {
+    const state = browser.state();
+    return state && typeof state === "object" ? (state as Record<string, unknown>) : {};
+  };
+  const writeLeftRecord = (pane: Pane, session: string) =>
+    browser.setState({
+      ...stateObject(),
+      argelanderReplaced: { paneId: pane.id, view: pane.view, session, ...(pane.view === "doc" && own.currentDoc ? { prevDocId: own.currentDoc } : {}) } satisfies LeftRecord,
+    });
+  /**
+   * What a pushed entry (`openDoc`, a switch away from an exploration or a graph) carries in its history state: the pane it
+   * changed, and the view and view session that pane entered there. Forward back to that entry finds the parking of that
+   * session (see `parks`); Back to it gives a restored view that same session (see `withLeftView`).
+   */
+  interface ShownRecord {
+    paneId: number;
+    session: string;
+    view: string;
+  }
+  const shownRecord = (): ShownRecord | null => {
+    const shown = stateObject().argelanderShown as Partial<ShownRecord> | undefined;
+    return shown && typeof shown.paneId === "number" && typeof shown.session === "string" && typeof shown.view === "string"
+      ? { paneId: shown.paneId, session: shown.session, view: shown.view }
+      : null;
+  };
+  /**
+   * The current entry's identity (a token in its history state, written the first time it is asked for): a late answer
+   * checks it is still on the very entry it was asked at, not another entry at the same address (the graph's address its
+   * own refusal pushed back).
+   */
+  const entryToken = (): string => {
+    const known = stateObject().argelanderEntry;
+    if (typeof known === "string") return known;
+    const token = mintSession();
+    browser.setState({ ...stateObject(), argelanderEntry: token });
+    return token;
+  };
+  /** The current entry's record: none, void (its pane left that view session), or one that applies, with its pane. */
+  type RecordLookup = { kind: "none" } | { kind: "invalid"; paneId: number } | { kind: "valid"; left: LeftRecord; pane: Pane };
+  const leftRecord = (): RecordLookup => {
     const state = browser.state() as { argelanderReplaced?: Partial<LeftRecord> } | null;
     const left = state?.argelanderReplaced;
-    if (!left || typeof left.paneId !== "number" || typeof left.view !== "string" || typeof left.session !== "string") return null;
-    const pane = manager.getState().panes.find((p) => p.id === left.paneId && p.view === "doc");
-    if (!pane || sessions.get(pane.id) !== left.session) return null;
-    return { left: { paneId: left.paneId, view: left.view, session: left.session, ...(typeof left.prevDocId === "string" ? { prevDocId: left.prevDocId } : {}) }, pane };
+    if (!left || typeof left.paneId !== "number" || typeof left.view !== "string" || typeof left.session !== "string") return { kind: "none" };
+    const pane = manager.getState().panes.find((p) => p.id === left.paneId);
+    if (!pane || sessionOf(pane.id) !== left.session) return { kind: "invalid", paneId: left.paneId };
+    return { kind: "valid", left: { paneId: left.paneId, view: left.view, session: left.session, ...(typeof left.prevDocId === "string" ? { prevDocId: left.prevDocId } : {}) }, pane };
+  };
+  /**
+   * The pane a mode's Library page is made in when the entry's record does not apply: the active pane (as at boot), but a
+   * void record never lets the fallback take a Doc pane other than the one it names (ticket 07) — then the recorded pane,
+   * else the first pane that is not such a Doc pane.
+   */
+  const fallbackModePane = (lookup: RecordLookup): Pane | undefined => {
+    const { panes: current, activeId } = manager.getState();
+    const active = current.find((p) => p.id === activeId);
+    if (lookup.kind !== "invalid") return active;
+    const otherDoc = (p: Pane) => p.view === "doc" && p.id !== lookup.paneId;
+    if (active && !otherDoc(active)) return active;
+    return current.find((p) => p.id === lookup.paneId) ?? current.find((p) => !otherDoc(p));
   };
 
   /** The address that last showed the open Doc, its anchor included: what a refused Back/Forward puts back. */
@@ -296,6 +370,17 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
   /** Show a Doc (the current one, else the first) in a Doc pane; false when the leave guard keeps things as they are (or has not answered yet). */
   const openDoc = (docId?: string, anchor?: string | null, opts: OpenDocOptions = {}): boolean => {
     const nextDoc = docId ?? own.currentDoc ?? own.papers[0] ?? null;
+    // A Back/Forward to the Doc address whose pane a Back parked (ticket 06): that pane, while its parking applies (it is
+    // still in the view session the Back put it in) and no other pane shows a Doc; else none (the Doc pane, else the
+    // active pane, as for any open). Only a parked Doc session counts here.
+    const parkedPane = (): Pane | undefined => {
+      if (!opts.urlIsDoc) return undefined;
+      const here = parkingHere();
+      if (!here || here.prevView !== "doc") return undefined;
+      const { panes: now } = manager.getState();
+      if (now.some((p) => p.view === "doc")) return undefined;
+      return now.find((p) => p.id === here.paneId);
+    };
     // A refused switch puts a URL the browser already moved back; a click from the argument graph view has not moved
     // it (the view is still open, and its URL must still say so).
     const restoreUrl = () => {
@@ -313,43 +398,50 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
           // from (the Library page, an exploration, the argument graph); onNav turns a plain URL back into the Library page.
           const url = docRouteUrl(docId, anchor);
           const at = browser.location();
-          if (opts.urlIsDoc || at.pathname + at.hash === url) browser.replace(url);
+          if (opts.urlIsDoc || at.pathname + at.hash === url) replaceKeepingState(url);
           else {
             // the entry being left remembers which view this Doc replaces, so Back to it puts that view back (see onNav)
             const { panes: before, activeId: at0 } = manager.getState();
             const target = before.find((p) => p.view === "doc") ?? before.find((p) => p.id === at0);
+            let session: string | undefined;
             if (target && nextDoc) {
               // the Doc pane this open uses: the one there already keeps its session, a pane it turns into one starts one
-              let session = target.view === "doc" ? sessions.get(target.id) : undefined;
+              session = target.view === "doc" ? sessionOf(target.id) : undefined;
               if (!session) {
                 session = mintSession();
-                sessions.set(target.id, session);
+                sessions.set(target.id, { view: "doc", token: session });
               }
-              browser.setState(leftRecordOf(target, session));
+              writeLeftRecord(target, session);
             }
             browser.push(url);
+            // the entry names the Doc pane's session, so Forward back to it after a Back finds its parking (see `parks`)
+            if (target && session) browser.setState({ argelanderShown: { paneId: target.id, session, view: "doc" } satisfies ShownRecord });
           }
           // the Doc and its anchor in one change: the Doc pane gets the anchor with the Doc
           setOwn({ currentDoc: nextDoc, pendingAnchor: anchor ?? null });
         } else setOwn({ currentDoc: nextDoc });
-        // Forward back to the Doc entry a Back left: the pane becomes the Doc pane it was again (see `parked`)
-        const { panes: now, activeId: nowActive } = manager.getState();
-        if (opts.urlIsDoc && parked?.paneId === nowActive && !now.some((p) => p.view === "doc")) sessions.set(nowActive, parked.session);
-        parked = null;
-        // ensure a pane shows the document: prefer an existing doc pane, else the active one
+        // Forward back to the Doc entry a Back left: the pane it parked becomes the Doc pane it was again, whichever pane
+        // is active now (see `parks`)
+        const back = parkedPane();
+        const here = back ? parkingHere() : null;
+        if (back && here) {
+          sessions.set(back.id, { view: "doc", token: here.session });
+          parks.delete(here.session);
+        }
+        // ensure a pane shows the document: prefer an existing doc pane, else the parked one, else the active one
         manager.update((ps) => {
           if (ps.some((p) => p.view === "doc")) return ps;
-          const active = manager.getState().activeId;
-          return ps.map((p) => (p.id === active ? { ...p, view: "doc" } : p));
+          const into = back?.id ?? manager.getState().activeId;
+          return ps.map((p) => (p.id === into ? { ...p, view: "doc" } : p));
         });
-        syncSessions(); // a session started above for a pane that did not become a Doc pane is dropped
+        syncSessions(); // a Doc session started above for a pane that did not become a Doc pane gives way to its view's
         noteDocAddress();
       });
     // With no Doc pane the active pane becomes one: if that pane is a Library page, its unsaved argument draft is lost
     // (the page asks, unless the caller already asked about leaving it: the browser's Back).
     const afterDocAsked = (): boolean => {
       const { panes: current, activeId } = manager.getState();
-      const replaced = current.some((p) => p.view === "doc") ? undefined : current.find((p) => p.id === activeId);
+      const replaced = current.some((p) => p.view === "doc") ? undefined : parkedPane() ?? current.find((p) => p.id === activeId);
       if (replaced?.view === "library" && !opts.libraryAsked) {
         const askedAt = browser.location().href;
         const verdict = leave.ask("library", replaced.id, opts.origin);
@@ -506,18 +598,27 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
     // Back to an exploration with no Library pane (the Reader replaced it): make one first, as the boot path does
     if (seed) {
       // the pane the Doc took over first gets its view back (a Plan page stays a Plan page next to the exploration)
-      withLeftView(() => {
+      withLeftView((lookup) => {
         if (manager.getState().panes.some((p) => p.view === "library")) return exploreBus.request(seed);
-        const active = manager.getState().panes.find((p) => p.id === manager.getState().activeId);
-        if (active) leaveDocPane(active, paneTo(active, "library"), () => exploreBus.request(seed));
+        const pane = fallbackModePane(lookup);
+        if (pane) leaveDocPane(pane, paneTo(pane, "library"), () => exploreBus.request(seed));
       });
       return;
     }
     exploreBus.exit();
     // Back to a graph URL with no Library pane (the Reader replaced it): make one first, as the boot path does
     if (argumentWork) {
-      withLeftView(() => {
-        if (ensureLibraryPane(true)) argumentBus.request(argumentWork, { confirmed: leavingView });
+      withLeftView((lookup) => {
+        const request = () => argumentBus.request(argumentWork, { confirmed: leavingView });
+        if (lookup.kind !== "invalid") {
+          if (ensureLibraryPane(true)) request();
+          return;
+        }
+        if (manager.getState().panes.some((p) => p.view === "library")) return request();
+        // a void record: the pane an exploration would take (never another Doc pane; the active pane stays active), and
+        // with none left nothing changes (the address names the graph, the screen keeps its Doc)
+        const pane = fallbackModePane(lookup);
+        if (pane) leaveDocPane(pane, paneTo(pane, "library"), request);
       });
       return;
     }
@@ -559,16 +660,16 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
   const paneTo = (pane: Pane, view: string) => () => manager.update((ps) => ps.map((p) => (p.id === pane.id && p.view === pane.view ? { ...p, view } : p)));
 
   /**
-   * The entry Back/Forward arrived at may carry the record a pushed Doc entry wrote (`LeftRecord`): the pane the Doc took
-   * over gets its view back (a Doc it showed before: that Doc), while it is still the Doc pane that open made or used. A
-   * record whose pane is not (switched away by hand, numbered again after a reload) counts as none. `then` runs afterwards
-   * in every case (also after a late answer). Returns whether the entry had a record that applied.
+   * The entry Back/Forward arrived at may carry the record a pushed entry wrote (`LeftRecord`): the pane that change took
+   * over gets its view back (a Doc it showed before: that Doc), while it is still in the view session that change made or
+   * used. A record whose pane is not (switched away by hand, numbered again after a reload) is void. `then` runs afterwards
+   * in every case (also after a late answer) with what was found. Returns what was found.
    */
-  const withLeftView = (then: () => void): boolean => {
+  const withLeftView = (then: (lookup: RecordLookup) => void): RecordLookup => {
     const found = leftRecord();
-    if (!found) {
-      then();
-      return false;
+    if (found.kind !== "valid") {
+      then(found);
+      return found;
     }
     const { left, pane } = found;
     const prev = left.prevDocId;
@@ -576,24 +677,55 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
       left.view === "doc"
         ? () => prev && setOwn({ currentDoc: prev, pendingAnchor: null })
         : () => {
+            // the view comes back with the session this entry names (`ShownRecord`), so the record of the entry before it
+            // still applies on a further Back
+            const shown = shownRecord();
+            if (shown && shown.paneId === pane.id && shown.view === left.view) sessions.set(pane.id, { view: left.view, token: shown.session });
             paneTo(pane, left.view)();
-            if (!manager.getState().panes.some((p) => p.id === pane.id && p.view === "doc")) parked = { paneId: pane.id, session: left.session, view: left.view };
+            syncSessions();
+            // the view session it left is parked (any view): Forward to the entry that showed it puts it back
+            const restored = sessionOf(pane.id);
+            if (restored && left.view !== pane.view && manager.getState().panes.some((p) => p.id === pane.id && p.view === left.view))
+              parks.set(left.session, { paneId: pane.id, prevView: pane.view, restored });
           };
-    leaveDocPane(pane, change, then);
+    leaveDocPane(pane, change, () => then(found));
+    return found;
+  };
+
+  /**
+   * Forward arrived at a plain entry a switch pushed (`ShownRecord`) whose view session a Back parked, and the pane is still
+   * in the session that Back made: the pane gets that view and that session back (the Plan page a switch away from an
+   * exploration showed), so a later Back finds the exploration's record still applies. Returns whether it applied; a void
+   * parking changes nothing here. (A Library page it leaves showed an exploration, which has no unsaved work, or a graph,
+   * whose guard onNav already asked.)
+   */
+  const unparkForShown = (): boolean => {
+    const here = parkingHere();
+    if (!here) return false;
+    parks.delete(here.session);
+    sessions.set(here.paneId, { view: here.prevView, token: here.session });
+    manager.update((ps) => ps.map((pane) => (pane.id === here.paneId ? { ...pane, view: here.prevView } : pane)));
+    syncSessions();
     return true;
   };
 
   /**
    * Back/Forward arrived at a URL that names neither a Doc nor an exploration nor an argument graph (`/`). With a record on
-   * that entry that still applies the Doc's pane is put back as it was (see `withLeftView`) and nothing else changes. With
-   * no record (a boot deep link, an older entry, or a record that no longer applies) the Library page is what is there:
-   * when no pane shows it, the Doc pane (the active pane if it is one) turns into it.
+   * that entry that still applies the pane is put back as it was (see `withLeftView`) and nothing else changes. With no
+   * record (a boot deep link, an older entry) the Library page is what is there: when no pane shows it, the Doc pane (the
+   * active pane if it is one) turns into it. A void record turns only the pane it names, when that is a Doc pane (ticket 07).
    */
   const libraryForPlainUrl = () => {
-    if (withLeftView(() => {})) return;
+    if (unparkForShown()) return;
+    const lookup = withLeftView(() => {});
+    if (lookup.kind === "valid") return;
     const { panes: current, activeId } = manager.getState();
     if (current.some((p) => p.view === "library")) return;
-    const pane = current.find((p) => p.id === activeId && p.view === "doc") ?? current.find((p) => p.view === "doc");
+    // a void record lets the fallback turn only the pane it names, never another Doc pane (ticket 07)
+    const pane =
+      lookup.kind === "invalid"
+        ? current.find((p) => p.id === lookup.paneId && p.view === "doc")
+        : current.find((p) => p.id === activeId && p.view === "doc") ?? current.find((p) => p.view === "doc");
     if (pane) leaveDocPane(pane, paneTo(pane, "library"));
   };
 
@@ -611,39 +743,46 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
     argumentBus.request(workId, { push: true, paneId: library?.id ?? manager.getState().activeId });
   };
 
-  // ---- switching a pane's view (the activity bar, the pane menu) ------------------------------------ //
+  // ---- switching a pane's view (the activity bar, the pane menu, the Copilot's switch_view) ---------- //
 
   /**
-   * The person switches pane `id` to `view` (the activity bar: the active pane; the pane menu: that pane, which becomes
-   * active). A pane that shows the open exploration (`#explore/…`) leaves it this way: the exploration ends with the
-   * Library page, and a new history entry names what is on screen now — the Doc's address when the pane becomes a Doc
-   * pane showing a Doc, else the plain URL — so Back returns to the exploration. A pane that becomes a Doc pane records the
-   * view it replaces on the exploration's entry (`LeftRecord`), as `openDoc` does. The Library page's leave guard is asked
-   * once, as the pane manager would; refused, nothing changes. A late yes still switches, but writes the entry only while
-   * the address is still the one asked at (a later navigation's entry is not this switch's to bury).
+   * Pane `id` is switched to `view` (the activity bar: the active pane; the pane menu: that pane, which becomes active; the
+   * Copilot's `switch_view` the same way with origin `agent`). A pane that shows the open exploration (`#explore/…`) or
+   * the open argument graph (`#argument/…`) leaves it this way: the mode ends with the Library page, and a new history
+   * entry names what is on screen now — the Doc's address when the pane becomes a Doc pane showing a Doc, else the plain
+   * URL — so Back returns to the exploration or the graph. The pane's new view session is recorded on the entry it leaves
+   * (`LeftRecord`, whatever the view), as `openDoc` does. The Library page's leave guard (the graph's draft) is asked once,
+   * as the pane manager would; refused, nothing changes. A late yes still switches, but writes the entry only while the
+   * address is still the one asked at (a later navigation's entry is not this switch's to bury).
    */
   const switchView = (id: number, view: string, origin: LeaveOrigin, activate: boolean): boolean => {
     const pane = manager.getState().panes.find((p) => p.id === id);
     const at = browser.location();
-    const leavesExploration = pane?.view === "library" && view !== "library" && parseExploreHash(at.hash) !== null && exploreBus.hostedBy(id);
-    if (!pane || !leavesExploration) return activate ? manager.setPaneView(id, view, origin) : manager.setActiveView(view, origin);
-    const askedAt = at.href;
+    // the Library page's two modes that own the address: an exploration, and the argument graph (ticket 05)
+    const showsMode = (parseExploreHash(at.hash) !== null && exploreBus.hostedBy(id)) || (parseArgumentHash(at.hash) !== null && argumentBus.hostedBy(id));
+    const leavesMode = pane?.view === "library" && view !== "library" && showsMode;
+    if (!pane || !leavesMode) return activate ? manager.setPaneView(id, view, origin) : manager.setActiveView(view, origin);
+    // the entry asked at, by identity: another entry at the same address (the graph's address its own refusal pushed
+    // back while this question was open) is not it
+    const askedAt = entryToken();
     const apply = () =>
       batch(() => {
         if (!manager.getState().panes.some((p) => p.id === id && p.view === pane.view)) return;
-        const write = browser.location().href === askedAt;
+        const write = stateObject().argelanderEntry === askedAt;
         const docUrl = view === "doc" ? openDocUrl() : null;
-        if (write && docUrl) {
-          // the pane becomes a Doc pane with a session of its own, recorded on the exploration's entry (see onNav)
-          const session = mintSession();
-          sessions.set(id, session);
-          browser.setState(leftRecordOf(pane, session));
+        const session = write ? mintSession() : null;
+        if (session) {
+          // the pane enters a view session of its own (any view: ticket 07), recorded on the entry it leaves (see onNav)
+          sessions.set(id, { view, token: session });
+          writeLeftRecord(pane, session);
         }
         manager.update((ps) => ps.map((p) => (p.id === id ? { ...p, view } : p)));
         if (activate) manager.select(id);
         syncSessions();
-        if (write) {
+        if (session) {
           browser.push(docUrl ?? "/");
+          // the entry it pushes names that session, so Forward back to it after a Back finds the parked view (see `parks`)
+          browser.setState({ argelanderShown: { paneId: id, session, view } satisfies ShownRecord });
           if (docUrl) noteDocAddress();
         }
       });
@@ -743,7 +882,8 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
       case "switch_view": {
         const id = action.paneId ?? s().activeId;
         if (missing(id)) return { ok: false, detail: "not_found" };
-        const applied = action.paneId === undefined ? manager.setActiveView(action.view, "agent") : manager.setPaneView(id, action.view, "agent");
+        // the same path as the person's switch (switchView: leaving an exploration or a graph writes history), as the agent
+        const applied = action.paneId === undefined ? setActiveView(action.view, "agent") : setPaneView(id, action.view, "agent");
         if (!applied) return { ok: false, detail: "leave_blocked" };
         return settled(() => s().panes.find((pane) => pane.id === id)?.view === action.view && (action.paneId === undefined || s().activeId === id));
       }

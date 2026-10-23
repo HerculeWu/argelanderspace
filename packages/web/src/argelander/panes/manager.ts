@@ -41,6 +41,11 @@ export interface PaneManagerOptions {
    * when it says no; the call that asked answers false meanwhile.
    */
   confirmLeave: (view: string, paneId?: number, origin?: LeaveOrigin) => boolean | Promise<boolean>;
+  /**
+   * How a view action switches a pane to its page (the workspace's own switch, which writes history when the pane leaves
+   * an exploration or an argument graph); default this manager's `setPaneView`.
+   */
+  switchPane?: (id: number, view: string, origin: LeaveOrigin) => boolean;
 }
 
 export type PaneManager = ReturnType<typeof createPaneManager>;
@@ -201,7 +206,7 @@ export function createPaneManager(options: PaneManagerOptions) {
       return opened.ok ? { opened: true } : { result: opened };
     }
     // (this is the Copilot's path: a draft that needs the person's answer is refused, not asked about)
-    if (!setPaneView(active.id, page, "agent")) return { result: { ok: false, detail: "leave_blocked" } };
+    if (!(options.switchPane ?? setPaneView)(active.id, page, "agent")) return { result: { ok: false, detail: "leave_blocked" } };
     const readyMs = kind.timeouts?.readyMs ?? DEFAULT_TIMEOUTS.readyMs;
     if (readyMs > 0 && !(await whenReady(active.id, page, readyMs))) return { result: unavailable() };
     return { opened: true };
