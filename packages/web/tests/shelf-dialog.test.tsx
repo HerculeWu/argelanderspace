@@ -160,6 +160,31 @@ describe("the Shelf dialog", () => {
     expect(onViewWork).toHaveBeenCalledWith("doi:10.1/gaia");
   });
 
+  it("an entry with no Doc: the take says it carries none rather than 'all taken' over an empty list, in both languages (ticket shelf-followups 09)", async () => {
+    const bare = { ...(OK_ROW as Extract<typeof OK_ROW, { status: "ok" }>), docs: [], annotations: 0 };
+    const plan = { ...PLAN, mainDoc: { before: null, after: null, changed: false }, docs: { taken: [], skipped: [] } };
+    for (const [lang, none, all] of [["zh-CN", "这一条没有带 Doc。", "全部取入"], ["en", "This entry carries no Docs.", "all taken"]] as const) {
+      cleanup();
+      await i18n.changeLanguage(lang);
+      stubFetch(shelfRoutes(() => [bare], (url) => (url === `/api/shelf/entries/${ENTRY_A}/annotations?rev=2` ? json({ entryId: ENTRY_A, rev: 2, docs: [] }) : undefined), () => plan));
+      open({ entryId: ENTRY_A, take: true });
+      const docs = await waitFor(() => must('[data-ui="take-docs"]'));
+      expect(docs.textContent).not.toContain(all);
+      expect(must('[data-ui="take-no-docs"]').textContent).toBe(none);
+    }
+  });
+
+  it("delete in English: one Doc and one annotation are singular (ticket shelf-followups 09)", async () => {
+    await i18n.changeLanguage("en");
+    const one = { ...(OK_ROW as Extract<typeof OK_ROW, { status: "ok" }>), docs: [OK_ROW.status === "ok" ? OK_ROW.docs[0] : null].filter((d) => d !== null), annotations: 1, note: false };
+    stubFetch(shelfRoutes(() => [one]));
+    open();
+    await waitFor(() => must('[data-ui="shelf-entry-summary"]'));
+    fireEvent.click(must('[data-ui="delete-shelf-entry"]'));
+    const confirm = await waitFor(() => must('[data-ui="delete-shelf-entry-dialog"]'));
+    expect(confirm.textContent).toContain("Deletes this entry’s 1 Doc and 1 annotation, the argument graph from the Shelf.");
+  });
+
   it("a plan that changed before the take is shown again and nothing is taken", async () => {
     const changed = { ...PLAN, work: { ...PLAN.work, created: false, title: "Gaia (local)", citeKey: "gaia2018b" } };
     stubFetch(shelfRoutes(() => [OK_ROW], (url) => (url === `/api/shelf/entries/${ENTRY_A}/take` ? json({ detail: "plan changed", code: "plan_changed", plan: changed, planDigest: "e".repeat(64) }, 409) : undefined)));

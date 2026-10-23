@@ -8,7 +8,7 @@ import { Icon } from "../lib/icons";
 import type { LibraryRef } from "../library/types";
 import { ActionButton, Badge, Dialog, InlineMessage } from "../ui";
 import { useShelfAvailable } from "./availability";
-import { formatBytes, shelfFailureLines, type Translate } from "./format";
+import { counts, formatBytes, shelfFailureLines, type Translate } from "./format";
 import { dismissIngestPrompt, useIngestPrompt } from "./ingest-prompt";
 import "./shelf.css";
 
@@ -148,7 +148,7 @@ export function useWorkShelf(work: LibraryRef): { button: ReactNode; dialog: Rea
 function addedText(result: ShelfAddResponse, t: Translate): string {
   const docs = result.carried.docs.length;
   const annotations = result.carried.docs.reduce((n, d) => n + d.annotations, 0);
-  const parts = [t(result.replaced.length > 0 ? "shelf.add.replacedOk" : "shelf.add.addedOk", { docs, annotations })];
+  const parts = [t(result.replaced.length > 0 ? "shelf.add.replacedOk" : "shelf.add.addedOk", counts(t, docs, annotations))];
   const notCarried = result.notCarried.reduce((n, d) => n + d.annotationIds.length, 0);
   if (notCarried > 0) parts.push(t("shelf.add.notCarried", { count: notCarried }));
   if (result.archived.length > 0) parts.push(t("shelf.add.archivedOnTheWay", { docs: result.archived.map((a) => a.docId).join(", ") }));
@@ -379,7 +379,7 @@ export function AddToShelfDialog({ work, onClose, onAdded }: { work: LibraryRef;
               <span className="shelf-k">{t("shelf.replace.old")}</span>
               {impact.entries.map((e) => (
                 <div key={e.entryId} className="shelf-compare-entry" data-ui="replace-old-entry" data-ui-key={e.entryId}>
-                  <strong>{t("shelf.replace.summary", { docs: e.docs.length, annotations: e.annotations, graph: yes(e.argumentGraph), note: yes(e.note) })}</strong>
+                  <strong>{t("shelf.replace.summary", { ...counts(t, e.docs.length, e.annotations), graph: yes(e.argumentGraph), note: yes(e.note) })}</strong>
                   <span className="shelf-dim mono">
                     {formatBytes(e.docs.reduce((n, d) => n + d.bytes, 0))} · {t("shelf.addedFrom", { at: formatTime(e.addedAt), from: e.sourceProject })}
                   </span>
@@ -397,7 +397,7 @@ export function AddToShelfDialog({ work, onClose, onAdded }: { work: LibraryRef;
             <Icon name="arrow-right" cls="ico-sm shelf-compare-arrow" />
             <div className="shelf-compare-col" data-ui="replace-new">
               <span className="shelf-k">{t("shelf.replace.new")}</span>
-              <strong>{t("shelf.replace.summary", { docs: newDocs.length, annotations: annCount, graph: yes(carryGraph), note: yes(carryNote) })}</strong>
+              <strong>{t("shelf.replace.summary", { ...counts(t, newDocs.length, annCount), graph: yes(carryGraph), note: yes(carryNote) })}</strong>
               <ul className="shelf-mini-list">
                 {newDocs.map((d) => (
                   <li key={d}>
@@ -434,7 +434,7 @@ export function AddToShelfDialog({ work, onClose, onAdded }: { work: LibraryRef;
       footer={
         <>
           <span className="shelf-foot-summary" data-ui="add-to-shelf-summary">
-            {t("shelf.add.willAdd", { docs: chosenDocs.length, annotations: annCount, graph: yes(carryGraph), note: yes(carryNote) })}
+            {t("shelf.add.willAdd", { ...counts(t, chosenDocs.length, annCount), graph: yes(carryGraph), note: yes(carryNote) })}
             {chosenBytes !== null && ` · ${t("shelf.add.about", { size: formatBytes(chosenBytes) })}`}
           </span>
           <ActionButton mode="text" data-ui="cancel-add-to-shelf" label={t("common.cancel")} tooltip={t("common.cancel")} disabled={busy} onClick={onClose}>

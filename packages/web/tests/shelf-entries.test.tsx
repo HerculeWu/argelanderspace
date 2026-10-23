@@ -242,6 +242,34 @@ describe("the ingest reminder", () => {
     expect(document.querySelector('[data-ui="ingest-add-to-shelf-prompt"]')).toBeNull();
   });
 
+  it("the result line in English: one Doc, one annotation; several are plural (ticket shelf-followups 09)", async () => {
+    await i18n.changeLanguage("en");
+    const answers = [
+      { docs: [{ docId: "arxiv-1", kind: "latex", annotations: 1 }], replaced: [] as unknown[], text: "Added to the Shelf: 1 Doc, 1 annotation." },
+      { docs: [{ docId: "arxiv-1", kind: "latex", annotations: 2 }, { docId: "pdf-1", kind: "pdf", annotations: 0 }], replaced: [{ entryId: "f".repeat(32), rev: 1 }], text: "Shelf entry replaced: 2 Docs, 2 annotations." },
+    ];
+    for (const answer of answers) {
+      cleanup();
+      stubFetch(async (url, init) => {
+        if (url === "/api/shelf/entries/preview") return json({ impact: null, carried: { docs: [], argumentGraph: false, note: false }, notCarried: [] });
+        if (url.startsWith("/api/shelf/add-candidates/")) return json({ workId: REF.id, docs: [{ docId: "arxiv-1", kind: "latex", bytes: 10, annotations: { state: "current", list: [] } }] });
+        if (url === "/api/shelf/entries" && init?.method === "POST")
+          return json({ entry: { entryId: "e".repeat(32), rev: 1 }, replaced: answer.replaced, carried: { docs: answer.docs, argumentGraph: false, note: false }, notCarried: [], archived: [] });
+        return undefined;
+      });
+      render(
+        <ShelfAvailabilityValue value={true}>
+          <ShelfParts work={REF} />
+        </ShelfAvailabilityValue>
+      );
+      fireEvent.click(must('[data-ui="add-work-to-shelf"]'));
+      const submit = await waitFor(() => must('[data-ui="submit-add-to-shelf"]') as HTMLButtonElement);
+      await waitFor(() => expect(submit.disabled).toBe(false));
+      fireEvent.click(submit);
+      await waitFor(() => expect(must('[data-ui="add-to-shelf-feedback"]').textContent).toBe(answer.text));
+    }
+  });
+
   it("the add button: the chosen icon from icons.json; says 'replaces' when the Shelf has the paper (by DOI, arXiv or OpenAlex)", async () => {
     const fetchMock = stubFetch(async (url) => (url.startsWith("/api/shelf/lookup") ? json({ entries: [{ entryId: "e".repeat(32), rev: 1, title: "X", matchedOn: ["openalex"] }] }) : undefined));
     render(

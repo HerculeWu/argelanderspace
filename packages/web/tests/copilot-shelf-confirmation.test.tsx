@@ -191,6 +191,28 @@ test("a stale answer says something changed and nothing was written; an unreadab
   await waitFor(() => expect(ui("copilot-confirmation-problem")?.textContent).toContain("This is not a change you made, and nothing was written."));
 });
 
+test("a problem notice under the card is scrolled into view without taking the focus; smooth only when motion is not reduced (ticket shelf-followups 09)", async () => {
+  const proto = Element.prototype as unknown as { scrollIntoView?: (options?: ScrollIntoViewOptions) => void };
+  const original = proto.scrollIntoView;
+  const seen: { el: Element; options: ScrollIntoViewOptions | undefined }[] = [];
+  proto.scrollIntoView = function (this: Element, options?: ScrollIntoViewOptions) { seen.push({ el: this, options }); };
+  try {
+    for (const reduce of [false, true]) {
+      cleanup(); seen.length = 0;
+      vi.stubGlobal("matchMedia", (query: string) => ({ matches: reduce && query.includes("prefers-reduced-motion: reduce"), media: query, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, onchange: null, dispatchEvent: () => false }));
+      decisionStatus = 409;
+      await open();
+      await waitFor(() => expect(ui("copilot-confirmation-confirm")).not.toBeNull());
+      fireEvent.click(ui("copilot-confirmation-confirm")!);
+      await waitFor(() => expect(ui("copilot-confirmation-problem")).not.toBeNull());
+      await waitFor(() => expect(seen.some((call) => call.el === ui("copilot-confirmation-problem"))).toBe(true));
+      const call = seen.find((entry) => entry.el === ui("copilot-confirmation-problem"));
+      expect(call?.options).toEqual({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
+      expect(document.activeElement).not.toBe(ui("copilot-confirmation-problem"));
+    }
+  } finally { if (original) proto.scrollIntoView = original; else delete proto.scrollIntoView; }
+});
+
 test("the cards and the operation names are worded in Chinese too", async () => {
   await i18n.changeLanguage("zh-CN");
   current = snap("waiting-for-user", { confirmations: [addCard({ impact: { entries: [replaced] } })] });

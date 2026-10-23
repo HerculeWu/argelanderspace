@@ -4,6 +4,11 @@ import { refusalParts, type ShelfFailure } from "../api/shelf";
 
 export type Translate = TFunction;
 
+/** The `docs` / `annotations` of a summary line, each worded for its own number ("1 Doc", "2 Docs"; i18next plurals). */
+export function counts(t: Translate, docs: number, annotations: number): { docs: string; annotations: string } {
+  return { docs: t("shelf.docCount", { count: docs }), annotations: t("shelf.annCount", { count: annotations }) };
+}
+
 /** Bytes as the Shelf shows them (KB / MB / GB, one decimal under 10). */
 export function formatBytes(bytes: number): string {
   const units = ["B", "KB", "MB", "GB"];

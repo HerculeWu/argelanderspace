@@ -7,7 +7,7 @@ import { Icon } from "../lib/icons";
 import type { LibraryRef } from "../library/types";
 import { ActionButton, Badge, Dialog, InlineMessage } from "../ui";
 import { AnnotationText, DocKindIcon, formatTime } from "./AddToShelf";
-import { damageText, formatBytes, shelfFailureLines, type Translate } from "./format";
+import { counts, damageText, formatBytes, shelfFailureLines, type Translate } from "./format";
 import { projectWorksMatching } from "./already-on-shelf";
 import "./shelf.css";
 
@@ -536,8 +536,13 @@ function TakePane({ row, onBusy, onBack, onDone, onStale }: { row: OkRow; onBusy
         <section className="shelf-sec" data-ui="take-docs">
           <h3 className="shelf-sec-h">
             {t("shelf.docs")}
-            <span>{t("shelf.take.docsAll")}</span>
+            {row.docs.length > 0 && <span>{t("shelf.take.docsAll")}</span>}
           </h3>
+          {row.docs.length === 0 && (
+            <p className="shelf-dim" data-ui="take-no-docs">
+              {t("shelf.take.noDocs")}
+            </p>
+          )}
           {row.docs.map((d) => {
             const skip = skipped.get(d.docId);
             return (
@@ -746,7 +751,7 @@ function DeleteEntryDialog({ row, onCancel, onDeleted, onStale }: { row: ShelfLi
         </div>
         <InlineMessage tone="warning" title={t("shelf.delete.scopeTitle")}>
           {ok
-            ? t("shelf.delete.scope", { docs: row.docs.length, annotations: row.annotations, extra: [row.argumentGraph ? t("shelf.delete.withGraph") : "", row.note ? t("shelf.delete.withNote") : ""].join("") })
+            ? t("shelf.delete.scope", { ...counts(t, row.docs.length, row.annotations), extra: [row.argumentGraph ? t("shelf.delete.withGraph") : "", row.note ? t("shelf.delete.withNote") : ""].join("") })
             : t("shelf.delete.scopeUnknown")}
         </InlineMessage>
         <p className="ui-delete-doc-count">{t("shelf.delete.irreversible")}</p>

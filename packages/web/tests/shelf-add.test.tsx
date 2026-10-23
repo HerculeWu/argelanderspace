@@ -309,4 +309,32 @@ describe("add to Shelf dialog", () => {
     await waitFor(() => expect(onAdded).toHaveBeenCalled());
     expect((bodiesOf(fetchMock, "/api/shelf/entries")[0] as { docs: { docId: string }[] }).docs.map((d) => d.docId)).toEqual(["arxiv-1901.06387", "pdf-7c1e52d0"]);
   });
+
+  it("counts in English agree with their number (summary line, replacement card); Chinese keeps its wording (ticket shelf-followups 09)", async () => {
+    await i18n.changeLanguage("en");
+    stubFetch(routes({ impact: { entries: [{ ...IMPACT.entries[0], annotations: 1 }] } }));
+    render(<AddToShelfDialog work={WORK} onClose={() => {}} onAdded={() => {}} />);
+    await screen.findByText("“two tidal tails”");
+    fireEvent.click(docBox("text-3fa29b11"));
+    fireEvent.click(docBox("pdf-7c1e52d0"));
+    const summary = () => must('[data-ui="add-to-shelf-summary"]').textContent ?? "";
+    await waitFor(() => expect(summary()).toContain("Will add: 1 Doc · 0 annotations · "));
+    fireEvent.click(document.querySelector<HTMLInputElement>('[data-ui="add-to-shelf-annotation"][data-ui-key="a_00000001"] input')!);
+    await waitFor(() => expect(summary()).toContain("Will add: 1 Doc · 1 annotation · "));
+    fireEvent.click(docBox("pdf-7c1e52d0"));
+    fireEvent.click(document.querySelector<HTMLInputElement>('[data-ui="add-to-shelf-annotation"][data-ui-key="a_00000002"] input')!);
+    await waitFor(() => expect(summary()).toContain("Will add: 2 Docs · 2 annotations · "));
+    fireEvent.click(must('[data-ui="submit-add-to-shelf"]'));
+    const card = await waitFor(() => must('[data-ui="replace-shelf-entry-dialog"]'));
+    expect(card.querySelector('[data-ui="replace-old-entry"] strong')?.textContent).toMatch(/^1 Doc · 1 annotation · /);
+    expect(card.querySelector('[data-ui="replace-new"] strong')?.textContent).toMatch(/^2 Docs · 2 annotations · /);
+    cleanup();
+    await i18n.changeLanguage("zh-CN");
+    stubFetch(routes());
+    render(<AddToShelfDialog work={WORK} onClose={() => {}} onAdded={() => {}} />);
+    await screen.findByText("“two tidal tails”");
+    fireEvent.click(docBox("text-3fa29b11"));
+    fireEvent.click(docBox("pdf-7c1e52d0"));
+    await waitFor(() => expect(summary()).toContain("将加入：1 个 Doc · 0 条标注 · "));
+  });
 });
