@@ -50,6 +50,23 @@ function isFolder(path: string): boolean {
   }
 }
 
+/**
+ * Whether `projectRoot` is the tutorial project now: the folder `tutorial.json` is bound to (trailing separators aside,
+ * as the page's tutorial layer compares) and it still carries the tutorial marker — the page's rule (web
+ * `TutorialLayer`). A progress that cannot be read is no progress, as for the page. Never throws.
+ */
+export function isTutorialProject(file: string, projectRoot: string): boolean {
+  try {
+    const bound = readTutorialProgress(file).progress?.project?.path;
+    if (!bound) return false;
+    const norm = (p: string) => (p.length > 1 ? p.replace(/[\\/]+$/, "") : p);
+    if (norm(bound) !== norm(projectRoot)) return false;
+    return isFolder(projectRoot) && readTutorialMarker(projectRoot) !== null;
+  } catch {
+    return false;
+  }
+}
+
 /** The answer for `progress`, with the bound folder and both markers looked at now. */
 function stateOf(progress: TutorialProgress | null, sampleDir: string | null): TutorialState {
   const bundled = sampleDir === null ? null : readTutorialMarker(sampleDir);

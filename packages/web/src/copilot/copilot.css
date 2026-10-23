@@ -51,6 +51,13 @@
 .copilot-confirmation-works li{overflow-wrap:anywhere}
 .copilot-confirmation p+p,.copilot-confirmation ul+p{margin-top:8px}
 .copilot-confirmation-meta{font-size:12px;color:var(--text-faint);margin:12px 0;overflow-wrap:anywhere}
+/* A card's labelled facts (the Shelf cards): the same grid as the Mail card's fields, under a neutral name. */
+.copilot-confirmation-fields{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;margin:8px 0 4px;font-size:12px}
+.copilot-confirmation-fields dt{color:var(--text-faint)}
+.copilot-confirmation-fields dd{margin:0;overflow-wrap:anywhere;color:var(--text)}
+.copilot-confirmation-fields dd .copilot-confirmation-works{margin:0}
+.copilot-confirmation .copilot-confirmation-note{font-size:12px;color:var(--text-faint);margin:8px 0}
+.copilot-confirmation .copilot-confirmation-danger{color:var(--danger)}
 .copilot-confirmation-problem{color:var(--danger);margin-bottom:12px}
 .copilot-confirmation-actions{display:flex;gap:8px;justify-content:flex-end}
 .copilot-notice .btn.icon{margin-left:0;flex:none}

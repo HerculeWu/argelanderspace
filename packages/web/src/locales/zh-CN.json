@@ -1625,6 +1625,12 @@
         "open": "打开论证图",
         "select": "选中论证",
         "exit": "退出论证图"
+      },
+      "shelf": {
+        "list": "读取文献仓",
+        "add": "加入文献仓",
+        "delete": "删除文献仓条目",
+        "take": "从文献仓取入"
       }
     },
     "undo": {
@@ -1670,7 +1676,10 @@
       "unreadableArgument": "你确认时的检查没能读取这张论证图。这不是你做的改动，论证图未改动。请重试，或查看论证图。",
       "unreadableFile": "确认时的检查没能完成。没有运行或改动任何内容；请重试。",
       "expiredFile": "这次调用的确认已失效（运行已停止或已结束），没有运行或改动任何内容。",
-      "failedFile": "未能保存你的决定，没有运行或改动任何内容；请重试。"
+      "failedFile": "未能保存你的决定，没有运行或改动任何内容；请重试。",
+      "expiredShelf": "你做决定前条目、项目或文献仓已变化，没有写入任何内容。",
+      "failedShelf": "未能保存你的决定，没有改动任何内容；请重试。",
+      "unreadableShelf": "确认时的检查无法读取该条目或文献仓。这不是你的改动，没有写入任何内容。请重试。"
     },
     "thinkingLevels": {
       "off": "关闭",
@@ -1883,6 +1892,103 @@
       "guardWhereTools": "辅助程序目录",
       "contextOmitted": "文件太大，未显示改动处的上下文；增删的行完整显示。",
       "editInfoBare": "{{edits}} 处替换 · +{{added}} −{{removed}} 行"
+    },
+    "shelfCard": {
+      "addTitle": "加入文献仓",
+      "replaceTitle": "替换文献仓中这篇文献的条目",
+      "takeTitle": "从文献仓取入当前项目",
+      "deleteTitle": "删除文献仓条目",
+      "docs": "文档",
+      "noDocs": "无（只带书目）",
+      "noDocsTaken": "无",
+      "docLine_one": "{{id}} · {{kind}} · {{count}} 条标注",
+      "docLine_other": "{{id}} · {{kind}} · {{count}} 条标注",
+      "graph": "论证图",
+      "note": "笔记",
+      "carried": "带上",
+      "notCarried": "不带",
+      "notCurrent_one": "所选标注中有 {{count}} 条已不是当前标注，不会带上。",
+      "notCurrent_other": "所选标注中有 {{count}} 条已不是当前标注，不会带上。",
+      "replaceScope_one": "文献仓已有这篇文献。下列 {{count}} 个条目将被整条替换（不合并），无法恢复：",
+      "replaceScope_other": "文献仓已有这篇文献。下列 {{count}} 个条目将被整条替换（不合并），无法恢复：",
+      "entryLine": "「{{title}}」，{{date}} 从 {{project}} 加入",
+      "entryHolds": "{{docs}} 个文档、{{annotations}} 条标注",
+      "withGraph": "论证图",
+      "withNote": "笔记",
+      "addNote": "书目总会带上。只写入文献仓，不改动当前项目。",
+      "target": "取入到",
+      "newWork": "新建条目（{{id}}）",
+      "mergeWork": "项目中同一篇的条目（{{id}}），只补空字段",
+      "filled": "补写字段",
+      "nothingFilled": "无",
+      "mainDoc": "主文档",
+      "mainDocSet": "设为 {{id}}",
+      "mainDocKept": "不变",
+      "taken": "取入的文档",
+      "skipped": "跳过",
+      "skipLine": "{{id}} · {{kind}} · {{reason}}",
+      "skip": {
+        "exists": "项目里已有同 id 的文档（原样保留）",
+        "linked": "项目里已有条目列着这个 id",
+        "annotations_present": "项目里这个 id 下已有标注",
+        "seed_conflict": "下次重建文献库会把它归入别的条目"
+      },
+      "graphTake": {
+        "written": "取入",
+        "kept_local": "不取入：该条目已有非空论证图，保留本地的",
+        "not_carried": "条目里没有",
+        "not_chosen": "不取入"
+      },
+      "noteTake": {
+        "written": "写入新建的条目",
+        "kept_local": "不取入：保留该条目自己的笔记",
+        "existing_work": "不取入：已有条目的笔记不动",
+        "not_carried": "条目里没有",
+        "not_chosen": "不取入"
+      },
+      "deleteScope": "只删除文献仓里的这一份，任何项目都不受影响。没有回收站。",
+      "incompatible": "这个条目由更新版本的工作台写入。",
+      "damaged": "这个条目已损坏。",
+      "metaEntry": "{{id}} · 条目 v{{rev}}",
+      "kind": {
+        "latex": "LaTeX",
+        "pdf": "PDF",
+        "text": "文本"
+      },
+      "confirmAdd": "加入",
+      "confirmReplace": "替换",
+      "confirmTake": "取入",
+      "confirmDelete": "删除",
+      "archiveScope": "加入时会把下列文档的旧标注移入本项目的标注归档（正文已变，它们已不是当前标注）：",
+      "archiveLine_one": "{{id}} · {{count}} 条旧标注",
+      "archiveLine_other": "{{id}} · {{count}} 条旧标注",
+      "addNoteArchive": "书目总会带上。除上述归档外，不改动当前项目。",
+      "citeKey": "引用键",
+      "stamped": "会把目标条目的标识写入该文档的元数据，使下次重建文献库时它仍归入这个条目（正文不变）",
+      "aNewWork": "一个新条目",
+      "field": {
+        "title": "标题",
+        "authors": "作者",
+        "year": "年份",
+        "venue": "出处",
+        "type": "类型",
+        "doi": "DOI",
+        "arxiv_id": "arXiv 号",
+        "bibcode": "ADS bibcode",
+        "openalex_id": "OpenAlex 号",
+        "abstract": "摘要",
+        "cited_by_count": "被引次数",
+        "referenced_works": "参考文献",
+        "journal": "期刊",
+        "volume": "卷",
+        "number": "期",
+        "pages": "页码",
+        "eid": "文章编号",
+        "month": "月份",
+        "journal_macro": "期刊宏",
+        "bib_fields": "其他 BibTeX 字段",
+        "resolution": "元数据来源"
+      }
     }
   },
   "mail": {

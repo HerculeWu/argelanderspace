@@ -135,8 +135,17 @@ export interface ShelfAnswer {
   body: Record<string, unknown>;
 }
 
+/**
+ * In-process only (the Copilot card, shelf ticket 07; never part of the HTTP request): the preview the person
+ * confirmed. The add compares what it read — carried, not carried, and what its access path archived — with it after
+ * reading and before writing the Shelf; any difference is 409 `carried_changed` and nothing goes to the Shelf.
+ */
+export interface ShelfAddOptions {
+  expect?: Pick<ShelfAddPreviewResponse, "carried" | "notCarried" | "wouldArchive">;
+}
+
 export interface ShelfWriter {
-  add(body: unknown): Promise<ShelfAnswer>;
+  add(body: unknown, options?: ShelfAddOptions): Promise<ShelfAnswer>;
   preview(body: unknown): Promise<ShelfAnswer>;
   remove(entryId: string, rev: string | undefined): Promise<ShelfAnswer>;
 }
@@ -389,6 +398,8 @@ interface Collected {
   input: ShelfPutInput;
   carried: ShelfAddResponse["carried"];
   notCarried: ShelfAddResponse["notCarried"];
+  /** Preview only: the Docs whose older batch the add's access path would archive (always empty for an add). */
+  wouldArchive: ShelfAddPreviewResponse["wouldArchive"];
 }
 
 /** The impact entry of an entry at its rev: a function of the (immutable) entry. */
@@ -573,6 +584,7 @@ export function createShelfWriter(deps: ShelfWriteDeps): ShelfWriter {
       // 5. the chosen annotations: only now, through the access path (LaTeX/text) or the verified sidecar (PDF)
       trace.reading = true;
       const notCarried: ShelfAddResponse["notCarried"] = [];
+      const wouldArchive: Collected["wouldArchive"] = [];
       for (const doc of docs) {
         const ids = [...new Set(chosen.get(doc.docId) ?? [])];
         if (ids.length === 0) continue;
@@ -649,7 +661,9 @@ export function createShelfWriter(deps: ShelfWriteDeps): ShelfWriter {
           if (current !== null && current.content_fingerprint === doc.fingerprint) {
             bound = doc.fingerprint;
             raw = readCurrent();
-          }
+          } else if (current !== null)
+            // of older content: the add's ensure archives this batch (a missing file is not an archive)
+            wouldArchive.push({ docId: doc.docId, count: current.annotations.length });
         }
         // No annotations file (a text draft never generated, a Doc never annotated, or — preview — one of older
         // content): none of them is current.
@@ -690,6 +704,7 @@ export function createShelfWriter(deps: ShelfWriteDeps): ShelfWriter {
           note: note !== null,
         },
         notCarried,
+        wouldArchive,
       };
     });
 
@@ -817,7 +832,7 @@ export function createShelfWriter(deps: ShelfWriteDeps): ShelfWriter {
     }
   };
 
-  const add = async (body: unknown): Promise<ShelfAnswer> => {
+  const add = async (body: unknown, options: ShelfAddOptions = {}): Promise<ShelfAnswer> => {
     const parsed = ShelfAddRequestSchema.safeParse(body);
     if (!parsed.success)
       return refusal(400, "invalid_request", "the body is not a request to add to the Shelf");
@@ -859,6 +874,26 @@ export function createShelfWriter(deps: ShelfWriteDeps): ShelfWriter {
       const got = await collectOrAnswer(request, "add", trace);
       if (!got.ok) return got.answer;
       const { collected } = got;
+      // The Copilot card's preview (in-process only): what goes in, and what was archived on the way, must be it.
+      const shown = options.expect;
+      if (
+        shown &&
+        JSON.stringify({
+          carried: collected.carried,
+          notCarried: collected.notCarried,
+          archived: trace.archived,
+        }) !==
+          JSON.stringify({
+            carried: shown.carried,
+            notCarried: shown.notCarried,
+            archived: shown.wouldArchive,
+          })
+      )
+        return refusal(
+          409,
+          "carried_changed",
+          "what this add would put in the Shelf (or what was archived on the way) is not what was confirmed; nothing was written to the Shelf"
+        );
 
       const targets = request.confirm?.entries.map((e) => ({ entryId: e.entryId, rev: e.rev }));
       let result: ShelfPutResult;
@@ -953,6 +988,7 @@ export function createShelfWriter(deps: ShelfWriteDeps): ShelfWriter {
         impact: await currentImpact(shelf, shelfIdentityOf(collected.input.bibliography)),
         carried: collected.carried,
         notCarried: collected.notCarried,
+        wouldArchive: collected.wouldArchive,
       };
       return { status: 200, body: response };
     });

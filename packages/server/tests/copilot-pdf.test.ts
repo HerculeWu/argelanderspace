@@ -637,7 +637,8 @@ test("a PDF image larger than the room left in the window is refused whole with 
   const original = { contextWindow: model.contextWindow, maxTokens: model.maxTokens };
   // 40_000 + 1_440: the room left after the instruction and tools stays what it was (the argument tool added 2_520 B to the footprint; the window
   // holds back an eighth of its bytes, so the same room takes 4/7 token per footprint byte, see WINDOW_BIG_DOC in copilot-batching.test.ts)
-  model.contextWindow = 41_440;
+  // + 1_710 for the shelf tool (shelf ticket 07: footprint +2991 B, see WINDOW_BIG_DOC)
+  model.contextWindow = 43_150;
   model.maxTokens = 1024;
   try {
     script = [

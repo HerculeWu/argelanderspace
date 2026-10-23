@@ -44,6 +44,7 @@ export * from "./settings-api.js";
 export * from "./settings-change.js";
 export * from "./settings-schema.js";
 export * from "./shelf.js";
+export * from "./shelf-ops.js";
 export * from "./shelf-take.js";
 export * from "./shelf-write.js";
 export * from "./tex-ir.js";

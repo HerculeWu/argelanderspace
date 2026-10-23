@@ -3,7 +3,7 @@ import type { TFunction } from "i18next";
 import type { JSX } from "react";
 
 /** Which family of decision-problem copy a failed or expired decision on this card is told in. */
-export type ConfirmationProblemScope = "plan" | "doc" | "deleteDoc" | "manuscript" | "mail" | "argument" | "file";
+export type ConfirmationProblemScope = "plan" | "doc" | "deleteDoc" | "manuscript" | "mail" | "argument" | "file" | "shelf";
 
 /**
  * One kind of human confirmation card (ticket 36): what the card shows, its confirm label and tone, how a failed
@@ -20,6 +20,8 @@ export interface ConfirmationCardKind<C extends CopilotConfirmation = CopilotCon
    */
   session?: { label(t: TFunction): string };
   tone?: "danger";
+  /** The confirm button's tone decided by the card, when it is not fixed (a Shelf add is a danger only when it replaces). */
+  toneOf?(card: C): "danger" | undefined;
   problemScope: ConfirmationProblemScope;
   /** The page's guard before an approval; false keeps the card and sends nothing. */
   beforeApprove?(card: C, guards: ConfirmationGuards): boolean | Promise<boolean>;

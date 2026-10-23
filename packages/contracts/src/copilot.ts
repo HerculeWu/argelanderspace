@@ -46,6 +46,15 @@ import {
   ReaderPageSchema,
   ReaderViewActionSchema,
 } from "./reader-ops.js";
+import { SHELF_ENTRY_ID_RE } from "./shelf.js";
+import { ShelfTakeRequestSchema, ShelfTakeResultSchema } from "./shelf-take.js";
+import {
+  ShelfAddPreviewRequestSchema,
+  ShelfAddPreviewResponseSchema,
+  ShelfAddResponseSchema,
+  ShelfReplacedEntrySchema,
+  ShelfReplaceImpactSchema,
+} from "./shelf-write.js";
 import { TextReplacementImpactSchema } from "./text-doc.js";
 import {
   type TextContextSummary,
@@ -489,6 +498,79 @@ export const CopilotArgumentReplaceConfirmationSchema = z
 export type CopilotArgumentReplaceConfirmation = z.infer<
   typeof CopilotArgumentReplaceConfirmationSchema
 >;
+/**
+ * Adding a Work to the Shelf, or replacing the Shelf's entries of the same paper (shelf ticket 07): the Add dialog the
+ * model asked for. `request` is exactly what is sent when the user approves (the chosen Docs, the chosen annotation ids
+ * of each, the argument graph and note switches): the service makes it from the model's request before the card exists,
+ * and the click never takes another one. What the card shows comes from a read-only preview of that request
+ * (`POST /api/shelf/entries/preview`): the Docs that go in with their annotation counts, the chosen annotations that are
+ * not current (they do not go in), and `impact` — null for a new entry, else every entry the add replaces, which the
+ * approval sends back as `confirm` unchanged (the server refuses it as `confirmation_changed` when the Shelf no longer
+ * holds exactly those). `objectDigest` binds the card to that preview: a change before the click expires it.
+ */
+export const CopilotShelfAddConfirmationSchema = z
+  .object({
+    ...ConfirmationBase,
+    action: z.literal("shelf_add"),
+    object: z
+      .object({ kind: z.literal("work"), id: z.string().min(1), workId: z.string().min(1) })
+      .strict(),
+    /** The Work's title. */
+    label: z.string(),
+    request: ShelfAddPreviewRequestSchema,
+    carried: ShelfAddResponseSchema.shape.carried,
+    notCarried: ShelfAddResponseSchema.shape.notCarried,
+    /** Docs whose older annotation batch the add will archive (empty: the project does not change). */
+    wouldArchive: ShelfAddPreviewResponseSchema.shape.wouldArchive,
+    impact: ShelfReplaceImpactSchema.nullable(),
+    objectDigest: z.string().min(1),
+  })
+  .strict();
+export type CopilotShelfAddConfirmation = z.infer<typeof CopilotShelfAddConfirmationSchema>;
+/**
+ * Taking a Shelf entry into this project (shelf ticket 07). `request` is what is sent on approval (the entry's rev, the
+ * annotations left out, the argument graph and note switches); `plan` is the read-only preview of exactly that request
+ * (`POST /api/shelf/entries/:id/take/preview`): the target Work (new, or merged into, with the fields filled), the main
+ * Doc, the Docs taken with their annotation counts, the Docs skipped and why, and what happens to the argument graph and
+ * the note. The approval sends `planDigest` with the take; when the plan worked out again under the lock differs the
+ * server writes nothing (`plan_changed`). `baseRev` is the entry's rev.
+ */
+export const CopilotShelfTakeConfirmationSchema = z
+  .object({
+    ...ConfirmationBase,
+    action: z.literal("shelf_take"),
+    object: z
+      .object({ kind: z.literal("shelf_entry"), id: z.string().regex(SHELF_ENTRY_ID_RE) })
+      .strict(),
+    /** The entry's title. */
+    label: z.string(),
+    request: ShelfTakeRequestSchema.omit({ planDigest: true }),
+    plan: ShelfTakeResultSchema,
+    planDigest: z.string().regex(/^[0-9a-f]{64}$/),
+    objectDigest: z.string().min(1),
+  })
+  .strict();
+export type CopilotShelfTakeConfirmation = z.infer<typeof CopilotShelfTakeConfirmationSchema>;
+/**
+ * Deleting one Shelf entry (shelf ticket 07; the Shelf dialog's delete): only the Shelf's copy, at the rev shown
+ * (`baseRev`; the server refuses a replaced entry as `rev_mismatch`). `entry` is what the entry holds when it is of this
+ * build's format (`status: ok`); an entry of a newer format or a damaged one can be deleted too, with `entry` null.
+ */
+export const CopilotShelfDeleteConfirmationSchema = z
+  .object({
+    ...ConfirmationBase,
+    action: z.literal("shelf_delete"),
+    object: z
+      .object({ kind: z.literal("shelf_entry"), id: z.string().regex(SHELF_ENTRY_ID_RE) })
+      .strict(),
+    /** The entry's title ("" when an entry of a newer format or a damaged one has none to show). */
+    label: z.string(),
+    status: z.enum(["ok", "incompatible", "damaged"]),
+    entry: ShelfReplacedEntrySchema.nullable(),
+    objectDigest: z.string().min(1),
+  })
+  .strict();
+export type CopilotShelfDeleteConfirmation = z.infer<typeof CopilotShelfDeleteConfirmationSchema>;
 export type CopilotMailSendConfirmation = z.infer<typeof CopilotMailSendConfirmationSchema>;
 export type CopilotMailDeleteConfirmation = z.infer<typeof CopilotMailDeleteConfirmationSchema>;
 export type CopilotMailMoveConfirmation = z.infer<typeof CopilotMailMoveConfirmationSchema>;
@@ -503,6 +585,9 @@ const CONFIRMATION_CARD_SCHEMAS = [
   CopilotDocDeleteConfirmationSchema,
   CopilotManuscriptDeleteConfirmationSchema,
   CopilotArgumentReplaceConfirmationSchema,
+  CopilotShelfAddConfirmationSchema,
+  CopilotShelfTakeConfirmationSchema,
+  CopilotShelfDeleteConfirmationSchema,
   CopilotCommandConfirmationSchema,
   CopilotEditFileConfirmationSchema,
   CopilotWriteFileConfirmationSchema,
@@ -609,6 +694,20 @@ export const OperationConfirmationSchema = z.discriminatedUnion("action", [
       ...OperationConfirmationBase,
       action: z.literal("replace_argument_graph"),
       workId: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      ...OperationConfirmationBase,
+      action: z.literal("shelf_add"),
+      workId: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      ...OperationConfirmationBase,
+      action: z.enum(["shelf_take", "shelf_delete"]),
+      entryId: z.string().min(1),
     })
     .strict(),
   // A file or command tool call (copilot ticket 57): the record keeps no command and no path.

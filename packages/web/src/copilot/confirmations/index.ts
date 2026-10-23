@@ -8,6 +8,7 @@ import { deleteMail, moveMail, sendMail } from "./mail";
 import { refreshArxivSource } from "./refresh-arxiv-source";
 import { replaceArgumentGraph } from "./replace-argument-graph";
 import { replaceTextReading } from "./replace-text-reading";
+import { shelfAdd, shelfDelete, shelfTake } from "./shelf";
 
 export type { ConfirmationCardKind, ConfirmationGuards, ConfirmationProblemScope } from "./kind";
 
@@ -22,6 +23,9 @@ export const CONFIRMATION_KINDS: ConfirmationCardKinds = {
   delete_doc: deleteDoc,
   refresh_arxiv_source: refreshArxivSource,
   replace_argument_graph: replaceArgumentGraph,
+  shelf_add: shelfAdd,
+  shelf_take: shelfTake,
+  shelf_delete: shelfDelete,
   run_command: runCommand,
   edit_file: editFile,
   write_file: writeFile,

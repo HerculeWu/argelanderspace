@@ -232,6 +232,7 @@ test("actual Pi HTTP loop supplies the final offscreen task, only the plan tool,
     "writer",
     "text",
     "argument",
+    "shelf",
   ]);
   const bytes = readFileSync(historyPath(snapshot));
   expect(bytes.toString()).toContain("argelander.context.v1");
@@ -416,8 +417,9 @@ test("request output reservation permits a model whose maximum output equals its
   expect(model).toBeDefined();
   if (!model) return;
   const original = { contextWindow: model.contextWindow, maxTokens: model.maxTokens };
-  model.contextWindow = 43_500;
-  model.maxTokens = 43_500;
+  // 43_500 + 1_710 for the shelf tool's schema (shelf ticket 07, footprint +2991 B; see WINDOW_BIG_DOC in copilot-batching.test.ts)
+  model.contextWindow = 45_210;
+  model.maxTokens = 45_210;
   try {
     const snapshot = await host.create({ provider: "openai", model: model.id, thinking: null });
     const context = page();

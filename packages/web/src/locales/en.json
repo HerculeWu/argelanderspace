@@ -1625,6 +1625,12 @@
         "open": "Open the argument graph",
         "select": "Select an argument",
         "exit": "Leave the argument graph"
+      },
+      "shelf": {
+        "list": "Read the Shelf",
+        "add": "Add to the Shelf",
+        "delete": "Delete a Shelf entry",
+        "take": "Take from the Shelf"
       }
     },
     "undo": {
@@ -1670,7 +1676,10 @@
       "unreadableArgument": "The check made when you confirmed could not read this argument graph. This is not a change you made, and nothing was changed. Try again, or look at the graph.",
       "unreadableFile": "The check made when you confirmed could not be completed. Nothing ran or changed; please try again.",
       "expiredFile": "This confirmation is no longer valid (the run was stopped or ended). Nothing ran or changed.",
-      "failedFile": "Your decision could not be saved. Nothing ran or changed; please try again."
+      "failedFile": "Your decision could not be saved. Nothing ran or changed; please try again.",
+      "expiredShelf": "The work, the project or the Shelf changed before your decision. Nothing was written.",
+      "failedShelf": "Your decision could not be saved. Nothing was changed; try again.",
+      "unreadableShelf": "The check made when you confirmed could not read the work or the Shelf. This is not a change you made, and nothing was written. Try again."
     },
     "thinkingLevels": {
       "off": "Off",
@@ -1883,6 +1892,103 @@
       "guardWhereTools": "the helper-program folder",
       "contextOmitted": "The file is too large: the lines around the change are not shown. Added and removed lines are shown whole.",
       "editInfoBare": "{{edits}} replacement(s) · +{{added}} −{{removed}} lines"
+    },
+    "shelfCard": {
+      "addTitle": "Add to the Shelf",
+      "replaceTitle": "Replace the Shelf entry of this paper",
+      "takeTitle": "Take from the Shelf into this project",
+      "deleteTitle": "Delete a Shelf entry",
+      "docs": "Docs",
+      "noDocs": "None (bibliography only)",
+      "noDocsTaken": "None",
+      "docLine_one": "{{id}} · {{kind}} · {{count}} annotation",
+      "docLine_other": "{{id}} · {{kind}} · {{count}} annotations",
+      "graph": "Argument graph",
+      "note": "Note",
+      "carried": "Included",
+      "notCarried": "Not included",
+      "notCurrent_one": "{{count}} of the chosen annotations is no longer current and will not be included.",
+      "notCurrent_other": "{{count}} of the chosen annotations are no longer current and will not be included.",
+      "replaceScope_one": "The Shelf already holds this paper. Its {{count}} entry will be replaced as a whole (not merged) and cannot be recovered:",
+      "replaceScope_other": "The Shelf already holds this paper. These {{count}} entries will be replaced as a whole (not merged) and cannot be recovered:",
+      "entryLine": "“{{title}}”, added {{date}} from {{project}}",
+      "entryHolds": "Docs: {{docs}} · annotations: {{annotations}}",
+      "withGraph": "argument graph",
+      "withNote": "note",
+      "addNote": "The bibliography is always included. Only the Shelf is written; this project is not changed.",
+      "target": "Into",
+      "newWork": "A new work ({{id}})",
+      "mergeWork": "The project's work of the same paper ({{id}}); only blank fields are filled",
+      "filled": "Fields filled",
+      "nothingFilled": "None",
+      "mainDoc": "Main Doc",
+      "mainDocSet": "Becomes {{id}}",
+      "mainDocKept": "Unchanged",
+      "taken": "Docs taken",
+      "skipped": "Skipped",
+      "skipLine": "{{id}} · {{kind}} · {{reason}}",
+      "skip": {
+        "exists": "a Doc of this id is already in the project (kept as it is)",
+        "linked": "a work of the project already lists this id",
+        "annotations_present": "the project has annotations under this id",
+        "seed_conflict": "the next library build would put it in another work"
+      },
+      "graphTake": {
+        "written": "Taken",
+        "kept_local": "Not taken: the work already has a non-empty graph, kept",
+        "not_carried": "The entry has none",
+        "not_chosen": "Not taken"
+      },
+      "noteTake": {
+        "written": "Taken into the new work",
+        "kept_local": "Not taken: the work's own note is kept",
+        "existing_work": "Not taken: the project's work keeps its note",
+        "not_carried": "The entry has none",
+        "not_chosen": "Not taken"
+      },
+      "deleteScope": "Only the Shelf's copy is deleted; no project is changed. There is no recycle bin.",
+      "incompatible": "This entry was written by a newer version of the workbench.",
+      "damaged": "This entry is damaged.",
+      "metaEntry": "{{id}} · entry v{{rev}}",
+      "kind": {
+        "latex": "LaTeX",
+        "pdf": "PDF",
+        "text": "Text"
+      },
+      "confirmAdd": "Add",
+      "confirmReplace": "Replace",
+      "confirmTake": "Take",
+      "confirmDelete": "Delete",
+      "archiveScope": "Adding moves the old annotations of these Docs into this project's annotation archive (their text changed; they are not current any more):",
+      "archiveLine_one": "{{id}} · {{count}} old annotation",
+      "archiveLine_other": "{{id}} · {{count}} old annotations",
+      "addNoteArchive": "The bibliography is always included. Besides that archive, this project is not changed.",
+      "citeKey": "Citation key",
+      "stamped": "its metadata gets the work's identifier, so the next library build keeps it with this work (the text does not change)",
+      "aNewWork": "a new work",
+      "field": {
+        "title": "Title",
+        "authors": "Authors",
+        "year": "Year",
+        "venue": "Venue",
+        "type": "Type",
+        "doi": "DOI",
+        "arxiv_id": "arXiv ID",
+        "bibcode": "ADS bibcode",
+        "openalex_id": "OpenAlex ID",
+        "abstract": "Abstract",
+        "cited_by_count": "Citation count",
+        "referenced_works": "References",
+        "journal": "Journal",
+        "volume": "Volume",
+        "number": "Issue",
+        "pages": "Pages",
+        "eid": "Article number",
+        "month": "Month",
+        "journal_macro": "Journal macro",
+        "bib_fields": "Other BibTeX fields",
+        "resolution": "Metadata source"
+      }
     }
   },
   "mail": {

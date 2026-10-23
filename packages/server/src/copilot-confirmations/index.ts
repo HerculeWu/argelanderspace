@@ -19,6 +19,7 @@ import { refreshArxivSourceKind } from "./refresh-arxiv-source.js";
 import { replaceArgumentGraphKind } from "./replace-argument-graph.js";
 import { replaceTextReadingKind } from "./replace-text-reading.js";
 import { sendMailKind } from "./send-mail.js";
+import { shelfAddKind, shelfDeleteKind, shelfTakeKind } from "./shelf.js";
 
 export type {
   ConfirmationAction,
@@ -43,6 +44,9 @@ export function createConfirmationKinds(workbench: Workbench | undefined) {
     delete_doc: deleteDocKind(workbench),
     refresh_arxiv_source: refreshArxivSourceKind(workbench),
     replace_argument_graph: replaceArgumentGraphKind(workbench),
+    shelf_add: shelfAddKind(workbench),
+    shelf_take: shelfTakeKind(workbench),
+    shelf_delete: shelfDeleteKind(workbench),
     run_command: runCommandKind,
     edit_file: editFileKind,
     write_file: writeFileKind,

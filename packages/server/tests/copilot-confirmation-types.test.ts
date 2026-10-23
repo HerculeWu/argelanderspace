@@ -108,5 +108,5 @@ test("the confirmation shape checks above are compile-time (tsc --noEmit)", () =
     recordWrongArm,
     missingAction,
   ];
-  expect(Object.keys(createConfirmationKinds(undefined))).toHaveLength(12);
+  expect(Object.keys(createConfirmationKinds(undefined))).toHaveLength(15);
 });

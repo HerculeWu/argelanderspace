@@ -119,6 +119,7 @@ import {
   createApplicationResourceLoader,
   loadBundledSkills,
 } from "./copilot-resources.js";
+import type { ShelfOpDeps } from "./copilot-shelf-tool.js";
 import { TEXT_TOOL_NAME, type TextOpDeps } from "./copilot-text-tool.js";
 import type {
   ConfirmationOutcome,
@@ -433,6 +434,11 @@ export interface Workbench {
   mail?: MailOpDeps;
   /** The argument graph store, its lock and the library lookup of the page's PUT (argument graph ticket 09); absent in headless hosts. */
   argument?: ArgumentOpDeps;
+  /**
+   * The Shelf (文献仓, shelf ticket 07): the app's own writer, take and list; absent in headless hosts. The tool is not
+   * offered while the open project is the tutorial project.
+   */
+  shelf?: ShelfOpDeps;
   /**
    * Copilot's file and command tools (copilot ticket 57, ADR 0011): where commands run (the Project folder), the
    * permission setting as it is now, and the folders an edit or write may not reach. Absent in headless hosts: then

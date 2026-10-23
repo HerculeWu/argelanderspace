@@ -136,12 +136,16 @@ export type ShelfAddPreviewRequest = z.infer<typeof ShelfAddPreviewRequestSchema
  * 200 of `POST /api/shelf/entries/preview`: what an add made now would do, read only (no ensure, no archive, nothing
  * written anywhere). `impact` is what it would ask to replace (null: nothing, it would be a new entry). `notCarried`
  * is an estimate: chosen annotations that are not in the current file, or whose file is of older content (the access
- * path would archive it at the add).
+ * path would archive it at the add). `wouldArchive` (shelf ticket 07) names those Docs: chosen annotations were asked
+ * for and the current file is of older content, so the add's access path will move that batch (`count` annotations)
+ * to the project's archive, as any access would. A Doc with no annotations file is not in it (nothing to archive),
+ * nor one with no annotation chosen (the add does not ensure it). Empty: the add changes nothing in the project.
  */
 export const ShelfAddPreviewResponseSchema = z.strictObject({
   impact: ShelfReplaceImpactSchema.nullable(),
   carried: ShelfAddResponseSchema.shape.carried,
   notCarried: ShelfAddResponseSchema.shape.notCarried,
+  wouldArchive: z.array(z.strictObject({ docId: z.string(), count: z.number().int().min(0) })),
 });
 export type ShelfAddPreviewResponse = z.infer<typeof ShelfAddPreviewResponseSchema>;
 
@@ -237,6 +241,9 @@ export type ShelfItem = z.infer<typeof ShelfItemSchema>;
  * - 409 `confirmation_changed` `{impact?}` — what was confirmed is not what the Shelf holds now; `impact` is the fresh
  *   one when there still is something to replace. Nothing was written.
  * - 409 `rev_mismatch` `{currentRev}` — (delete) the entry was replaced since the page showed it.
+ * - 409 `carried_changed` — in-process only (the Copilot card's add, shelf ticket 07; never reachable over HTTP): what
+ *   the add read would put in (or what its access path archived) is not the preview the person confirmed; nothing was
+ *   written to the Shelf (an archive on the way is reported in `archived`, as for every refusal after reading).
  * - 500 `item_unreadable` `{item, problem}` — a part of the add could not be read or did not verify; the Shelf was
  *   not written, and the project is as it was except for an archive the annotations access path made on the way, as
  *   any access would (`annotations_new_current_failed` says so; docs/library.md「文献仓」).
@@ -259,6 +266,7 @@ export const SHELF_WRITE_REFUSALS = [
   "doc_busy",
   "confirmation_required",
   "confirmation_changed",
+  "carried_changed",
   "rev_mismatch",
   "item_unreadable",
   "shelf_unreadable",

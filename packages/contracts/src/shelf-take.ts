@@ -8,7 +8,12 @@
  */
 
 import { z } from "zod";
-import type { ShelfBibliography, ShelfDocKind, ShelfIdentity } from "./shelf.js";
+import {
+  SHELF_DOC_KINDS,
+  type ShelfBibliography,
+  type ShelfDocKind,
+  type ShelfIdentity,
+} from "./shelf.js";
 
 /** One Doc of an entry, as a list or a summary shows it. */
 export interface ShelfDocSummary {
@@ -192,6 +197,54 @@ export interface ShelfTakeResult {
    */
   note: "written" | "kept_local" | "existing_work" | "not_carried" | "not_chosen";
 }
+
+/**
+ * {@link ShelfTakeResult} as a schema, for the Copilot's take confirmation card (shelf ticket 07), which carries the plan
+ * it shows. The interface stays the type the server answers with; the two are checked to be the same below.
+ */
+const SkipReasonSchema = z.enum(["exists", "linked", "annotations_present", "seed_conflict"]);
+const DocKindSchema = z.enum(SHELF_DOC_KINDS);
+export const ShelfTakeResultSchema = z.strictObject({
+  work: z.strictObject({
+    id: z.string(),
+    title: z.string(),
+    created: z.boolean(),
+    citeKey: z.string().nullable(),
+    filled: z.array(z.string()),
+  }),
+  mainDoc: z.strictObject({
+    before: z.string().nullable(),
+    after: z.string().nullable(),
+    changed: z.boolean(),
+  }),
+  docs: z.strictObject({
+    taken: z.array(
+      z.strictObject({
+        docId: z.string(),
+        kind: DocKindSchema,
+        annotations: z.number().int().min(0),
+        stamped: z.boolean(),
+      })
+    ),
+    skipped: z.array(
+      z.strictObject({
+        docId: z.string(),
+        kind: DocKindSchema,
+        reason: SkipReasonSchema,
+        wouldJoin: z.string().nullable().optional(),
+      })
+    ),
+  }),
+  argumentGraph: z.enum(["written", "kept_local", "not_carried", "not_chosen"]),
+  note: z.enum(["written", "kept_local", "existing_work", "not_carried", "not_chosen"]),
+});
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+// Compile-time check: the schema is exactly the interface (a field added to one and not the other fails here).
+const takeResultSchemaIsTheInterface: Same<
+  z.infer<typeof ShelfTakeResultSchema>,
+  ShelfTakeResult
+> = true;
+void takeResultSchemaIsTheInterface;
 
 /** `POST …/take/preview`: the plan, written nowhere, and its digest to send back with the take. */
 export interface ShelfTakePreview {

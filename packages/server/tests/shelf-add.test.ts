@@ -23,6 +23,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import type {
   AnnotationsFile,
+  ShelfAddPreviewResponse,
   ShelfAddResponse,
   ShelfReplaceImpact,
   TexDocIr,
@@ -40,10 +41,13 @@ import {
 import { createShelfStore, type ShelfStore } from "@argelanderspace/infra";
 import type { Hono } from "hono";
 import { beforeEach, describe, expect, test } from "vitest";
+import { createAnnotationAccess } from "../src/annotations-access.js";
 import { createApp } from "../src/app.js";
 import { statusDirFor } from "../src/deps.js";
 import { DocMutationRegistry } from "../src/doc-mutations.js";
 import { JobRunner } from "../src/jobs.js";
+import { AsyncLock } from "../src/lock.js";
+import { createShelfWriter } from "../src/shelf-add.js";
 import { collectBroadcasts, makeDataDir, stubPipelines, stubSources } from "./helpers.js";
 import { syntheticPdf } from "./pdf-fixture.js";
 
@@ -996,6 +1000,7 @@ describe("preview: what an add would do now, read only", () => {
         note: false,
       },
       notCarried: [{ docId: LATEX, annotationIds: ["a_99999999"] }],
+      wouldArchive: [],
     });
     expect(digest(dataDir)).toEqual(before);
     expect(shelfEntries()).toEqual([]);
@@ -1012,10 +1017,70 @@ describe("preview: what an add would do now, read only", () => {
     expect(await res.json()).toMatchObject({
       carried: { docs: [{ docId: LATEX, kind: "latex", annotations: 0 }] },
       notCarried: [{ docId: LATEX, annotationIds: ["a_0123abcd"] }],
+      // the add's access path would move this older batch to the archive: said per Doc, with its size (票 07 B1)
+      wouldArchive: [{ docId: LATEX, count: 2 }],
     });
     expect(digest(dataDir)).toEqual(before);
     expect(archiveOf(LATEX)).toEqual([]);
     expect(messages).toEqual([]);
+    // and the add then archives exactly that
+    const added = await add(body({ docs: [{ docId: LATEX, annotationIds: ["a_0123abcd"] }] }));
+    expect(((await added.json()) as ShelfAddResponse).archived).toEqual([
+      { docId: LATEX, count: 2 },
+    ]);
+  });
+
+  test("no annotations file is not an archive, and a Doc with nothing chosen is not looked at: wouldArchive stays empty", async () => {
+    const none = await preview(body({ docs: [{ docId: LATEX, annotationIds: ["a_0123abcd"] }] }));
+    expect(await none.json()).toMatchObject({
+      notCarried: [{ docId: LATEX, annotationIds: ["a_0123abcd"] }],
+      wouldArchive: [],
+    });
+    // stale but no annotation chosen: the add does not ensure it, so nothing would be archived
+    await annotateLatex();
+    writeIr(mkIr("Rewritten text"));
+    const unchosen = await preview(body());
+    expect(await unchosen.json()).toMatchObject({ notCarried: [], wouldArchive: [] });
+  });
+
+  test("an in-process expectation (the Copilot card): an add whose carried or archived differ from it writes nothing to the Shelf", async () => {
+    await annotateLatex();
+    const writer = createShelfWriter({
+      paths,
+      projectRoot: dataDir,
+      annotations: createAnnotationAccess({
+        paths,
+        lock: new AsyncLock(),
+        docMutations,
+        onChanged: () => {},
+      }),
+      store: () => shelf,
+      onChanged: () => {},
+    });
+    const request = body({ docs: [{ docId: LATEX, annotationIds: ["a_0123abcd"] }] });
+    const shown = (await writer.preview(request)).body as unknown as ShelfAddPreviewResponse;
+    expect(shown.carried.docs).toEqual([{ docId: LATEX, kind: "latex", annotations: 1 }]);
+    // an annotation went away between the card and the add: what would go in is not what was shown
+    const current = (await (
+      await call("GET", `/api/paper/${LATEX}/annotations`)
+    ).json()) as AnnotationsFile;
+    expect(
+      (
+        await call("PUT", `/api/paper/${LATEX}/annotations`, {
+          ...current,
+          annotations: [ANNOTATION("a_4567cdef")],
+        })
+      ).status
+    ).toBe(200);
+    const refused = await writer.add(request, { expect: shown });
+    expect(refused.status).toBe(409);
+    expect(refused.body).toMatchObject({ code: "carried_changed", archived: [] });
+    expect(shelfEntries()).toEqual([]);
+    // the same expectation, still true: the add goes through
+    const again = (await writer.preview(request)).body as unknown as ShelfAddPreviewResponse;
+    const ok = await writer.add(request, { expect: again });
+    expect(ok.status).toBe(200);
+    expect(shelfEntries()).toHaveLength(1);
   });
 
   test("with the same paper on the Shelf: the impact the add would ask to confirm", async () => {

@@ -389,7 +389,9 @@ async function send(id: string, context: PageContext, text: string) {
 // Copilot ticket 58: the closing paragraph of the instruction (the data rules, which every setting carries, and the
 // "file and command tools are turned off" sentence) took the footprint from 71958 to 73358 bytes (+1400 B, with the
 // file tools off, as the tests run): +1400 * 4/7 = +800 tokens, 62440 -> 63240.
-const WINDOW_BIG_DOC = 63_240;
+// Shelf ticket 07: the shelf tool (description and parameter schema) took the footprint from 73358 to 76349 bytes
+// (+2991 B): +2991 * 4/7 = +1710 tokens, 63240 -> 64950.
+const WINDOW_BIG_DOC = 64_950;
 
 // ---- Reader: a document many windows long -------------------------------------------------------------- //
 test("a Reader document several windows long is delivered in parts with its range; reading on reaches the last unique marker, earlier parts leave the conversation and the record stays", async () => {
@@ -713,8 +715,8 @@ test("a PDF several windows long is delivered in page parts, reading on reaches 
   };
   // ticket 33: lane 1 removed attachment tool text, lane 3 added download_original, lane 4 undo_delete_task; merged: 49700 -> 50_300.
   // Review rounds A and B: bound to the fixed footprint like the others, +1440 tokens (see WINDOW_BIG_DOC for the derivation).
-  await withWindow(52_540, async () => {
-    // 51_740 + 800 (copilot ticket 58, see WINDOW_BIG_DOC)
+  await withWindow(54_250, async () => {
+    // 51_740 + 800 (copilot ticket 58, see WINDOW_BIG_DOC) + 1_710 (shelf ticket 07, see WINDOW_BIG_DOC)
     const reader: Step = (c) => {
       const state = progress(c);
       const batch = state.batch;
@@ -1205,7 +1207,7 @@ test("a tool-call id of 225 characters is mapped to a bounded key: the ledger is
 test("a window barely above the instruction (41740 tokens): a read that finds no room is an honest gap, not a failed run", async () => {
   writeDoc(docIr(900));
   await withWindow(
-    41_740, // 40_940 + 800 (copilot ticket 58, see WINDOW_BIG_DOC); before: 39_500 + 1_440 for the argument tool (footprint +2520 B, times 4/7 because the held-back eighth of the window grows with it; see WINDOW_BIG_DOC). ticket 32: retry_plans +100 tokens; ticket 33 lane 1 (attachment tools removed) -1300, lane 3 (download_original) +300, lane 4 (undo_delete_task) +300
+    43_200, // shelf ticket 07: 41_740 + 1_710 (see WINDOW_BIG_DOC) left room for a part, so measured: 42_900 leaves no room for the message and 43_450 lets a part fit, 43_100 to 43_300 pass, the middle; 40_940 + 800 (copilot ticket 58, see WINDOW_BIG_DOC); before: 39_500 + 1_440 for the argument tool (footprint +2520 B, times 4/7 because the held-back eighth of the window grows with it; see WINDOW_BIG_DOC). ticket 32: retry_plans +100 tokens; ticket 33 lane 1 (attachment tools removed) -1300, lane 3 (download_original) +300, lane 4 (undo_delete_task) +300
     async () => {
       script = [() => ({ call: { action: "read", docId: DOC } }), () => ({ text: "gap noted" })];
       const { snapshot } = await run(page(), "read it");

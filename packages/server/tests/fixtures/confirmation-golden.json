@@ -212,6 +212,138 @@
       },
       "baseRev": 5,
       "objectDigest": "ms-digest"
+    },
+    "shelf_add": {
+      "toolCallId": "call_shelf_add",
+      "action": "shelf_add",
+      "workId": "doi:10.1/x",
+      "label": "A paper",
+      "request": {
+        "workId": "doi:10.1/x",
+        "docs": [
+          {
+            "docId": "d_1",
+            "annotationIds": [
+              "a1",
+              "a2"
+            ]
+          }
+        ],
+        "argumentGraph": true,
+        "note": false
+      },
+      "carried": {
+        "docs": [
+          {
+            "docId": "d_1",
+            "kind": "latex",
+            "annotations": 1
+          }
+        ],
+        "argumentGraph": true,
+        "note": false
+      },
+      "notCarried": [
+        {
+          "docId": "d_1",
+          "annotationIds": [
+            "a2"
+          ]
+        }
+      ],
+      "wouldArchive": [
+        {
+          "docId": "d_1",
+          "count": 2
+        }
+      ],
+      "impact": {
+        "entries": [
+          {
+            "entryId": "0123456789abcdef0123456789abcdef",
+            "rev": 1,
+            "title": "A paper",
+            "addedAt": "2026-10-01T00:00:00.000Z",
+            "sourceProject": "/projects/old",
+            "docs": [
+              {
+                "docId": "d_1",
+                "kind": "latex",
+                "bytes": 10
+              }
+            ],
+            "annotations": 0,
+            "argumentGraph": false,
+            "note": false
+          }
+        ]
+      },
+      "baseRev": 0,
+      "objectDigest": "add-digest"
+    },
+    "shelf_take": {
+      "toolCallId": "call_shelf_take",
+      "action": "shelf_take",
+      "entryId": "0123456789abcdef0123456789abcdef",
+      "label": "A paper",
+      "request": {
+        "rev": 2,
+        "excludeAnnotations": {
+          "d_1": [
+            "a2"
+          ]
+        },
+        "argumentGraph": true,
+        "note": false
+      },
+      "plan": {
+        "work": {
+          "id": "doi:10.1/x",
+          "title": "A paper",
+          "created": false,
+          "citeKey": "doe2021",
+          "filled": [
+            "abstract"
+          ]
+        },
+        "mainDoc": {
+          "before": null,
+          "after": "d_1",
+          "changed": true
+        },
+        "docs": {
+          "taken": [
+            {
+              "docId": "d_1",
+              "kind": "latex",
+              "annotations": 1,
+              "stamped": true
+            }
+          ],
+          "skipped": [
+            {
+              "docId": "p_1",
+              "kind": "pdf",
+              "reason": "exists"
+            }
+          ]
+        },
+        "argumentGraph": "kept_local",
+        "note": "not_chosen"
+      },
+      "planDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "baseRev": 2,
+      "objectDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "shelf_delete": {
+      "toolCallId": "call_shelf_delete",
+      "action": "shelf_delete",
+      "entryId": "0123456789abcdef0123456789abcdef",
+      "label": "",
+      "status": "incompatible",
+      "entry": null,
+      "baseRev": 4,
+      "objectDigest": "delete-digest"
     }
   },
   "cards": {
@@ -492,6 +624,154 @@
         "assets": 1
       },
       "objectDigest": "ms-digest"
+    },
+    "shelf_add": {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "runId": "22222222-2222-4222-8222-222222222222",
+      "toolCallId": "call_shelf_add",
+      "baseRev": 0,
+      "action": "shelf_add",
+      "object": {
+        "kind": "work",
+        "id": "doi:10.1/x",
+        "workId": "doi:10.1/x"
+      },
+      "label": "A paper",
+      "request": {
+        "workId": "doi:10.1/x",
+        "docs": [
+          {
+            "docId": "d_1",
+            "annotationIds": [
+              "a1",
+              "a2"
+            ]
+          }
+        ],
+        "argumentGraph": true,
+        "note": false
+      },
+      "carried": {
+        "docs": [
+          {
+            "docId": "d_1",
+            "kind": "latex",
+            "annotations": 1
+          }
+        ],
+        "argumentGraph": true,
+        "note": false
+      },
+      "notCarried": [
+        {
+          "docId": "d_1",
+          "annotationIds": [
+            "a2"
+          ]
+        }
+      ],
+      "wouldArchive": [
+        {
+          "docId": "d_1",
+          "count": 2
+        }
+      ],
+      "impact": {
+        "entries": [
+          {
+            "entryId": "0123456789abcdef0123456789abcdef",
+            "rev": 1,
+            "title": "A paper",
+            "addedAt": "2026-10-01T00:00:00.000Z",
+            "sourceProject": "/projects/old",
+            "docs": [
+              {
+                "docId": "d_1",
+                "kind": "latex",
+                "bytes": 10
+              }
+            ],
+            "annotations": 0,
+            "argumentGraph": false,
+            "note": false
+          }
+        ]
+      },
+      "objectDigest": "add-digest"
+    },
+    "shelf_take": {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "runId": "22222222-2222-4222-8222-222222222222",
+      "toolCallId": "call_shelf_take",
+      "baseRev": 2,
+      "action": "shelf_take",
+      "object": {
+        "kind": "shelf_entry",
+        "id": "0123456789abcdef0123456789abcdef"
+      },
+      "label": "A paper",
+      "request": {
+        "rev": 2,
+        "excludeAnnotations": {
+          "d_1": [
+            "a2"
+          ]
+        },
+        "argumentGraph": true,
+        "note": false
+      },
+      "plan": {
+        "work": {
+          "id": "doi:10.1/x",
+          "title": "A paper",
+          "created": false,
+          "citeKey": "doe2021",
+          "filled": [
+            "abstract"
+          ]
+        },
+        "mainDoc": {
+          "before": null,
+          "after": "d_1",
+          "changed": true
+        },
+        "docs": {
+          "taken": [
+            {
+              "docId": "d_1",
+              "kind": "latex",
+              "annotations": 1,
+              "stamped": true
+            }
+          ],
+          "skipped": [
+            {
+              "docId": "p_1",
+              "kind": "pdf",
+              "reason": "exists"
+            }
+          ]
+        },
+        "argumentGraph": "kept_local",
+        "note": "not_chosen"
+      },
+      "planDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "objectDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "shelf_delete": {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "runId": "22222222-2222-4222-8222-222222222222",
+      "toolCallId": "call_shelf_delete",
+      "baseRev": 4,
+      "action": "shelf_delete",
+      "object": {
+        "kind": "shelf_entry",
+        "id": "0123456789abcdef0123456789abcdef"
+      },
+      "label": "",
+      "status": "incompatible",
+      "entry": null,
+      "objectDigest": "delete-digest"
     }
   },
   "records": {
@@ -566,6 +846,24 @@
       "approved": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_ms\",\"baseRev\":5,\"outcome\":\"approved\",\"action\":\"delete_manuscript\",\"manuscriptId\":\"m_1\"}",
       "declined": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_ms\",\"baseRev\":5,\"outcome\":\"declined\",\"action\":\"delete_manuscript\",\"manuscriptId\":\"m_1\"}",
       "expired": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_ms\",\"baseRev\":5,\"outcome\":\"expired\",\"action\":\"delete_manuscript\",\"manuscriptId\":\"m_1\"}"
+    },
+    "shelf_add": {
+      "requested": "{\"version\":1,\"phase\":\"requested\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_shelf_add\",\"baseRev\":0,\"action\":\"shelf_add\",\"workId\":\"doi:10.1/x\"}",
+      "approved": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_shelf_add\",\"baseRev\":0,\"outcome\":\"approved\",\"action\":\"shelf_add\",\"workId\":\"doi:10.1/x\"}",
+      "declined": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_shelf_add\",\"baseRev\":0,\"outcome\":\"declined\",\"action\":\"shelf_add\",\"workId\":\"doi:10.1/x\"}",
+      "expired": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_shelf_add\",\"baseRev\":0,\"outcome\":\"expired\",\"action\":\"shelf_add\",\"workId\":\"doi:10.1/x\"}"
+    },
+    "shelf_take": {
+      "requested": "{\"version\":1,\"phase\":\"requested\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_shelf_take\",\"baseRev\":2,\"action\":\"shelf_take\",\"entryId\":\"0123456789abcdef0123456789abcdef\"}",
+      "approved": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_shelf_take\",\"baseRev\":2,\"outcome\":\"approved\",\"action\":\"shelf_take\",\"entryId\":\"0123456789abcdef0123456789abcdef\"}",
+      "declined": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_shelf_take\",\"baseRev\":2,\"outcome\":\"declined\",\"action\":\"shelf_take\",\"entryId\":\"0123456789abcdef0123456789abcdef\"}",
+      "expired": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_shelf_take\",\"baseRev\":2,\"outcome\":\"expired\",\"action\":\"shelf_take\",\"entryId\":\"0123456789abcdef0123456789abcdef\"}"
+    },
+    "shelf_delete": {
+      "requested": "{\"version\":1,\"phase\":\"requested\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_shelf_delete\",\"baseRev\":4,\"action\":\"shelf_delete\",\"entryId\":\"0123456789abcdef0123456789abcdef\"}",
+      "approved": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_shelf_delete\",\"baseRev\":4,\"outcome\":\"approved\",\"action\":\"shelf_delete\",\"entryId\":\"0123456789abcdef0123456789abcdef\"}",
+      "declined": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_shelf_delete\",\"baseRev\":4,\"outcome\":\"declined\",\"action\":\"shelf_delete\",\"entryId\":\"0123456789abcdef0123456789abcdef\"}",
+      "expired": "{\"version\":1,\"phase\":\"resolved\",\"confirmationId\":\"11111111-1111-4111-8111-111111111111\",\"runId\":\"22222222-2222-4222-8222-222222222222\",\"toolCallId\":\"call_shelf_delete\",\"baseRev\":4,\"outcome\":\"expired\",\"action\":\"shelf_delete\",\"entryId\":\"0123456789abcdef0123456789abcdef\"}"
     }
   }
 }

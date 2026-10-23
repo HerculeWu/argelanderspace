@@ -176,14 +176,14 @@ import { ProviderSettings } from "./providers.js";
 import { mountSettingsRoutes, readSettings, shownPath, withAppearance } from "./settings.js";
 import { createShelfWriter, mountShelfWriteRoutes, shelfStoreOf } from "./shelf-add.js";
 import { mountShelfCandidateRoute } from "./shelf-candidates.js";
-import { mountShelfRoutes } from "./shelf-take.js";
+import { createShelfTake, mountShelfRoutes, shelfListRows } from "./shelf-take.js";
 import {
   mountTextDocRoutes,
   type PdfRegionOutcome,
   type TextDocDeps,
   TextDocService,
 } from "./text-docs.js";
-import { mountTutorialRoutes } from "./tutorial-routes.js";
+import { isTutorialProject, mountTutorialRoutes } from "./tutorial-routes.js";
 import {
   createManuscriptOp,
   deleteManuscriptOp,
@@ -634,16 +634,17 @@ export function createApp(deps: AppDeps): Hono {
   mountHostRoutes(app, deps.host);
 
   // The tutorial progress (tutorial-routes.ts): global data, the same route in both forms.
+  const tutorialFile = () =>
+    deps.tutorial?.file ??
+    join(
+      (
+        pinnedGlobalDirs() ??
+        resolveGlobalDirsLeniently(readConfigLeniently(deps.configPath ?? configFilePath())).dirs
+      ).dataDir,
+      TUTORIAL_PROGRESS_FILE
+    );
   mountTutorialRoutes(app, {
-    file: () =>
-      deps.tutorial?.file ??
-      join(
-        (
-          pinnedGlobalDirs() ??
-          resolveGlobalDirsLeniently(readConfigLeniently(deps.configPath ?? configFilePath())).dirs
-        ).dataDir,
-        TUTORIAL_PROGRESS_FILE
-      ),
+    file: tutorialFile,
     sampleDir: deps.tutorial?.sampleDir ?? null,
     log,
   });
@@ -767,24 +768,23 @@ export function createApp(deps: AppDeps): Hono {
   // The add dialog's read-only list (shelf-candidates.ts): annotations through `peek`, never the ensure.
   mountShelfCandidateRoute(app, { paths, annotations: annotationAccess });
   // Adding to, replacing in and deleting from the Shelf (shelf-add.ts): the reads on the one annotations access path.
-  mountShelfWriteRoutes(
-    app,
-    createShelfWriter({
-      paths,
-      projectRoot,
-      annotations: annotationAccess,
-      store: () => deps.shelf ?? shelfStoreOf(deps.configPath),
-      onChanged: (cause, entry, removed) =>
-        broadcast({
-          type: "shelf.changed",
-          cause,
-          entry_id: entry.entryId,
-          rev: entry.rev,
-          removed: removed.map((r) => ({ entry_id: r.entryId, rev: r.rev })),
-          at: new Date().toISOString(),
-        }),
-    })
-  );
+  // The routes and the Copilot `shelf` tool share this one writer.
+  const shelfWriter = createShelfWriter({
+    paths,
+    projectRoot,
+    annotations: annotationAccess,
+    store: () => deps.shelf ?? shelfStoreOf(deps.configPath),
+    onChanged: (cause, entry, removed) =>
+      broadcast({
+        type: "shelf.changed",
+        cause,
+        entry_id: entry.entryId,
+        rev: entry.rev,
+        removed: removed.map((r) => ({ entry_id: r.entryId, rev: r.rev })),
+        at: new Date().toISOString(),
+      }),
+  });
+  mountShelfWriteRoutes(app, shelfWriter);
   /**
    * Library acquisition, upload and manual import (see acquisition.ts): the upload/refresh/import/arXiv routes and the
    * Copilot `library` tool (`acquisition`, `importWorks`) share this one instance, on the app's runner, libraryLock,
@@ -812,16 +812,19 @@ export function createApp(deps: AppDeps): Hono {
     acquisitionWaitMs: deps.acquisitionWaitMs,
     log,
   });
-  // The Shelf's reads and the take (shelf-take.ts): on the app's libraryLock, argumentGraphLock and registry.
-  mountShelfRoutes(app, {
+  // The Shelf's reads and the take (shelf-take.ts): on the app's libraryLock, argumentGraphLock and registry. The routes
+  // and the Copilot `shelf` tool share this one take.
+  const shelfTakeDeps = {
     paths,
     store: () => deps.shelf ?? shelfStoreOf(deps.configPath),
     libraryLock,
     argumentGraphLock,
     docMutations,
     libraryChanged: () => libraryChanged("add"),
-    argumentGraphChanged: (workId) => argumentGraphChanged(workId),
-  });
+    argumentGraphChanged: (workId: string) => argumentGraphChanged(workId),
+  };
+  const shelfTake = createShelfTake(shelfTakeDeps);
+  mountShelfRoutes(app, shelfTakeDeps, shelfTake);
   // The Copilot `library` tool shares the library lock, the narrow work patch and library.changed with
   // PATCH /api/library/refs, and reads the same payload as GET /api/library.
   const libraryOps: LibraryOpDeps = {
@@ -1086,6 +1089,23 @@ export function createApp(deps: AppDeps): Hono {
         }
       },
       undo: new ArgumentUndoRegistry(),
+    },
+    // The Shelf tool (shelf ticket 07): the routes' own writer, take and list; not offered in the tutorial project.
+    shelf: {
+      writer: shelfWriter,
+      take: shelfTake,
+      list: async () => shelfListRows(await shelfTakeDeps.store().list()),
+      work: (workId) => {
+        try {
+          const found = LibraryStore.load(paths).get(workId);
+          return found
+            ? { id: found.id, title: found.title, docIds: [...(found.doc_ids ?? [])] }
+            : null;
+        } catch {
+          return "error";
+        }
+      },
+      inTutorialProject: () => isTutorialProject(tutorialFile(), projectRoot),
     },
     plans: {
       statusDir: deps.statusDir,

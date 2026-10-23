@@ -235,6 +235,8 @@ export const CopilotOperationSchema = z
           "manuscript",
           /** A mail message or draft (Mail ticket 09): `id` is the Message-ID of a draft, else `uid` in `folder`. */
           "mail",
+          /** A Shelf (文献仓) entry (shelf ticket 07): `id` is the entry id. */
+          "shelf_entry",
         ]),
         id: z.string(),
         planId: z.string().optional(),

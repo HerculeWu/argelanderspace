@@ -598,7 +598,8 @@ test("29b: an evicted text source part is replaced by a stand-in naming text rea
     .find((candidate) => candidate.id === "gpt-4.1");
   if (!model) throw new Error("fixture model");
   const original = { contextWindow: model.contextWindow, maxTokens: model.maxTokens };
-  model.contextWindow = 64_000;
+  // 64_000 + 1_710: the same room after the shelf tool (shelf ticket 07, footprint +2991 B; see WINDOW_BIG_DOC in copilot-batching.test.ts)
+  model.contextWindow = 65_710;
   model.maxTokens = 1024;
   try {
     type Batch = { from: number; to: number; total: number; status: string; version: string };

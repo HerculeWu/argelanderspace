@@ -545,7 +545,8 @@ test("the base instruction plus the tool schemas stay within the measured footpr
   // Review round A added the read tool's `field` parameter (and reworded its read line): +30 bytes. Measured 71958.
   expect(footprint).toBeGreaterThan(70_000);
   // Copilot ticket 58: the closing paragraph (data rules and the file-tools-off sentence) added 1400 bytes (data rules and the off sentence). Measured 73358.
-  expect(footprint).toBeLessThan(73_358 + 300);
+  // Shelf ticket 07 added the shelf tool (description and parameter schema), about 3 KB. Measured 76349.
+  expect(footprint).toBeLessThan(76_349 + 300);
   expect(Buffer.byteLength(instruction?.text ?? "")).toBeGreaterThan(3_000);
 });
 
@@ -1029,6 +1030,7 @@ test("instructions inside a PDF are content: they give no tool call authority, c
     "library",
     "plan",
     "reader",
+    "shelf",
     "text",
     "workspace",
     "writer",

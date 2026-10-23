@@ -199,6 +199,45 @@ function summaryOf(entry: ShelfEntry): ShelfEntrySummary {
   };
 }
 
+/**
+ * The rows of `GET /api/shelf` for what the store listed: the one mapping the route and the Copilot `shelf` tool (shelf
+ * ticket 07) both answer with. No row carries an annotation body, a note or a graph.
+ */
+export function shelfListRows(items: Awaited<ReturnType<ShelfStore["list"]>>): ShelfListRow[] {
+  return items.map((item): ShelfListRow => {
+    switch (item.status) {
+      case "ok":
+        return { status: "ok", ...summaryOf(item) };
+      case "incompatible":
+        return {
+          status: "incompatible",
+          entryId: item.entryId,
+          rev: item.rev,
+          bytes: item.bytes,
+          format: item.format,
+          title: item.title,
+          needsUpdate: true,
+        };
+      case "damaged":
+        return {
+          status: "damaged",
+          entryId: item.entryId,
+          rev: item.rev,
+          bytes: item.bytes,
+          problem: item.problem,
+        };
+      default:
+        return {
+          status: "unreadable",
+          entryId: item.entryId,
+          rev: item.rev,
+          bytes: 0,
+          code: item.code,
+        };
+    }
+  });
+}
+
 /** The refusal of a read that did not give an entry of this build's format. */
 function readRefusal(read: Exclude<ShelfRead, { status: "ok" }>): Refusal {
   switch (read.status) {
@@ -1083,9 +1122,15 @@ function annotationRows(
 
 // ---- routes -----------------------------------------------------------------------------------------------
 
-/** Mount the Shelf read, preview and take routes; the reads are guarded too (the Shelf is the person's global data). */
-export function mountShelfRoutes(app: ProtectedRoutes, deps: ShelfTakeDeps): void {
-  const shelfTake = createShelfTake(deps);
+/**
+ * Mount the Shelf read, preview and take routes; the reads are guarded too (the Shelf is the person's global data).
+ * `shelfTake` is the app's one take (the Copilot `shelf` tool uses the same instance); made here when not given.
+ */
+export function mountShelfRoutes(
+  app: ProtectedRoutes,
+  deps: ShelfTakeDeps,
+  shelfTake: ShelfTake = createShelfTake(deps)
+): void {
   const unreadable = (c: Context, error: unknown) => {
     const code = error instanceof ShelfIoError ? error.code : errCode(error);
     return c.json(
@@ -1103,38 +1148,7 @@ export function mountShelfRoutes(app: ProtectedRoutes, deps: ShelfTakeDeps): voi
     } catch (error) {
       return unreadable(c, error);
     }
-    const entries: ShelfListRow[] = items.map((item): ShelfListRow => {
-      switch (item.status) {
-        case "ok":
-          return { status: "ok", ...summaryOf(item) };
-        case "incompatible":
-          return {
-            status: "incompatible",
-            entryId: item.entryId,
-            rev: item.rev,
-            bytes: item.bytes,
-            format: item.format,
-            title: item.title,
-            needsUpdate: true,
-          };
-        case "damaged":
-          return {
-            status: "damaged",
-            entryId: item.entryId,
-            rev: item.rev,
-            bytes: item.bytes,
-            problem: item.problem,
-          };
-        default:
-          return {
-            status: "unreadable",
-            entryId: item.entryId,
-            rev: item.rev,
-            bytes: 0,
-            code: item.code,
-          };
-      }
-    });
+    const entries = shelfListRows(items);
     return c.json({ entries } satisfies ShelfListResponse, 200, NO_STORE);
   });
 

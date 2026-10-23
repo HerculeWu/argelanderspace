@@ -10,8 +10,9 @@ test("a decision names exactly the actions the cards have", () => {
   const decisions = CopilotConfirmationDecisionSchema.shape.action.options;
   expect(new Set(decisions)).toEqual(new Set(cards));
   expect(decisions).toHaveLength(cards.length);
-  expect(cards).toHaveLength(12);
-  // the twelve of this version, by name (nine business kinds and the three file and command tool kinds)
+  expect(cards).toHaveLength(15);
+  // the fifteen of this version, by name (twelve business kinds — three of them the Shelf's, shelf ticket 07 — and the
+  // three file and command tool kinds)
   expect([...cards].sort()).toEqual([
     "delete_doc",
     "delete_mail",
@@ -24,6 +25,9 @@ test("a decision names exactly the actions the cards have", () => {
     "replace_text_reading",
     "run_command",
     "send_mail",
+    "shelf_add",
+    "shelf_delete",
+    "shelf_take",
     "write_file",
   ]);
 });

@@ -26,6 +26,7 @@ import { createMailTool, MAIL_TOOL_NAME } from "./copilot-mail-tool.js";
 import { createPlanTool, PLAN_TOOL_NAME, type PlanToolContext } from "./copilot-plan-tool.js";
 import { createReaderTool, READER_TOOL_NAME } from "./copilot-reader-tool.js";
 import type { ApplicationResourceLoader } from "./copilot-resources.js";
+import { createShelfTool, SHELF_TOOL_NAME } from "./copilot-shelf-tool.js";
 import { createTextTool, TEXT_TOOL_NAME, type TextToolContext } from "./copilot-text-tool.js";
 import type { ToolHostContext } from "./copilot-tool-kit.js";
 import {
@@ -268,6 +269,19 @@ export const TOOL_TABLE: readonly AnyToolEntry[] = Object.freeze([
     }),
     create: (context) => one(ARGUMENT_TOOL_NAME, createArgumentTool(context)),
   } satisfies ToolEntry<Parameters<typeof createArgumentTool>[0]>,
+  {
+    id: SHELF_TOOL_NAME,
+    names: [SHELF_TOOL_NAME],
+    // Not in the tutorial project (contracts「文献仓」「教程」): asked when the run's tools are chosen.
+    gate: (g) => !!g.workbench?.shelf && g.workbench.shelf.inTutorialProject?.() !== true,
+    requires: [PLAN_TOOL_NAME],
+    host: "full",
+    context: (host, _deps, { workbench }) => ({
+      ...host,
+      shelf: workbench.shelf as NonNullable<Workbench["shelf"]>,
+    }),
+    create: (context) => one(SHELF_TOOL_NAME, createShelfTool(context)),
+  } satisfies ToolEntry<Parameters<typeof createShelfTool>[0]>,
   {
     id: FILES,
     names: FILE_TOOL_NAMES,

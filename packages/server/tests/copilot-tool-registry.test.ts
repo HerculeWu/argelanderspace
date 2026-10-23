@@ -34,7 +34,7 @@ type Registry = typeof import("../src/copilot-tool-registry.js");
 type Gates = Parameters<Registry["promptSwitches"]>[0];
 type Deps = Parameters<Registry["assembleRunTools"]>[0]["deps"];
 
-const CAPS = ["library", "reader", "writer", "text", "mail", "argument"] as const;
+const CAPS = ["library", "reader", "writer", "text", "mail", "argument", "shelf"] as const;
 type Cap = (typeof CAPS)[number];
 type Permission = "off" | "ask" | "auto";
 const SHARED = ["admitting", "track", "runId", "journal", "confirm"] as const;
@@ -47,6 +47,7 @@ const BUSINESS = [
   "text",
   "mail",
   "argument",
+  "shelf",
 ] as const;
 
 const subsets = (): Cap[][] =>
@@ -127,6 +128,7 @@ function expectedNames(
     ...(has("text") ? ["text"] : []),
     ...(mail === "on" && has("mail") ? ["mail"] : []),
     ...(has("argument") ? ["argument"] : []),
+    ...(has("shelf") ? ["shelf"] : []),
     ...(files ? fileToolNames(files.permission, files.platform ?? process.platform) : []),
   ];
 }
@@ -361,6 +363,7 @@ describe("what each tool is given", () => {
     text: SHARED,
     mail: SHARED,
     argument: SHARED,
+    shelf: SHARED,
     files: ["admitting", "track", "confirm"],
   };
 
@@ -387,7 +390,16 @@ describe("what each tool is given", () => {
       if (context.track === host.track) tracked.push(entry.id);
     }
     // the seven tools whose work a terminal run state waits for all hand it to the one track (one state.inflight)
-    expect(tracked).toEqual(["plan", "library", "writer", "text", "mail", "argument", "files"]);
+    expect(tracked).toEqual([
+      "plan",
+      "library",
+      "writer",
+      "text",
+      "mail",
+      "argument",
+      "shelf",
+      "files",
+    ]);
   });
 
   test("each tool's own dependencies, wired as the host wired them", async () => {
@@ -477,6 +489,10 @@ describe("what each tool is given", () => {
     await argument.viewAction({ action: "open_argument" });
     expect(viewAction).toHaveBeenLastCalledWith({ action: "open_argument" });
 
+    const shelf = of("shelf");
+    expect(shelf.shelf).toBe(wb.shelf);
+    expect("viewAction" in shelf).toBe(false);
+
     const files = of("files");
     expect(files.cwd).toBe("/work/project");
     expect(files.permission).toBe(permission);
@@ -495,6 +511,33 @@ describe("what each tool is given", () => {
           loader: made as never,
         }) as object)
     ).toBe(false);
+  });
+});
+
+describe("the shelf tool and the tutorial project (shelf ticket 07)", () => {
+  test("is offered with the Shelf seam and not while the open project is the tutorial project, asked when a run's tools are chosen", () => {
+    const { wb } = workbench(["library", "shelf"]);
+    let tutorial = false;
+    const inTutorialProject = vi.fn(() => tutorial);
+    (wb as unknown as { shelf: object }).shelf = { inTutorialProject };
+    const names = () =>
+      assembleRunTools({
+        gates: { workbench: wb, mailMount: "off" },
+        host: sharedHost(),
+        deps: fakeDeps(),
+        loader: fakeLoader().loader,
+        hasSkills: () => false,
+      }).toolNames;
+    expect(names()).toEqual(["plan", "workspace", "library", "shelf"]);
+    tutorial = true;
+    expect(names()).toEqual(["plan", "workspace", "library"]);
+    expect(footprintTools({ workbench: wb, mailMount: "off" }).tools.map(nameOf)).not.toContain(
+      "shelf"
+    );
+    // the next run of the same host, once the project is no longer the tutorial project, has it again
+    tutorial = false;
+    expect(names()).toContain("shelf");
+    expect(inTutorialProject).toHaveBeenCalled();
   });
 });
 

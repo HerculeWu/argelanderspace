@@ -30,6 +30,8 @@ const reads = vi.hoisted(() => ({
   prepareArxivRefresh: vi.fn(),
   draftUnchanged: vi.fn(),
   describeArgumentTarget: vi.fn(),
+  shelfAddDigest: vi.fn(),
+  shelfDeleteDigest: vi.fn(),
 }));
 vi.mock("../src/plans-actions.js", async (original) => ({
   ...(await original<object>()),
@@ -52,7 +54,16 @@ vi.mock("../src/mail-copilot.js", async (original) => ({
   draftUnchanged: reads.draftUnchanged,
 }));
 
+vi.mock("../src/copilot-shelf-tool.js", async (original) => ({
+  ...(await original<object>()),
+  shelfAddDigest: reads.shelfAddDigest,
+  shelfDeleteDigest: reads.shelfDeleteDigest,
+}));
+
 const sha = (c: string) => c.repeat(64);
+const ENTRY = "0123456789abcdef0123456789abcdef";
+const SHELF_ADD_DIGEST = "add-digest";
+const SHELF_DELETE_DIGEST = "delete-digest";
 const account = { id: "acc", address: "me@example.org", displayName: "Me" };
 const message = {
   folder: "INBOX",
@@ -194,11 +205,76 @@ const requests: { [A in ConfirmationAction]: Extract<ConfirmationRequest, { acti
     baseRev: 3,
     objectDigest: "refresh-digest",
   },
+  shelf_add: {
+    toolCallId: "call",
+    action: "shelf_add",
+    workId: "doi:10.1/x",
+    label: "A paper",
+    request: {
+      workId: "doi:10.1/x",
+      docs: [{ docId: "d_1", annotationIds: ["a1"] }],
+      argumentGraph: false,
+      note: false,
+    },
+    carried: {
+      docs: [{ docId: "d_1", kind: "latex", annotations: 1 }],
+      argumentGraph: false,
+      note: false,
+    },
+    notCarried: [],
+    wouldArchive: [],
+    impact: null,
+    baseRev: 0,
+    objectDigest: SHELF_ADD_DIGEST,
+  },
+  shelf_take: {
+    toolCallId: "call",
+    action: "shelf_take",
+    entryId: ENTRY,
+    label: "A paper",
+    request: { rev: 2, argumentGraph: true, note: true },
+    plan: {
+      work: { id: "doi:10.1/x", title: "A paper", created: true, citeKey: "doe2021", filled: [] },
+      mainDoc: { before: null, after: "d_1", changed: true },
+      docs: {
+        taken: [{ docId: "d_1", kind: "latex", annotations: 1, stamped: false }],
+        skipped: [],
+      },
+      argumentGraph: "not_carried",
+      note: "not_carried",
+    },
+    planDigest: sha("c"),
+    baseRev: 2,
+    objectDigest: sha("c"),
+  },
+  shelf_delete: {
+    toolCallId: "call",
+    action: "shelf_delete",
+    entryId: ENTRY,
+    label: "A paper",
+    status: "ok",
+    entry: {
+      entryId: ENTRY,
+      rev: 2,
+      title: "A paper",
+      addedAt: "2026-10-23T00:00:00.000Z",
+      sourceProject: "/projects/a",
+      docs: [{ docId: "d_1", kind: "latex", bytes: 10 }],
+      annotations: 1,
+      argumentGraph: false,
+      note: false,
+    },
+    baseRev: 2,
+    objectDigest: SHELF_DELETE_DIGEST,
+  },
 };
 
 let describe_: ReturnType<typeof vi.fn>;
 let describeSource: ReturnType<typeof vi.fn>;
 let probeReplacement: ReturnType<typeof vi.fn>;
+let addPreview: ReturnType<typeof vi.fn>;
+let takePreview: ReturnType<typeof vi.fn>;
+let shelfList: ReturnType<typeof vi.fn>;
 let kinds: ConfirmationKinds;
 const workbench = () =>
   ({
@@ -208,6 +284,11 @@ const workbench = () =>
     text: { probeReplacement },
     mail: {},
     argument: {},
+    shelf: {
+      writer: { preview: addPreview },
+      take: { preview: takePreview },
+      list: shelfList,
+    },
   }) as unknown as Workbench;
 const kindOf = (action: ConfirmationAction) => kinds[action] as ConfirmationKind;
 /** The card the host shows for one request (the host's own assembly). */
@@ -221,7 +302,82 @@ beforeEach(() => {
   describe_ = vi.fn();
   describeSource = vi.fn();
   probeReplacement = vi.fn();
+  addPreview = vi.fn();
+  takePreview = vi.fn();
+  shelfList = vi.fn();
   kinds = createConfirmationKinds(workbench());
+});
+
+test("shelf_add: previews the card's own request again; valid on the same preview, changed on a refusal or another preview, an error on a server failure", async () => {
+  const body = { impact: null, carried: requests.shelf_add.carried, notCarried: [] };
+  addPreview.mockResolvedValue({ status: 200, body });
+  reads.shelfAddDigest.mockReturnValue(SHELF_ADD_DIGEST);
+  expect(await checkOf("shelf_add")).toBe("valid");
+  // the request previewed is the one on the card, never another
+  expect(addPreview).toHaveBeenCalledWith(requests.shelf_add.request);
+  expect(reads.shelfAddDigest).toHaveBeenCalledWith(requests.shelf_add.request, body);
+  reads.shelfAddDigest.mockReturnValue("an annotation was deleted meanwhile");
+  expect(await checkOf("shelf_add")).toBe("changed");
+  for (const status of [404, 409, 400])
+    addPreview.mockResolvedValueOnce({ status, body: { code: "x", detail: "refused" } });
+  for (let i = 0; i < 3; i++) expect(await checkOf("shelf_add")).toBe("changed");
+  addPreview.mockResolvedValue({
+    status: 500,
+    body: { code: "item_unreadable", detail: "doc d_1 unreadable" },
+  });
+  expect(await checkOf("shelf_add")).toEqual({ error: "doc d_1 unreadable" });
+  addPreview.mockRejectedValue(new Error("EIO"));
+  expect(await checkOf("shelf_add")).toEqual({ error: "EIO" });
+});
+
+test("shelf_take: previews the card's own request again; valid on the same plan digest, changed otherwise, an error on a server failure", async () => {
+  takePreview.mockResolvedValue({ ok: true, preview: { plan: {}, planDigest: sha("c") } });
+  expect(await checkOf("shelf_take")).toBe("valid");
+  expect(takePreview).toHaveBeenCalledWith(ENTRY, requests.shelf_take.request);
+  takePreview.mockResolvedValue({ ok: true, preview: { plan: {}, planDigest: sha("d") } });
+  expect(await checkOf("shelf_take")).toBe("changed");
+  takePreview.mockResolvedValue({
+    ok: false,
+    status: 409,
+    body: { code: "changed", detail: "replaced" },
+  });
+  expect(await checkOf("shelf_take")).toBe("changed");
+  takePreview.mockResolvedValue({
+    ok: false,
+    status: 404,
+    body: { code: "not_found", detail: "gone" },
+  });
+  expect(await checkOf("shelf_take")).toBe("changed");
+  takePreview.mockResolvedValue({
+    ok: false,
+    status: 500,
+    body: { code: "shelf_unreadable", detail: "the Shelf could not be read" },
+  });
+  expect(await checkOf("shelf_take")).toEqual({ error: "the Shelf could not be read" });
+});
+
+test("shelf_delete: valid while the entry is listed at the rev and with the row shown, changed otherwise, an error when the Shelf cannot be read", async () => {
+  const row = { status: "ok", entryId: ENTRY, rev: 2 };
+  shelfList.mockResolvedValue([row]);
+  reads.shelfDeleteDigest.mockReturnValue(SHELF_DELETE_DIGEST);
+  expect(await checkOf("shelf_delete")).toBe("valid");
+  expect(reads.shelfDeleteDigest).toHaveBeenCalledWith(row);
+  shelfList.mockResolvedValue([{ ...row, rev: 3 }]);
+  expect(await checkOf("shelf_delete")).toBe("changed");
+  shelfList.mockResolvedValue([]);
+  expect(await checkOf("shelf_delete")).toBe("changed");
+  shelfList.mockResolvedValue([row]);
+  reads.shelfDeleteDigest.mockReturnValue("another row");
+  expect(await checkOf("shelf_delete")).toBe("changed");
+  shelfList.mockRejectedValue(new Error("EACCES"));
+  expect(await checkOf("shelf_delete")).toEqual({ error: "EACCES" });
+  // the entry could not be looked at (a system error kept it from being read): not a change (票 07 B2)
+  shelfList.mockResolvedValue([
+    { status: "unreadable", entryId: ENTRY, rev: 2, bytes: 0, code: "EACCES" },
+  ]);
+  expect(await checkOf("shelf_delete")).toEqual({
+    error: "the Shelf entry could not be looked at (EACCES)",
+  });
 });
 
 test("delete_plan: valid when rev and content digest match, changed otherwise, an error when the plans cannot be read", async () => {
@@ -386,6 +542,9 @@ test("without a workbench seam every check says changed, as the host did", async
     "replace_argument_graph",
     "replace_text_reading",
     "send_mail",
+    "shelf_add",
+    "shelf_take",
+    "shelf_delete",
   ] as const)
     expect(await checkOf(action)).toBe("changed");
 });
@@ -404,6 +563,9 @@ test("background trigger and bound-view rule per kind are what the host had", ()
     send_mail: [null, false],
     delete_mail: [null, false],
     move_mail: [null, false],
+    shelf_add: [null, false],
+    shelf_take: [null, false],
+    shelf_delete: [null, false],
     run_command: [null, false],
     edit_file: [null, false],
     write_file: [null, false],
@@ -605,6 +767,9 @@ test("records already on disk read back to the same resume lines (the golden cor
     edit_file: "edit_file",
     write_file: "write_file",
     delete_manuscript: "delete_manuscript m_1",
+    shelf_add: "shelf_add doi:10.1/x",
+    shelf_take: "shelf_take 0123456789abcdef0123456789abcdef",
+    shelf_delete: "shelf_delete 0123456789abcdef0123456789abcdef",
   });
 });
 
