@@ -299,6 +299,10 @@ const CREATE_APP_GUARDED: Array<[string, string]> = [
   ["POST", "/api/paper/:doc_id/source/assets/from-pdf"],
   ["POST", "/api/paper/:doc_id/source/validate"],
   ["POST", "/api/paper/:doc_id/source/generate"],
+  // Shelf ticket 03: the Shelf's two write routes, guarded like every write.
+  ["POST", "/api/shelf/entries"],
+  ["POST", "/api/shelf/entries/preview"],
+  ["DELETE", "/api/shelf/entries/:entryId"],
   ["PUT", "/api/paper/:doc_id/pdf/reading-position"], // user decision 1 (2026-10-20)
   ["PUT", "/api/paper/:doc_id/pdf/annotations"], // user decision 1 (2026-10-20)
   ["PUT", "/api/paper/:doc_id/annotations"],

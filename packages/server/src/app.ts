@@ -105,6 +105,7 @@ import {
   pinnedGlobalDirs,
   readConfigLeniently,
   resolveGlobalDirsLeniently,
+  type ShelfStore,
   type TexCompileFailure,
   TUTORIAL_PROGRESS_FILE,
   zipEntries,
@@ -173,6 +174,7 @@ import { createProtectedApp, type ProtectedRoutes } from "./protected-app.js";
 import { mountProviderRoutes } from "./provider-routes.js";
 import { ProviderSettings } from "./providers.js";
 import { mountSettingsRoutes, readSettings, shownPath, withAppearance } from "./settings.js";
+import { createShelfWriter, mountShelfWriteRoutes, shelfStoreOf } from "./shelf-add.js";
 import {
   mountTextDocRoutes,
   type PdfRegionOutcome,
@@ -306,6 +308,8 @@ export interface AppDeps {
    * Absent: the file in the global data directory as pinned (or as config.toml gives it now), and no bundled sample.
    */
   tutorial?: { file: string; sampleDir: string | null } | undefined;
+  /** The Shelf (文献仓) store (shelf ticket 03, shelf-add.ts). Absent: `shelf/` in the global data directory as pinned (or as config.toml gives it now). */
+  shelf?: ShelfStore | undefined;
 }
 
 // --------------------------------------------------------------------------- //
@@ -758,6 +762,25 @@ export function createApp(deps: AppDeps): Hono {
     text: textDocs,
     onDeleted: () => libraryChanged("patch"),
   });
+  // Adding to, replacing in and deleting from the Shelf (shelf-add.ts): the reads on the one annotations access path.
+  mountShelfWriteRoutes(
+    app,
+    createShelfWriter({
+      paths,
+      projectRoot,
+      annotations: annotationAccess,
+      store: () => deps.shelf ?? shelfStoreOf(deps.configPath),
+      onChanged: (cause, entry, removed) =>
+        broadcast({
+          type: "shelf.changed",
+          cause,
+          entry_id: entry.entryId,
+          rev: entry.rev,
+          removed: removed.map((r) => ({ entry_id: r.entryId, rev: r.rev })),
+          at: new Date().toISOString(),
+        }),
+    })
+  );
   /**
    * Library acquisition, upload and manual import (see acquisition.ts): the upload/refresh/import/arXiv routes and the
    * Copilot `library` tool (`acquisition`, `importWorks`) share this one instance, on the app's runner, libraryLock,

@@ -27,6 +27,7 @@ import { WsMailChangedSchema } from "./mail-events.js";
 import { WsPdfReadingPositionChangedSchema } from "./pdf-doc.js";
 import { WsPlanChangedSchema } from "./plans.js";
 import { WsSettingsChangedSchema } from "./settings-api.js";
+import { WsShelfChangedSchema } from "./shelf-write.js";
 import { WsTextDocPublishedSchema, WsTextSourceChangedSchema } from "./text-doc.js";
 import { WsWriterChangedSchema } from "./writer.js";
 
@@ -121,6 +122,7 @@ export const WsServerMessageSchema = z.discriminatedUnion("type", [
   WsTextDocPublishedSchema,
   WsMailChangedSchema,
   WsSettingsChangedSchema,
+  WsShelfChangedSchema,
   WsHostSwitchConfirmationSchema,
   WsHostTutorialResultSchema,
 ]);

@@ -501,6 +501,34 @@ describe("read and peek", () => {
   });
 });
 
+describe("together (the Shelf add's one section)", () => {
+  test("runs inside the lock; its ensure is read's ensure: archives a replaced text and sends invalidate", async () => {
+    seed();
+    changeText();
+    const outcome = await access.together((a) => ({ inLock: held, ensured: a.ensure(DOC) }));
+    expect(outcome.inLock).toBe(true);
+    expect(outcome.ensured).toMatchObject({ kind: "ok", epoch: { invalidated: true } });
+    expect(archives()).toHaveLength(1);
+    expect(changes.map((c) => [c.kind, c.inLock])).toEqual([["invalidate", true]]);
+  });
+
+  test.each(["writer", "delete"])(
+    "a Doc busy (%s) is refused by ensure itself: nothing is archived or announced",
+    async (how) => {
+      seed();
+      changeText();
+      if (how === "writer") registry.pinWriter(DOC);
+      else expect(registry.tryBeginDelete(DOC)).toBe(true);
+      const before = fs.readFileSync(currentPath);
+      const outcome = await access.together((a) => ({ busy: a.busy(DOC), ensured: a.ensure(DOC) }));
+      expect(outcome).toEqual({ busy: true, ensured: { kind: "busy" } });
+      expect(fs.readFileSync(currentPath)).toEqual(before);
+      expect(archives()).toEqual([]);
+      expect(changes).toEqual([]);
+    }
+  );
+});
+
 describe("describeError: the one code → status/detail table; no detail names a path", () => {
   const table: [AnnotationsErrorCode, 404 | 500, string][] = [
     [
