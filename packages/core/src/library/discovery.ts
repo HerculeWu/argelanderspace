@@ -26,7 +26,7 @@ import type {
   DiscoveryWarning,
 } from "@argelanderspace/contracts";
 import { compareEdges, type Edge } from "./graph.js";
-import { type LibraryStore, normDoi } from "./store.js";
+import { arxivFromDoi, type LibraryStore, normArxiv, normDoi } from "./store.js";
 
 /** Server constants, not user-tunable query parameters (V1). */
 export const RELATED_LIMIT = 18;
@@ -76,35 +76,53 @@ export interface AdsDiscoverySource {
 export interface LibraryMembership {
   byBibcode: Map<string, string>;
   byDoi: Map<string, string>;
+  /** Normalized arXiv id (`normArxiv`), from `arxiv_id` or a DataCite arXiv DOI. */
+  byArxiv: Map<string, string>;
+}
+
+/**
+ * A side's arXiv id under the Library identity rule: the stored arXiv id,
+ * else the one behind a DataCite arXiv DOI (`10.48550/arXiv.<id>`).
+ */
+function arxivKey(arxiv: string | null | undefined, doi: string | null | undefined): string | null {
+  return normArxiv(arxiv) ?? arxivFromDoi(doi);
 }
 
 /** Index the snapshot once per request (first work wins on collision). */
 export function libraryMembership(store: LibraryStore): LibraryMembership {
   const byBibcode = new Map<string, string>();
   const byDoi = new Map<string, string>();
+  const byArxiv = new Map<string, string>();
   for (const w of store.works) {
     if (w.bibcode && !byBibcode.has(w.bibcode)) byBibcode.set(w.bibcode, w.id);
     const d = normDoi(w.doi);
     if (d && !byDoi.has(d)) byDoi.set(d, w.id);
+    const a = arxivKey(w.arxiv_id, w.doi);
+    if (a && !byArxiv.has(a)) byArxiv.set(a, w.id);
   }
-  return { byBibcode, byDoi };
+  return { byBibcode, byDoi, byArxiv };
 }
 
 /**
  * Conservative match: exact stored ADS bibcode, then normalized DOI when both
- * sides have one. NO fuzzy title matching — a false negative is tolerable
- * (the authoritative add path returns `exists`); a false positive would
- * discourage saving a distinct paper.
+ * sides have one, then normalized arXiv id when both sides have one (a
+ * DataCite arXiv DOI counts as that arXiv id on either side). NO fuzzy title
+ * matching — a false negative is tolerable (the authoritative add path returns
+ * `exists`); a false positive would discourage saving a distinct paper.
  */
 export function matchLibraryId(
   m: LibraryMembership,
   bibcode: string,
-  doi: string | null
+  doi: string | null,
+  arxiv: string | null = null
 ): string | null {
   const hit = m.byBibcode.get(bibcode);
   if (hit) return hit;
   const d = normDoi(doi);
-  return d ? (m.byDoi.get(d) ?? null) : null;
+  const byDoi = d ? m.byDoi.get(d) : undefined;
+  if (byDoi) return byDoi;
+  const a = arxivKey(arxiv, doi);
+  return a ? (m.byArxiv.get(a) ?? null) : null;
 }
 
 // --------------------------------------------------------------------------- //
@@ -129,7 +147,7 @@ function toPaper(
     arxivId: rec.arxiv_id,
     roles,
     ...ranks,
-    libraryId: matchLibraryId(membership, rec.bibcode, rec.doi),
+    libraryId: matchLibraryId(membership, rec.bibcode, rec.doi, rec.arxiv_id),
   };
 }
 

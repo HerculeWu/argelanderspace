@@ -41,7 +41,7 @@ provider 请求字段含 bibcode/title/author/year/pub/abstract/citation_count/d
 - 输出顺序确定：seed → related 按 relatedRank → useful-only 按 usefulRank。
 - 对可见 A 的 references，只保留可见 B 且 B≠A 的 A→B；去重、确定性排序；kind 固定 citation。raw references 不传前端。
 
-每请求读 Library 快照只作成员覆盖：精确 bibcode 优先，然后双方均有 DOI 时规范化 DOI 匹配；**不用模糊标题**。假阴可由权威 add 返回 exists 弥补，假阳会错误阻止收藏 distinct 文献。持久身份归并仍由 LibraryStore.upsert 的 doi/arxiv/openalex/title 规则负责，bibcode 不是新增身份键。
+每请求读 Library 快照只作成员覆盖：精确 bibcode 优先，然后双方均有 DOI 时规范化 DOI 匹配，再然后双方均有 arXiv 号时规范化 arXiv 匹配（与 Library 身份规则同一规范化：`normArxiv` 去 `arXiv:` 前缀与版本号；任一侧的 DataCite arXiv DOI `10.48550/arXiv.<id>` 按 `arxivFromDoi` 视作该 arXiv 号；候选一侧取 ADS `identifier` 抽出的 `arxivId`）；**不用模糊标题**。（2026-10-23 局部修订，shelf-followups 票 04。旧定位：只按 bibcode 与 DOI 匹配。新结论：补上 arXiv 一级。范围：只改成员覆盖 `libraryId` 的判断，响应形状不变。原因：项目里只有 arXiv 号的 Work 在 bibcode 对不上时，候选仍显示「加入」。）假阴可由权威 add 返回 exists 弥补，假阳会错误阻止收藏 distinct 文献。持久身份归并仍由 LibraryStore.upsert 的 doi/arxiv/openalex/title 规则负责，bibcode 不是新增身份键。
 
 library 原子保存允许无锁读取观察到完整旧版或新版；不与 upload/refresh 的长 mutation 串行。
 

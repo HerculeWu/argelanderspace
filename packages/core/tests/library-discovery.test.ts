@@ -60,7 +60,11 @@ const SEED = "2023A&A...673A.114H";
 // --------------------------------------------------------------------------- //
 
 describe("mergeDiscoveryNodes", () => {
-  const membership = { byBibcode: new Map<string, string>(), byDoi: new Map<string, string>() };
+  const membership = {
+    byBibcode: new Map<string, string>(),
+    byDoi: new Map<string, string>(),
+    byArxiv: new Map<string, string>(),
+  };
 
   test("seed first, related by rank, useful-only by rank (deterministic)", () => {
     const nodes = mergeDiscoveryNodes(
@@ -159,6 +163,51 @@ describe("membership overlay", () => {
     expect(matchLibraryId(m, "2020A&A...111A..1D", null)).toBe("doi:10.1/x");
     expect(matchLibraryId(m, "2099ZZZ........", "10.1051/y")).toBe("doi:10.1051/y");
     expect(matchLibraryId(m, "2099ZZZ........", null)).toBeNull();
+  });
+
+  test("arXiv fallback: only the arXiv id agrees (bibcode and DOI do not)", () => {
+    // Work with only an arXiv id (versioned, prefixed: normalized like the Library identity rule).
+    const w1 = { ...emptyWork("arxiv:2306.12345"), arxiv_id: "arXiv:2306.12345v2" };
+    // Work whose only identifier is the DataCite arXiv DOI.
+    const w2 = { ...emptyWork("doi:10.48550/arxiv.2401.00001"), doi: "10.48550/arXiv.2401.00001" };
+    const store = storeWith([w1, w2]);
+    const m = libraryMembership(store);
+    // candidate arXiv id vs Work arxiv_id
+    expect(matchLibraryId(m, "2099ZZZ........", null, "2306.12345")).toBe("arxiv:2306.12345");
+    // candidate arXiv DataCite DOI vs Work arxiv_id
+    expect(matchLibraryId(m, "2099ZZZ........", "10.48550/arXiv.2306.12345v1", null)).toBe(
+      "arxiv:2306.12345"
+    );
+    // candidate arXiv id vs Work holding only the DataCite DOI
+    expect(matchLibraryId(m, "2099ZZZ........", null, "arXiv:2401.00001")).toBe(
+      "doi:10.48550/arxiv.2401.00001"
+    );
+    // a different arXiv id does not match
+    expect(matchLibraryId(m, "2099ZZZ........", null, "2306.99999")).toBeNull();
+  });
+
+  test("match order: bibcode, then DOI, then arXiv", () => {
+    const byBib = { ...emptyWork("work:bib"), title: "B", bibcode: "2020A&A...111A..1D" };
+    const byDoi = { ...emptyWork("doi:10.1/z"), doi: "10.1/z" };
+    const byArx = { ...emptyWork("arxiv:2306.12345"), arxiv_id: "2306.12345" };
+    const m = libraryMembership(storeWith([byBib, byDoi, byArx]));
+    expect(matchLibraryId(m, "2020A&A...111A..1D", "10.1/z", "2306.12345")).toBe("work:bib");
+    expect(matchLibraryId(m, "2099ZZZ........", "10.1/z", "2306.12345")).toBe("doi:10.1/z");
+    expect(matchLibraryId(m, "2099ZZZ........", "10.9/none", "2306.12345")).toBe(
+      "arxiv:2306.12345"
+    );
+  });
+
+  test("a candidate matched only by arXiv id gets libraryId (shown as in Library)", () => {
+    const w = { ...emptyWork("arxiv:2306.12345"), arxiv_id: "2306.12345" };
+    const m = libraryMembership(storeWith([w]));
+    const nodes = mergeDiscoveryNodes(
+      rec(SEED),
+      [rec("2023X", { arxiv_id: "2306.12345", doi: "10.1051/journal" }), rec("2023Y")],
+      [],
+      m
+    );
+    expect(nodes.map((n) => n.libraryId)).toEqual([null, "arxiv:2306.12345", null]);
   });
 
   test("no fuzzy title membership", () => {
