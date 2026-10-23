@@ -299,6 +299,8 @@ const CREATE_APP_GUARDED: Array<[string, string]> = [
   ["POST", "/api/paper/:doc_id/source/assets/from-pdf"],
   ["POST", "/api/paper/:doc_id/source/validate"],
   ["POST", "/api/paper/:doc_id/source/generate"],
+  // Shelf ticket 05: the add dialog's read-only list (it lists annotation bodies, so it is guarded).
+  ["GET", "/api/shelf/add-candidates/:workId"],
   // Shelf ticket 03: the Shelf's two write routes, guarded like every write.
   ["POST", "/api/shelf/entries"],
   ["POST", "/api/shelf/entries/preview"],

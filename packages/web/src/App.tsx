@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Shell } from "./argelander/Shell";
 import { useHostAnswer } from "./host";
 import { startMergeNotices } from "./library/merge-notices";
+import { startIngestPrompts } from "./shelf/ingest-prompt";
 import { PageErrorBoundary } from "./PageErrorBoundary";
 import { WelcomeShell } from "./welcome/WelcomeShell";
 
@@ -31,5 +32,7 @@ function Root() {
 function Workbench() {
   // Background tasks' argument-graph notes are collected for the page's lifetime, whichever pane is open.
   useEffect(() => startMergeNotices(), []);
+  // The one-time "add to Shelf?" reminders after an ingest (shelf ticket 05), likewise for the page's lifetime.
+  useEffect(() => startIngestPrompts(), []);
   return <Shell />;
 }

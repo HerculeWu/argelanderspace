@@ -175,6 +175,7 @@ import { mountProviderRoutes } from "./provider-routes.js";
 import { ProviderSettings } from "./providers.js";
 import { mountSettingsRoutes, readSettings, shownPath, withAppearance } from "./settings.js";
 import { createShelfWriter, mountShelfWriteRoutes, shelfStoreOf } from "./shelf-add.js";
+import { mountShelfCandidateRoute } from "./shelf-candidates.js";
 import { mountShelfRoutes } from "./shelf-take.js";
 import {
   mountTextDocRoutes,
@@ -763,6 +764,8 @@ export function createApp(deps: AppDeps): Hono {
     text: textDocs,
     onDeleted: () => libraryChanged("patch"),
   });
+  // The add dialog's read-only list (shelf-candidates.ts): annotations through `peek`, never the ensure.
+  mountShelfCandidateRoute(app, { paths, annotations: annotationAccess });
   // Adding to, replacing in and deleting from the Shelf (shelf-add.ts): the reads on the one annotations access path.
   mountShelfWriteRoutes(
     app,

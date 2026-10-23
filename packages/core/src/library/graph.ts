@@ -216,6 +216,7 @@ export function workToRef(w: Work): LibraryRef {
     note: w.note,
     doi: w.doi,
     arxiv_id: w.arxiv_id,
+    openalex_id: w.openalex_id,
     // Stage 14: presence enables the web "explore related papers" action
     bibcode: w.bibcode,
     doc_id: w.doc_ids.length > 0 ? w.doc_ids[0] : null,

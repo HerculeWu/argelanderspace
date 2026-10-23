@@ -34,6 +34,17 @@ export interface DialogProps {
   initialFocusRef?: RefObject<HTMLElement>;
 }
 
+/**
+ * The open dialogs, oldest first. Only the newest one handles Escape, Tab and focus containment, so a confirmation
+ * opened over another dialog (the Shelf's delete confirmation, shelf ticket 05) owns the keyboard until it closes and
+ * the one beneath takes over again; with a single dialog nothing changes.
+ */
+interface OpenDialog {
+  element: () => HTMLElement | null;
+}
+const openDialogs: OpenDialog[] = [];
+const isTopDialog = (token: OpenDialog) => openDialogs[openDialogs.length - 1] === token;
+
 function focusableElements(dialog: HTMLElement) {
   return [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
     (element) => !element.hasAttribute("disabled") && element.getAttribute("aria-hidden") !== "true"
@@ -68,6 +79,16 @@ export function Dialog({
   );
   busyRef.current = busy;
   onCloseRef.current = onClose;
+  const stackToken = useRef<OpenDialog>({ element: () => dialogRef.current }).current;
+
+  // Declared before the initial focus below: the dialog is the top one before it takes the focus.
+  useLayoutEffect(() => {
+    openDialogs.push(stackToken);
+    return () => {
+      const index = openDialogs.lastIndexOf(stackToken);
+      if (index >= 0) openDialogs.splice(index, 1);
+    };
+  }, [stackToken]);
 
   // Initial focus is part of the commit that shows the dialog: a passive effect runs a scheduler task later, and in
   // that gap (under load, a frame or more) the focus was still on the page behind, where a keystroke or a test saw it.
@@ -84,6 +105,7 @@ export function Dialog({
     if (!dialog) return;
 
     const onDocumentKeyDown = (event: KeyboardEvent) => {
+      if (!isTopDialog(stackToken)) return;
       // Escape in an open Select list closes that list only (the Select handles it).
       if (event.key === "Escape" && event.target instanceof Element && event.target.closest(".ui-select-list")) return;
       if (event.key === "Escape") {
@@ -117,6 +139,7 @@ export function Dialog({
       }
     };
     const onDocumentFocusIn = (event: FocusEvent) => {
+      if (!isTopDialog(stackToken)) return;
       if (event.target instanceof Node && dialog.contains(event.target)) return;
       const safeTarget = busyRef.current ? null : initialFocusRef?.current;
       if (canReceiveInitialFocus(safeTarget)) safeTarget?.focus();
@@ -127,10 +150,20 @@ export function Dialog({
     return () => {
       document.removeEventListener("keydown", onDocumentKeyDown, true);
       document.removeEventListener("focusin", onDocumentFocusIn, true);
+    };
+  }, [initialFocusRef, stackToken]);
+
+  // Focus goes back when the dialog closes — only then: a new `initialFocusRef` (another step of the same dialog) is
+  // not a close. When the control that opened it is gone (the row a confirmation deleted), the focus goes to the dialog
+  // beneath, if there is one, rather than to the page's body.
+  useEffect(
+    () => () => {
       const returnTarget = returnFocusRef.current;
       if (returnTarget?.isConnected) returnTarget.focus();
-    };
-  }, [initialFocusRef]);
+      else openDialogs[openDialogs.length - 1]?.element()?.focus();
+    },
+    []
+  );
 
   useLayoutEffect(() => {
     const dialog = dialogRef.current;

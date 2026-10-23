@@ -157,3 +157,89 @@ describe("Dialog public interaction", () => {
     }
   });
 });
+
+describe("a dialog opened over another (shelf ticket 05: the delete confirmation over the Shelf dialog)", () => {
+  afterEach(cleanup);
+  function Stacked({ onOuterClose, onInnerClose }: { onOuterClose: () => void; onInnerClose: () => void }) {
+    const [inner, setInner] = useState(false);
+    const cancelRef = useRef<HTMLButtonElement>(null);
+    return (
+      <>
+        <Dialog title="Outer" closeLabel="Close outer" onClose={onOuterClose}>
+          <button onClick={() => setInner(true)}>Open inner</button>
+        </Dialog>
+        {inner && (
+          <Dialog title="Inner" closeLabel="Close inner" initialFocusRef={cancelRef} onClose={() => { onInnerClose(); setInner(false); }}>
+            <Button ref={cancelRef}>Inner cancel</Button>
+            <Button>Inner delete</Button>
+          </Dialog>
+        )}
+      </>
+    );
+  }
+
+  it("a new initialFocusRef (another step of the same dialog) does not send the focus back out", () => {
+    function Steps() {
+      const [step, setStep] = useState<"a" | "b">("a");
+      const aRef = useRef<HTMLButtonElement>(null);
+      const bRef = useRef<HTMLButtonElement>(null);
+      return (
+        <Dialog title="Steps" closeLabel="Close" initialFocusRef={step === "a" ? aRef : bRef} onClose={() => {}}>
+          {step === "a" ? <Button ref={aRef} onClick={() => setStep("b")}>To B</Button> : <Button ref={bRef}>On B</Button>}
+          <Button>Other</Button>
+        </Dialog>
+      );
+    }
+    const opener = document.createElement("button");
+    document.body.appendChild(opener);
+    opener.focus();
+    render(<Steps />);
+    fireEvent.click(screen.getByText("To B"));
+    expect(document.activeElement).not.toBe(opener);
+    expect(screen.getByRole("dialog").contains(document.activeElement)).toBe(true);
+    opener.remove();
+  });
+
+  it("when the control that opened it is gone, closing gives the focus to the dialog beneath", () => {
+    function Gone() {
+      const [inner, setInner] = useState(false);
+      const [hasOpener, setHasOpener] = useState(true);
+      return (
+        <>
+          <Dialog title="Outer" closeLabel="Close outer" onClose={() => {}}>
+            {hasOpener ? <button onClick={() => setInner(true)}>Delete row</button> : <span>gone</span>}
+          </Dialog>
+          {inner && (
+            <Dialog title="Inner" closeLabel="Close inner" onClose={() => {}}>
+              <Button onClick={() => { setHasOpener(false); setInner(false); }}>Confirm</Button>
+            </Dialog>
+          )}
+        </>
+      );
+    }
+    render(<Gone />);
+    const opener = screen.getByText("Delete row");
+    opener.focus();
+    fireEvent.click(opener);
+    fireEvent.click(screen.getByText("Confirm"));
+    const outer = screen.getByRole("dialog");
+    expect(outer.contains(document.activeElement)).toBe(true);
+  });
+
+  it("owns focus and Escape until it closes; then the dialog beneath has them again", () => {
+    const onOuterClose = vi.fn();
+    const onInnerClose = vi.fn();
+    render(<Stacked onOuterClose={onOuterClose} onInnerClose={onInnerClose} />);
+    const opener = screen.getByText("Open inner");
+    opener.focus();
+    fireEvent.click(opener);
+    expect(document.activeElement).toBe(screen.getByText("Inner cancel"));
+    fireEvent.keyDown(document.activeElement as Element, { key: "Escape" });
+    expect(onInnerClose).toHaveBeenCalledTimes(1);
+    expect(onOuterClose).not.toHaveBeenCalled();
+    expect(screen.queryByText("Inner cancel")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByText("Open inner"));
+    fireEvent.keyDown(document.activeElement as Element, { key: "Escape" });
+    expect(onOuterClose).toHaveBeenCalledTimes(1);
+  });
+});

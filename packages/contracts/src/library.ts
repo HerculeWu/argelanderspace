@@ -45,6 +45,8 @@ export const LibraryRefSchema = z.object({
   note: z.string().optional(),
   doi: z.string().optional(),
   arxiv_id: z.string().optional(),
+  /** The short OpenAlex id (shelf ticket 05: the page tells "the same paper on the Shelf" by DOI, arXiv or OpenAlex). */
+  openalex_id: z.string().optional(),
   /**
    * ADS bibcode (Stage 14): presence enables the "explore related papers"
    * action in the web UI. Web/API-internal increment — the frozen CLI

@@ -1,0 +1,91 @@
+/* The Shelf dialogs, shelf ticket 05: the approved prototype's layout on the argelander tokens. */
+.shelf-push { margin-left: auto; }
+.shelf-dim { color: var(--text-faint); }
+.shelf-small { font-size: var(--fs-xs); }
+.shelf-p { margin: 0; font-size: var(--fs-sm); line-height: 1.6; color: var(--text-dim); }
+.shelf-k { font-size: var(--fs-xs); color: var(--text-faint); text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
+.shelf-lead { margin: 0; color: var(--text-dim); font-size: var(--fs-sm); }
+.shelf-stack { display: flex; flex-direction: column; gap: 16px; }
+.shelf-pad { padding: 12px; }
+.shelf-pad-s { margin: 2px 6px 4px; font-size: var(--fs-xs); }
+.shelf-center { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; height: 100%; min-height: 160px; font-size: var(--fs-sm); }
+.shelf-warn { display: inline-flex; align-items: center; gap: 4px; color: var(--warn); }
+.shelf-warn-text { color: var(--warn); font-size: var(--fs-xs); line-height: 1.5; }
+.shelf-link { color: var(--accent); font-size: var(--fs-xs); padding: 0 4px; border-radius: 4px; background: none; border: 0; cursor: pointer; }
+.shelf-link:hover { text-decoration: underline; }
+.shelf-link:disabled { color: var(--text-faint); cursor: default; }
+.shelf-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ui-dialog .shelf-stack code, .shelf-browser code { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-dim); overflow-wrap: anywhere; }
+.shelf-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.shelf-dismiss { float: right; margin: -6px -6px 0 4px; }
+
+/* sections and check rows (add / take) */
+.shelf-sec { display: flex; flex-direction: column; gap: 4px; }
+.shelf-sec-h { display: flex; align-items: baseline; gap: 8px; margin: 0 0 4px; font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
+.shelf-sec-h > span { font-weight: 400; font-size: var(--fs-xs); color: var(--text-faint); }
+.shelf-bib { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--panel); font-size: var(--fs-sm); color: var(--text-dim); overflow-wrap: anywhere; }
+.shelf-bib strong { color: var(--text); font-weight: 500; font-size: var(--fs); line-height: 1.45; }
+.shelf-check-row { display: flex; align-items: flex-start; gap: 10px; padding: 7px 8px; border-radius: var(--radius-sm); cursor: pointer; }
+.shelf-check-row:hover { background: var(--hover); }
+.shelf-check-row.shelf-static { cursor: default; }
+.shelf-check-row.shelf-static:hover { background: none; }
+.shelf-check-row input { margin: 3px 0 0; accent-color: var(--accent); flex: none; width: 14px; height: 14px; }
+.shelf-check-row input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.shelf-check-row.off, .shelf-check-row.skipped .shelf-row-title { opacity: .6; }
+.shelf-row-mark { flex: none; width: 14px; margin-top: 2px; color: var(--ok); }
+.skipped .shelf-row-mark { color: var(--warn); }
+.shelf-row-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; font-size: var(--fs-sm); }
+.shelf-row-title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.shelf-row-title strong { font-weight: 500; }
+.shelf-row-title svg { color: var(--text-faint); }
+.shelf-row-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-xs); color: var(--text-faint); }
+.shelf-note { display: flex; align-items: center; gap: 6px; margin: 2px 0 0 32px; font-size: var(--fs-xs); color: var(--accent); }
+.shelf-ann-group { border: 1px solid var(--border-soft); border-radius: var(--radius); padding: 4px; }
+.shelf-ann-group + .shelf-ann-group { margin-top: 6px; }
+.shelf-ann-group.off { opacity: .7; }
+.shelf-ann-group-h { display: flex; align-items: center; gap: 6px; padding: 4px 6px 2px; font-size: var(--fs-xs); }
+.shelf-ann-group-h svg { color: var(--text-faint); }
+.shelf-group-actions { display: flex; gap: 2px; }
+.shelf-excerpt { font-family: var(--font-serif); color: var(--text); line-height: 1.5; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.shelf-ann-body { color: var(--text-dim); font-size: var(--fs-xs); border-left: 2px solid var(--border); padding-left: 8px; overflow-wrap: anywhere; white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.shelf-foot-summary { flex: 1 1 220px; min-width: 0; font-size: var(--fs-xs); color: var(--text-faint); align-self: center; }
+
+/* replace confirmation */
+.shelf-compare { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; align-items: start; }
+.shelf-compare-col { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--panel); font-size: var(--fs-sm); min-width: 0; }
+.shelf-compare-col strong { font-weight: 500; }
+.shelf-compare-entry { display: flex; flex-direction: column; gap: 4px; }
+.shelf-compare-entry + .shelf-compare-entry { border-top: 1px solid var(--border-soft); padding-top: 6px; margin-top: 4px; }
+.shelf-compare-arrow { margin-top: 30px; color: var(--text-faint); }
+.shelf-mini-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.shelf-mini-list li { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: var(--fs-xs); }
+.shelf-mini-list svg { color: var(--text-faint); flex: none; }
+
+/* the Shelf dialog: list | summary */
+.ui-dialog:has(.shelf-browser) .ui-dialog-body { padding: 0; overflow: hidden; display: flex; }
+.shelf-browser { display: grid; grid-template-columns: minmax(240px, 320px) minmax(0, 1fr); width: 100%; height: min(560px, calc(100vh - 180px)); border-top: 1px solid var(--border-soft); }
+.shelf-list { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border-soft); background: var(--panel); }
+.shelf-search { flex: none; margin: 10px 10px 4px; max-width: none; }
+.shelf-count { padding: 0 14px 6px; font-size: var(--fs-xs); color: var(--text-faint); }
+.shelf-list .shelf-notice { margin: 0 12px 6px; }
+.shelf-rows { flex: 1; overflow-y: auto; padding: 0 6px 12px; }
+.shelf-entry { border-bottom: 1px solid var(--border-soft); border-radius: var(--radius-sm); width: 100%; }
+.shelf-entry:disabled { opacity: .45; cursor: default; }
+.shelf-entry.shelf-incompat .side-ref-title { color: var(--text-dim); }
+.shelf-entry .side-ref-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; }
+.shelf-badges { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.shelf-badges .ui-badge { min-height: 18px; }
+.shelf-size { margin-left: auto; font-size: var(--fs-xs); color: var(--text-faint); }
+.shelf-badge-warn { display: inline-flex; align-items: center; gap: 4px; min-height: 18px; padding: 1px 6px; border: 1px solid color-mix(in oklch, var(--warn) 45%, transparent); border-radius: var(--radius-sm); color: var(--warn); font-size: var(--fs-xs); }
+.shelf-detail { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
+.shelf-pane { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.shelf-pane-scroll { flex: 1; overflow-y: auto; padding: var(--detail-pad); display: flex; flex-direction: column; gap: 12px; overflow-wrap: anywhere; }
+.shelf-pane-scroll.shelf-stack { gap: 16px; }
+.shelf-pane-bar { display: flex; align-items: center; gap: 8px; padding: 12px var(--detail-pad); border-top: 1px solid var(--border-soft); background: var(--surface); }
+.shelf-title { margin: 0; }
+.shelf-pane-title { margin: 2px 0 0; font-size: 17px; font-weight: 500; line-height: 1.4; color: var(--text); }
+.shelf-meta .rml-v { min-width: 0; }
+/* English labels ("Annotations", "Argument graph") are wider than the Library's 56px label column: never split a word. */
+.shelf-meta .rml-k { width: auto; min-width: 56px; max-width: 40%; padding-right: 12px; overflow-wrap: normal; word-break: normal; }
+.shelf-result-list { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; color: var(--text); }
+.shelf-delete-identity { display: flex; flex-direction: column; gap: 4px; }

@@ -145,6 +145,32 @@ export const ShelfAddPreviewResponseSchema = z.strictObject({
 });
 export type ShelfAddPreviewResponse = z.infer<typeof ShelfAddPreviewResponseSchema>;
 
+/**
+ * `GET /api/shelf/add-candidates/:workId` (shelf ticket 05 fix round): what the add dialog lists, READ ONLY — each Doc
+ * of the Work in its order with its kind, the bytes the Shelf would carry (null when they could not be counted), and
+ * its current annotations through the access path's `peek`: no ensure, no archive, no notification. `stale`: the saved
+ * annotations belong to older content (an add neither carries nor archives them: a Doc with no annotations chosen never goes through the access path; the next ordinary access archives them); `pdf`:
+ * the page reads the PDF sidecar itself (the PDF snapshot, which never archives); `none`: nothing to list (a text Doc
+ * that was never generated); `busy`: the Doc is being written or deleted; `unreadable`: a system error (`code`), never
+ * a mismatch. Refusals: 404 `work_not_found`; 500 `library_unreadable`.
+ */
+export interface ShelfAddCandidateDoc {
+  docId: string;
+  kind: (typeof SHELF_DOC_KINDS)[number];
+  bytes: number | null;
+  annotations:
+    | { state: "current"; list: unknown[] }
+    | { state: "stale" }
+    | { state: "pdf" }
+    | { state: "none" }
+    | { state: "busy" }
+    | { state: "unreadable"; code: string };
+}
+export interface ShelfAddCandidates {
+  workId: string;
+  docs: ShelfAddCandidateDoc[];
+}
+
 /** 200 of `DELETE /api/shelf/entries/:entryId`. */
 export const ShelfDeleteResponseSchema = z.strictObject({ deleted: ShelfEntryRefSchema });
 export type ShelfDeleteResponse = z.infer<typeof ShelfDeleteResponseSchema>;

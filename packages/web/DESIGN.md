@@ -34,6 +34,8 @@ Import reusable controls from `src/ui/index.ts`. This is the public entry; featu
 
 `Dialog` owns the accessible title/description relationship, modal role, document-level focus containment and return, Escape/backdrop close, and close protection while `busy`. Confirmation dialogs pass a safe `initialFocusRef`. When submission disables every control, focus stays on the dialog itself and returns to the safe action when the request settles. The regular width is 480 px with a 32 px viewport margin, internal body scrolling, and a footer that remains reachable. Plan passes 440 px to preserve its established compact form intent.
 
+A confirmation may open as a second `Dialog` over another one (the Shelf's delete confirmation over the Shelf dialog, shelf ticket 05): only the newest open dialog handles Escape, Tab and focus containment, and when it closes the focus returns into the dialog beneath, which takes them over again. Prefer switching a dialog's own content for a step of the same task (the Shelf's replacement card); stack only a small confirmation that the approved design puts on top.
+
 A destructive operation must name the object and state its scope and irreversibility before the action. While submitting, disable repeated submission and every dismissal path; after a rejected request, keep the dialog open so the user can retry or cancel.
 
 ### Actions and explanations

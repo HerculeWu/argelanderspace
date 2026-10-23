@@ -12,6 +12,7 @@ import { WorkArgumentEntry } from "../argument/ArgumentEntry";
 import { arxivAcquisitionDocId, uploadAcquisitionDocId } from "./acquisitionTargets";
 import { MergeNoteList } from "./MergeNotes";
 import { useTextDocCreation } from "./text-doc-creation";
+import { useWorkShelf } from "../shelf/AddToShelf";
 import { useLeaveQuestionOpen } from "../argelander/leave-dialog";
 import type { GraphNode, LibraryRef } from "./types";
 import {
@@ -167,6 +168,8 @@ export function RefDetail({
   const [mainErr, setMainErr] = useState<string | null>(null);
   // Text Doc creation (ticket 25): one in-flight request; the new Doc opens on its source editor (text-doc-creation.ts).
   const textDoc = useTextDocCreation(r.id, workSession, onOpenDoc);
+  // The Shelf's parts of the detail (shelf ticket 05); all null in the tutorial Project.
+  const shelf = useWorkShelf(r);
   const [acquisition, setAcquisition] = useState<AcquisitionFlow | null>(null);
   const acquisitionFlowSequence = useRef(0);
   const submittingAcquisitionFlows = useRef(new Set<number>());
@@ -536,6 +539,7 @@ export function RefDetail({
             {r.type === "conf" ? t("library.detail.typeConf") : t("library.detail.typeArticle")}
           </div>
           <div className="ref-detail-actions" data-ui="work-detail-actions">
+            {shelf.button}
             <ActionButton
               mode="icon"
               iconName="copy"
@@ -606,6 +610,7 @@ export function RefDetail({
             {copyStatusText}
           </p>
         )}
+        {shelf.feedback}
         <Tabs
           ariaLabel={t("library.detail.tabs.label")}
           items={TABS.map((value) => ({ value, label: t(TAB_LABEL_KEYS[value]) }))}
@@ -737,8 +742,9 @@ export function RefDetail({
                 onClick={() => openAcquisition()}
               />
             </div>
-            {(jobs.mergeNotices.length > 0 || uploadJob || arxivJob || arxivPdfJob || uploadErr || arxivErr || arxivPdfError || mainErr || textDoc.error || pdfUploadJob || pdfUploadError) && (
+            {(jobs.mergeNotices.length > 0 || uploadJob || arxivJob || arxivPdfJob || uploadErr || arxivErr || arxivPdfError || mainErr || textDoc.error || pdfUploadJob || pdfUploadError || shelf.ingestPrompt) && (
               <div className="ref-task-messages" data-ui="acquisition-status">
+                {shelf.ingestPrompt}
                 {jobs.mergeNotices.map((notice) => (
                   <div key={notice.jobId} className="merge-note-bar" data-ui="task-graph-merges" data-ui-key={notice.jobId}>
                     <div className="merge-note-bar-head">
@@ -1056,6 +1062,7 @@ export function RefDetail({
           onConfirm={onConfirmDelete}
         />
       )}
+      {shelf.dialog}
     </aside>
   );
 }

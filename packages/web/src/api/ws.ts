@@ -1,5 +1,6 @@
 import type { WsHostSwitchConfirmation, WsHostTutorialResult, WsArgumentGraphChanged, WsWriterChanged, WsTextSourceChanged, WsTextDocPublished, WsMailChanged } from "@argelanderspace/contracts";
-import { type CopilotSubscription, type JobListener, createWsBus } from "./ws-bus";
+import type { CopilotSubscription, JobListener } from "./ws-bus";
+import { bus } from "./ws-instance";
 
 // Minimal WebSocket client for the server's /ws progress channel (M4). One
 // lazily-opened connection per page, native WebSocket only, no dependencies.
@@ -18,12 +19,6 @@ type PlanListener = () => void;
 type AnnotationListener = (docId: string) => void;
 type WriterListener = (msg: WsWriterChanged) => void;
 
-function wsUrl(): string {
-  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${window.location.host}/ws`;
-}
-
-const bus = createWsBus(() => new WebSocket(wsUrl()));
 
 /** One adapter per listener, so registering the same listener twice still holds it once (set semantics). */
 function adapter<C extends object, H>(make: (cb: C) => H): (cb: C) => H {

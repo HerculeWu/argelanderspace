@@ -20,6 +20,8 @@ import { argumentBus, clearArgumentUrl, pushArgumentUrl } from "../lib/argument-
 import { ArgumentGraphMode, type ArgumentModeControl } from "../argument/ArgumentGraphMode";
 import type { ArgumentPage } from "../argument/page";
 import type { LibraryData, LibraryRef } from "./types";
+import { useShelfAvailable } from "../shelf/availability";
+import { ShelfDialog } from "../shelf/ShelfDialog";
 
 // color labels users assign by right-clicking a reference (replaces the star)
 const LABEL_COLORS = [
@@ -294,6 +296,9 @@ function LibraryBody({
   // (created/existing) ref is selected by its work id — the saved graph node
   // carries the same id, and the WS library.changed reload lands right after.
   const [importMode, setImportMode] = useState<ImportMode | null>(null);
+  // The Shelf dialog (shelf ticket 05): the import menu's fourth item; never in the tutorial Project.
+  const shelfAvailable = useShelfAvailable();
+  const [shelfOpen, setShelfOpen] = useState<{ entryId?: string; take?: boolean } | null>(null);
   const onImportResolved = (r: LibraryRef) => {
     setSelNode(r.id);
     onReload();
@@ -588,6 +593,28 @@ function LibraryBody({
                     </span>
                   </ActionButton>
                 ))}
+                {shelfAvailable && (
+                  <ActionButton
+                    unstyled
+                    mode="text"
+                    label={t("library.import.shelf.title")}
+                    tooltip={t("library.import.shelf.title")}
+                    data-ui="import-option" data-ui-key="shelf"
+                    className="import-opt"
+                    onClick={() => {
+                      setShelfOpen({});
+                      setImportOpen(false);
+                    }}
+                  >
+                    <span className="import-ic">
+                      <Icon name="archive" cls="ico-sm" />
+                    </span>
+                    <span className="import-body">
+                      <span className="import-t">{t("library.import.shelf.title")}</span>
+                      <span className="import-d">{t("library.import.shelf.desc")}</span>
+                    </span>
+                  </ActionButton>
+                )}
               </div>
             )}
           </div>
@@ -641,6 +668,20 @@ function LibraryBody({
           mode={importMode}
           onClose={() => setImportMode(null)}
           onResolved={onImportResolved}
+        />
+      )}
+
+      {shelfOpen && shelfAvailable && (
+        <ShelfDialog
+          {...shelfOpen}
+          works={refs}
+          onClose={() => setShelfOpen(null)}
+          onViewWork={(workId) => {
+            setShelfOpen(null);
+            setSelNode(refToNode[workId] ?? workId);
+            setDetailTab("files");
+            onReload();
+          }}
         />
       )}
 

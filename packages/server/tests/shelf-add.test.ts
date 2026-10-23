@@ -1162,3 +1162,75 @@ describe("the lock lost after the new entry is in place", () => {
     expect(other).not.toBe(first);
   });
 });
+
+describe("GET /api/shelf/add-candidates/:workId (the add dialog's read-only list, ticket 05)", () => {
+  const candidates = (workId: string) =>
+    call("GET", `/api/shelf/add-candidates/${encodeURIComponent(workId)}`);
+  type Answer = {
+    workId: string;
+    docs: {
+      docId: string;
+      kind: string;
+      bytes: number | null;
+      annotations: { state: string; list?: { id: string }[] };
+    }[];
+  };
+
+  test("current annotations, Doc kinds and carried bytes; nothing written, archived or announced", async () => {
+    await annotateLatex();
+    messages.length = 0;
+    const before = digest(dataDir);
+    const res = await candidates(W_A);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toContain("no-store");
+    const answer = (await res.json()) as Answer;
+    expect(answer.workId).toBe(W_A);
+    expect(answer.docs.map((d) => [d.docId, d.kind, d.annotations.state])).toEqual([
+      [LATEX, "latex", "current"],
+      [pdfDoc, "pdf", "pdf"],
+    ]);
+    expect(answer.docs[0]?.annotations.list?.map((a) => a.id)).toEqual([
+      "a_0123abcd",
+      "a_4567cdef",
+    ]);
+    // the files the Shelf would carry: the reading text and assets/, not src/ or build/
+    expect(answer.docs[0]?.bytes).toBe(
+      statSync(join(latexDir(), `${LATEX}.json`)).size +
+        statSync(join(latexDir(), "assets", "logo.png")).size
+    );
+    expect(answer.docs[1]?.bytes).toBe(
+      statSync(join(paths.outputDir, pdfDoc, `${pdfDoc}.json`)).size +
+        statSync(join(paths.outputDir, pdfDoc, "original.pdf")).size
+    );
+    expect(digest(dataDir)).toEqual(before);
+    expect(messages).toEqual([]);
+  });
+
+  test("annotations of older content are stale and NOT archived (no ensure)", async () => {
+    await annotateLatex();
+    writeIr(mkIr("Different content"));
+    messages.length = 0;
+    const before = digest(dataDir);
+    const answer = (await (await candidates(W_A)).json()) as Answer;
+    expect(answer.docs.find((d) => d.docId === LATEX)?.annotations).toEqual({ state: "stale" });
+    expect(digest(dataDir)).toEqual(before);
+    expect(archiveOf(LATEX)).toEqual([]);
+    expect(messages).toEqual([]);
+  });
+
+  test("a damaged annotations file is unreadable (not reset); a busy Doc is busy; an unknown Work is 404", async () => {
+    await annotateLatex();
+    writeFileSync(annotationsCurrentPath(dataDir, LATEX), "{ broken");
+    const before = digest(dataDir);
+    const damaged = (await (await candidates(W_A)).json()) as Answer;
+    expect(damaged.docs[0]?.annotations).toEqual({ state: "unreadable", code: "corrupt_store" });
+    expect(digest(dataDir)).toEqual(before);
+    docMutations.pinWriter(LATEX);
+    const busy = (await (await candidates(W_A)).json()) as Answer;
+    expect(busy.docs[0]?.annotations.state).toBe("busy");
+    docMutations.unpinWriter(LATEX);
+    const res = await candidates("doi:10.0/none");
+    expect(res.status).toBe(404);
+    expect(await res.json()).toMatchObject({ code: "work_not_found" });
+  });
+});

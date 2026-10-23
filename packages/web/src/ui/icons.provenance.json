@@ -1256,6 +1256,36 @@
         "root stroke-linecap round",
         "root stroke-linejoin round"
       ]
+    },
+    "add-work-to-shelf": {
+      "set": "dazzle-line-icons",
+      "file": "inbox-arrow-down.svg",
+      "originalHash": "3f759502079ff2a98922b18856eb82701be14ff0ab218d26b9960322e08f97a7",
+      "normalizedHash": "ec642424a48d1686f2c38de4e185a774dda9c4bae9cc58c62185ff4e585ed500",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "dismiss-ingest-shelf-prompt": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
     }
   }
 }
