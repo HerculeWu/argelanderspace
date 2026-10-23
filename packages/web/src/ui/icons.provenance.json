@@ -1286,6 +1286,89 @@
         "root stroke-linecap round",
         "root stroke-linejoin round"
       ]
+    },
+    "edit-argument": {
+      "set": "lucide",
+      "file": "Pencil",
+      "originalHash": "2296d99aba12d9ac2827f339f6abd443708acb3e48efb8b5df18bd49a80e21a8",
+      "normalizedHash": "2296d99aba12d9ac2827f339f6abd443708acb3e48efb8b5df18bd49a80e21a8",
+      "modifications": [
+        "lucide-react 0.460.0 icon nodes as inline SVG with Lucide's default root attributes; React keys omitted; provenance recorded 2026-10-23 after an element-by-element match with the installed package"
+      ]
+    },
+    "delete-argument": {
+      "set": "lucide",
+      "file": "Trash2",
+      "originalHash": "b9876a46e90de11df7dc9d3ba3c83ee1972a882426a012eaf9d05ab9d0a6cfd5",
+      "normalizedHash": "b9876a46e90de11df7dc9d3ba3c83ee1972a882426a012eaf9d05ab9d0a6cfd5",
+      "modifications": [
+        "lucide-react 0.460.0 icon nodes as inline SVG with Lucide's default root attributes; React keys omitted; provenance recorded 2026-10-23 after an element-by-element match with the installed package"
+      ]
+    },
+    "add-argument-link": {
+      "set": "lucide",
+      "file": "Link",
+      "originalHash": "0090881698aff47d4c02ae000113d5ec6efc5e04bfc569a7dd48f2e145744d3c",
+      "normalizedHash": "0090881698aff47d4c02ae000113d5ec6efc5e04bfc569a7dd48f2e145744d3c",
+      "modifications": [
+        "lucide-react 0.460.0 icon nodes as inline SVG with Lucide's default root attributes; React keys omitted; provenance recorded 2026-10-23 after an element-by-element match with the installed package"
+      ]
+    },
+    "add-argument-use": {
+      "set": "lucide",
+      "file": "Link",
+      "originalHash": "0090881698aff47d4c02ae000113d5ec6efc5e04bfc569a7dd48f2e145744d3c",
+      "normalizedHash": "0090881698aff47d4c02ae000113d5ec6efc5e04bfc569a7dd48f2e145744d3c",
+      "modifications": [
+        "lucide-react 0.460.0 icon nodes as inline SVG with Lucide's default root attributes; React keys omitted; provenance recorded 2026-10-23 after an element-by-element match with the installed package"
+      ]
+    },
+    "remove-argument-link": {
+      "set": "lucide",
+      "file": "X",
+      "originalHash": "e1fab7a84d0fa5a01dd9e1b84ac39451925a572718725ff3424922abb5862a92",
+      "normalizedHash": "e1fab7a84d0fa5a01dd9e1b84ac39451925a572718725ff3424922abb5862a92",
+      "modifications": [
+        "lucide-react 0.460.0 icon nodes as inline SVG with Lucide's default root attributes; React keys omitted; provenance recorded 2026-10-23 after an element-by-element match with the installed package"
+      ]
+    },
+    "remove-argument-source": {
+      "set": "lucide",
+      "file": "X",
+      "originalHash": "e1fab7a84d0fa5a01dd9e1b84ac39451925a572718725ff3424922abb5862a92",
+      "normalizedHash": "e1fab7a84d0fa5a01dd9e1b84ac39451925a572718725ff3424922abb5862a92",
+      "modifications": [
+        "lucide-react 0.460.0 icon nodes as inline SVG with Lucide's default root attributes; React keys omitted; provenance recorded 2026-10-23 after an element-by-element match with the installed package"
+      ]
+    },
+    "dismiss-argument-notice": {
+      "set": "lucide",
+      "file": "X",
+      "originalHash": "e1fab7a84d0fa5a01dd9e1b84ac39451925a572718725ff3424922abb5862a92",
+      "normalizedHash": "e1fab7a84d0fa5a01dd9e1b84ac39451925a572718725ff3424922abb5862a92",
+      "modifications": [
+        "lucide-react 0.460.0 icon nodes as inline SVG with Lucide's default root attributes; React keys omitted; provenance recorded 2026-10-23 after an element-by-element match with the installed package"
+      ]
+    },
+    "tutorial-rail-more": {
+      "set": "lucide",
+      "file": "Ellipsis",
+      "originalHash": "f461794d4776efdc943645da3eb32f0d6ff3f04a6395fba92f5e1fbd36466597",
+      "normalizedHash": "f461794d4776efdc943645da3eb32f0d6ff3f04a6395fba92f5e1fbd36466597",
+      "modifications": [
+        "lucide-react 0.460.0 icon nodes as inline SVG with Lucide's default root attributes; React keys omitted; provenance recorded 2026-10-23 after an element-by-element match with the installed package"
+      ]
+    },
+    "toggle-latex-annotation-body": {
+      "collapse": {
+        "set": "lucide",
+        "file": "chevron-up",
+        "originalHash": "79c4a9b094afdec51882efbb94d896aafe46fe222cfbe21346994ed19e1c4dfc",
+        "normalizedHash": "79c4a9b094afdec51882efbb94d896aafe46fe222cfbe21346994ed19e1c4dfc",
+        "modifications": [
+          "lucide-react 0.460.0 icon nodes as inline SVG with Lucide's default root attributes; React keys omitted; provenance recorded 2026-10-23 after an element-by-element match with the installed package"
+        ]
+      }
     }
   }
 }

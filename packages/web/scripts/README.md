@@ -33,7 +33,7 @@ Selection is a non-empty array, with relative source filenames and existing `dat
 ]
 ```
 
-Duplicate/conflicting mappings and single-icon ↔ variant-map replacement are rejected. Other catalog entries/variants are retained. Original bytes, coordinates and the fixed 24×24 canvas are never rewritten. AppleDouble files and source symlinks are not scanned. An explicitly supplied audit destination is excluded from scanning; mutating destinations must be separate from the source, including symlink aliases.
+Duplicate/conflicting mappings and single-icon ↔ variant-map replacement are rejected. Other catalog entries/variants are retained. Before publishing, every existing provenance record must hash-match its catalog resource byte-for-byte (a failure names the entry); Dazzle records name a pack `.svg`, and existing `lucide` records name a lucide-react icon and are kept as they are. Catalog resources without a record (the frozen pre-provenance glyphs, see `../DESIGN.md`) are kept unchanged. Original bytes, coordinates and the fixed 24×24 canvas are never rewritten. AppleDouble files and source symlinks are not scanned. An explicitly supplied audit destination is excluded from scanning; mutating destinations must be separate from the source, including symlink aliases.
 
 ## Outputs and publication boundary
 

@@ -266,3 +266,62 @@ it("hashes original file bytes even when the SVG is malformed non-UTF8 input", (
   expect(result.report.files[0]).toMatchObject({ status: "malformed", originalHash: "a8100ae6aa1940d0b663bb31cd466142ebbdbd5187131b92d93818987832eb89" });
   expect(readFileSync(join(f.source, "broken.svg"))).toEqual(Buffer.from([255]));
 });
+
+it("accepts recorded Lucide provenance, names a mismatched entry and refuses records of unknown sets", () => {
+  const f = fixture({ "arrow.svg": stroke });
+  const destination = join(f.root, "published");
+  mkdirSync(destination);
+  const lucide = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/></svg>';
+  const record = (set: string, file: string, svg: string) => ({ set, file, originalHash: hash(svg), normalizedHash: hash(svg), modifications: ["serialized"] });
+  const sets = { lucide: { notice: "THIRD_PARTY_LICENSES.md" }, other: {} };
+  const catalog = JSON.stringify({ "close-pane": lucide, legacy: lucide, "navigate-view": { mail: lucide } });
+  writeFileSync(join(destination, "icons.json"), catalog);
+  const selection = join(f.root, "selection.json");
+  writeFileSync(selection, JSON.stringify([{ file: "arrow.svg", uiId: "next-pdf-page" }]));
+  const promote = (icons: object) => {
+    writeFileSync(join(destination, "icons.provenance.json"), JSON.stringify({ version: 1, sets, icons }));
+    return run("promote", "--source", f.source, "--confirmation", f.confirmation, "--destination", destination, "--selection", selection);
+  };
+  const crlf = lucide.replace("><path", ">\r\n<path");
+  const mismatch = promote({ "close-pane": record("lucide", "X", lucide), "navigate-view": { mail: record("lucide", "mail", crlf) } });
+  expect(mismatch.status).toBe(1);
+  expect(mismatch.stderr).toContain('catalog/provenance hash mismatch: "navigate-view/mail"');
+  const unknown = promote({ "close-pane": record("other", "x.svg", lucide) });
+  expect(unknown.status).toBe(1);
+  expect(unknown.stderr).toContain('invalid provenance record: "close-pane"');
+  expect(readFileSync(join(destination, "icons.json"), "utf8")).toBe(catalog);
+  const accepted = promote({ "close-pane": record("lucide", "X", lucide), "navigate-view": { mail: record("lucide", "mail", lucide) } });
+  expect(accepted.status, accepted.stderr).toBe(0);
+  const icons = JSON.parse(readFileSync(join(destination, "icons.json"), "utf8"));
+  expect(icons).toMatchObject({ "close-pane": lucide, legacy: lucide, "navigate-view": { mail: lucide } });
+  const provenance = JSON.parse(readFileSync(join(destination, "icons.provenance.json"), "utf8"));
+  expect(provenance.icons["close-pane"]).toEqual(record("lucide", "X", lucide));
+  expect(provenance.icons.legacy).toBeUndefined();
+  const notice = readFileSync(join(destination, "THIRD_PARTY_LICENSES.md"), "utf8");
+  expect(notice).toContain("Mappings: next-pdf-page.");
+});
+
+it("promotes into a copy of the shipped catalog, provenance and notice, preserving every existing entry and the Lucide notice", () => {
+  const f = fixture({ "arrow.svg": stroke });
+  const destination = join(f.root, "published");
+  mkdirSync(destination);
+  const shipped = { "icons.json": "../src/ui/icons.json", "icons.provenance.json": "../src/ui/icons.provenance.json", "THIRD_PARTY_LICENSES.md": "../../../THIRD_PARTY_LICENSES.md" };
+  const before = Object.fromEntries(Object.entries(shipped).map(([name, path]) => [name, readFileSync(new URL(path, import.meta.url), "utf8")]));
+  for (const [name, text] of Object.entries(before)) writeFileSync(join(destination, name), text);
+  const selection = join(f.root, "selection.json");
+  writeFileSync(selection, JSON.stringify([{ file: "arrow.svg", uiId: "svg-import-self-check" }]));
+  const result = run("promote", "--source", f.source, "--confirmation", f.confirmation, "--destination", destination, "--selection", selection);
+  expect(result.status, result.stderr).toBe(0);
+  const icons = JSON.parse(readFileSync(join(destination, "icons.json"), "utf8"));
+  const { "svg-import-self-check": added, ...rest } = icons;
+  expect(rest).toEqual(JSON.parse(before["icons.json"]));
+  expect(typeof added).toBe("string");
+  const provenance = JSON.parse(readFileSync(join(destination, "icons.provenance.json"), "utf8"));
+  const { "svg-import-self-check": record, ...records } = provenance.icons;
+  expect({ ...provenance, icons: records }).toEqual(JSON.parse(before["icons.provenance.json"]));
+  expect(record).toMatchObject({ set: "dazzle-line-icons", file: "arrow.svg" });
+  const notice = readFileSync(join(destination, "THIRD_PARTY_LICENSES.md"), "utf8");
+  const lucide = before["THIRD_PARTY_LICENSES.md"].slice(before["THIRD_PARTY_LICENSES.md"].indexOf("<!-- svg-import:dazzle-line-icons:end -->"));
+  expect(notice.endsWith(lucide)).toBe(true);
+  expect(notice).toContain("svg-import-self-check");
+});

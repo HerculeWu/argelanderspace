@@ -155,14 +155,21 @@ type Provenance = { version: number; sets: Record<string, unknown>; icons: Recor
 const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 const json = (value: unknown) => JSON.stringify(value, null, 2) + "\n";
 function readJson(path: string, fallback: unknown): unknown { return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : fallback; }
+// Dazzle records name a source-pack file; Lucide records (never written by this tool)
+// name the installed lucide-react icon they were serialized from.
+const recordedSource = new Map<string, (file: string) => boolean>([
+  ["dazzle-line-icons", safeFile],
+  ["lucide", file => /^[A-Za-z][A-Za-z0-9-]*$/.test(file)],
+]);
 function validateProvenance(provenance: Provenance, icons: Record<string, string | Record<string, string>>) {
   for (const [uiId, entry] of Object.entries(provenance.icons)) {
     if (!isRecord(entry)) throw new Error("invalid provenance entry");
     const records = "set" in entry ? [[undefined, entry]] as const : Object.entries(entry);
     for (const [variant, record] of records) {
-      if (!isRecord(record) || typeof record.set !== "string" || !isRecord(provenance.sets[record.set]) || typeof record.file !== "string" || !safeFile(record.file) || typeof record.originalHash !== "string" || !/^[a-f0-9]{64}$/.test(record.originalHash) || typeof record.normalizedHash !== "string" || !/^[a-f0-9]{64}$/.test(record.normalizedHash) || !Array.isArray(record.modifications) || record.modifications.some(value => typeof value !== "string")) throw new Error("invalid provenance record");
+      const label = JSON.stringify(variant === undefined ? uiId : `${uiId}/${variant}`);
+      if (!isRecord(record) || typeof record.set !== "string" || !isRecord(provenance.sets[record.set]) || typeof record.file !== "string" || !recordedSource.get(record.set)?.(record.file) || typeof record.originalHash !== "string" || !/^[a-f0-9]{64}$/.test(record.originalHash) || typeof record.normalizedHash !== "string" || !/^[a-f0-9]{64}$/.test(record.normalizedHash) || !Array.isArray(record.modifications) || record.modifications.some(value => typeof value !== "string")) throw new Error(`invalid provenance record: ${label}`);
       const resource = variant === undefined ? icons[uiId] : isRecord(icons[uiId]) ? icons[uiId][variant] : undefined;
-      if (typeof resource !== "string" || sha256(resource) !== record.normalizedHash) throw new Error("catalog/provenance hash mismatch");
+      if (typeof resource !== "string" || sha256(resource) !== record.normalizedHash) throw new Error(`catalog/provenance hash mismatch: ${label}`);
     }
   }
 }

@@ -137,3 +137,16 @@ normalize → explicit-selection promote flow; never overwrite source assets or 
 runtime parser. Provenance is an attribution record, not a second action/style registry.
 Normal Web and app asset-copy flows carry the adopted notice and compact provenance;
 they must not consume the private source pack or normalized staging directory.
+
+Provenance coverage (2026-10-23, svg-import repair): every `icons.json` resource has a
+record whose `normalizedHash` is the SHA-256 of its exact catalog bytes (line endings
+included), with one documented exception. Lucide records (`set: "lucide"`, `file` = the
+lucide-react icon name) cover glyphs serialized from installed lucide-react 0.460.0 and are
+credited in the Lucide section of the notice; `promote` validates and preserves them but
+never writes them. The exception is the **frozen pre-provenance glyphs** listed with their
+hashes in `tests/fixtures/legacy-icons.json`: glyphs already in the catalog at `7d85e04`,
+before provenance existed, plus later byte-identical reuses of them. Their source was never
+recorded, so no record may be invented for them; `promote` leaves them untouched. The list
+only shrinks: a changed glyph or a new `data-ui` needs a real record, and migrating one
+removes its line. `tests/icon-provenance.test.ts` checks hashes, this list and the notice's
+Dazzle mappings against the shipped files.
