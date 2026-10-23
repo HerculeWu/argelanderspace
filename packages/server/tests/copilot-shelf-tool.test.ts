@@ -135,10 +135,12 @@ test("add: a confirmation refused by the server keeps the server's own detail (a
   expect(result.detail).toContain(detail);
 });
 
-test("a delete card is not bound to the argument count: a graph read failing at the click is not \"the entry changed\"", () => {
+test('a delete card is not bound to the argument count: a graph read failing at the click is not "the entry changed"', () => {
   const counted = { ...okRow, argumentCount: 3 } as ShelfListRow;
   const unknown = { ...okRow, argumentCount: null } as ShelfListRow;
   expect(shelfDeleteDigest(unknown)).toBe(shelfDeleteDigest(counted));
   // what the card does show still binds it
-  expect(shelfDeleteDigest({ ...okRow, rev: okRow.rev + 1 } as ShelfListRow)).not.toBe(shelfDeleteDigest(okRow));
+  expect(shelfDeleteDigest({ ...okRow, rev: okRow.rev + 1 } as ShelfListRow)).not.toBe(
+    shelfDeleteDigest(okRow)
+  );
 });
