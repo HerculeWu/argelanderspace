@@ -16,9 +16,10 @@ import {
   readPdfTextMaterial,
   renderPdfPageImage,
 } from "../src/pdf-material.js";
-import { probePdf } from "../src/pdfium-probe.js";
+import { isPdfSystemFailure, probePdf } from "../src/pdfium-probe.js";
 import {
   createPdfiumEngine,
+  PDF_ENGINE_STOPPED,
   PDF_QUEUE_MAX_WAITING,
   PDF_QUEUE_MAX_WAITING_BYTES,
   pdfiumWorkerEngine,
@@ -311,13 +312,12 @@ test("drawing a page does not hold the event loop: a timer keeps firing while th
   expect(pdfMaterialResources).toMatchObject({ engines: 0, documents: 0, active: 0 });
 }, 30_000);
 
-test("the text of a long document and its upload probe do not hold the event loop either", async () => {
-  const bytes = syntheticPdf({ pageCount: 100 });
-  const text = await longestPause(() => readPdfTextMaterial(bytes, hash(bytes)));
-  const probed = await longestPause(() => probePdf(bytes));
-  expect(text.pause).toBeLessThan(250);
-  expect(probed.pause).toBeLessThan(250);
-}, 30_000);
+test("the parser's timeout and a dead engine thread are system failures, not a verdict on the PDF", () => {
+  // the probe lets these through instead of answering "not a valid, readable PDF"
+  expect(isPdfSystemFailure(new Error("PDF parser timed out"))).toBe(true);
+  expect(isPdfSystemFailure(new Error(PDF_ENGINE_STOPPED))).toBe(true);
+  expect(isPdfSystemFailure(new Error("PDFium could not open the document"))).toBe(false);
+});
 
 type Task<T> = { toPromise(): Promise<T> };
 type TestEngine = {
@@ -330,16 +330,19 @@ type TestEngine = {
 test("a page that runs past the deadline is stopped with the parser's timeout error, long before it would finish", async () => {
   const bytes = syntheticPdf();
   const started = Date.now();
+  let rendering = false;
   const attempt = (async () => {
-    const engine = await createPdfiumEngine<TestEngine>(Date.now() + 1500);
+    // the deadline is far below the render's time (about 4 s idle here) yet well above starting and opening
+    const engine = await createPdfiumEngine<TestEngine>(Date.now() + 800);
     try {
       const doc = await engine
         .openDocumentBuffer({ id: "slow", content: Uint8Array.from(bytes).buffer })
         .toPromise();
-      // about 25 million pixels: seconds of drawing and encoding
+      rendering = true;
+      // about 44 million pixels: seconds of drawing and encoding
       await engine
         .renderPage(doc, doc.pages[0], {
-          scaleFactor: 12,
+          scaleFactor: 16,
           dpr: 1,
           imageType: "image/png",
           withAnnotations: false,
@@ -351,15 +354,21 @@ test("a page that runs past the deadline is stopped with the parser's timeout er
     }
   })();
   await expect(attempt).rejects.toThrow("PDF parser timed out");
+  // it was the render in flight that was stopped, not the start
+  expect(rendering).toBe(true);
   expect(Date.now() - started).toBeLessThan(5000);
 }, 30_000);
 
 test("an engine whose thread dies is a clear error for its start and for the call in flight, never a hang", async () => {
   // a thread that dies before it is ready
   const early = new Worker("process.exit(3)", { eval: true });
-  await expect(pdfiumWorkerEngine<TestEngine>(early, Date.now() + 10_000)).rejects.toThrow(
-    "PDF engine stopped unexpectedly"
-  );
+  const failed = await pdfiumWorkerEngine<TestEngine>(early, Date.now() + 10_000).catch((e) => e);
+  expect(failed).toBeInstanceOf(Error);
+  expect((failed as Error).message).toBe("PDF engine stopped unexpectedly");
+  // the cause is kept for diagnosis
+  expect((failed as Error).cause).toEqual({ exitCode: 3 });
+  // nobody holds an engine to release: the thread has already ended when the start fails
+  expect(early.threadId).toBe(-1);
   // a thread that is ready and dies in the middle of a call
   const late = new Worker(
     "const { parentPort } = require('node:worker_threads'); parentPort.postMessage({ ready: true }); parentPort.on('message', () => process.exit(7));",

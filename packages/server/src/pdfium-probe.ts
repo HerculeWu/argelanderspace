@@ -3,6 +3,7 @@ import { availableMemory } from "./available-memory.js";
 import {
   counted,
   createPdfiumEngine,
+  PDF_ENGINE_STOPPED,
   pdfiumResources,
   serialized,
   timed,
@@ -20,6 +21,14 @@ export class PdfInputError extends Error {
     super(message);
     this.name = "PdfInputError";
   }
+}
+
+/** The parser's timeout and a dead engine thread are system failures, not a verdict on the file. */
+export function isPdfSystemFailure(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.message.includes("timed out") || error.message === PDF_ENGINE_STOPPED)
+  );
 }
 
 export interface ProbedPdf {
@@ -69,7 +78,7 @@ async function probe(bytes: Buffer): Promise<ProbedPdf> {
         toPromise(engine.openDocumentBuffer({ id: "trusted-pdf-probe", content: buffer }))
       );
     } catch (error) {
-      if (error instanceof Error && error.message.includes("timed out")) throw error;
+      if (isPdfSystemFailure(error)) throw error;
       const code = (error as { reason?: { code?: unknown } }).reason?.code;
       if (code === PdfiumErrorCode.Password) {
         throw new PdfInputError("password-protected PDFs are not supported");
@@ -85,7 +94,7 @@ async function probe(bytes: Buffer): Promise<ProbedPdf> {
       try {
         await withinLimit(toPromise(engine.getPageGeometry(document, page)));
       } catch (error) {
-        if (error instanceof Error && error.message.includes("timed out")) throw error;
+        if (isPdfSystemFailure(error)) throw error;
         throw new PdfInputError("PDF page geometry is invalid");
       }
       const rotation = [0, 90, 180, 270][page.rotation];

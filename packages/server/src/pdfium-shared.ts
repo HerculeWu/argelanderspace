@@ -119,7 +119,9 @@ const WORKER_URL = new URL(
   import.meta.url.endsWith(".ts") ? "./pdfium-worker.ts" : "./pdfium-worker.js",
   import.meta.url
 );
-const STOPPED = "PDF engine stopped unexpectedly";
+/** A system error (the thread died), never a judgement of the PDF: callers that classify input errors let it through. */
+export const PDF_ENGINE_STOPPED = "PDF engine stopped unexpectedly";
+const STOPPED = PDF_ENGINE_STOPPED;
 const CLOSED = "PDF engine closed";
 /** How long releasing an engine may wait for its thread to end (it is terminated, so this is only a safety net). */
 const EXIT_WAIT_MS = 5000;
@@ -210,13 +212,30 @@ export async function pdfiumWorkerEngine<E>(worker: Worker, deadline: number): P
     if (answer.error) call.reject(revive(answer.error));
     else call.resolve(answer.value);
   });
-  worker.on("error", () => stop(new Error(STOPPED)));
-  worker.on("messageerror", () => stop(new Error(STOPPED)));
-  worker.on("exit", () => stop(new Error(STOPPED)));
-  await new Promise<void>((resolve, reject) => {
-    if (stopped) reject(stopped);
-    else starting = { resolve, reject };
-  });
+  worker.on("error", (cause) => stop(new Error(STOPPED, { cause })));
+  worker.on("messageerror", (cause) => stop(new Error(STOPPED, { cause })));
+  worker.on("exit", (code) => stop(new Error(STOPPED, { cause: { exitCode: code } })));
+  // the thread has ended (it is terminated, so the bound is only a safety net)
+  const ended = async () => {
+    let wait: NodeJS.Timeout | undefined;
+    await Promise.race([
+      exited,
+      new Promise<void>((resolve) => {
+        wait = setTimeout(resolve, EXIT_WAIT_MS);
+      }),
+    ]);
+    clearTimeout(wait);
+  };
+  try {
+    await new Promise<void>((resolve, reject) => {
+      if (stopped) reject(stopped);
+      else starting = { resolve, reject };
+    });
+  } catch (error) {
+    // nobody gets an engine to destroy: wait for the thread here, so the queue never runs two PDFium instances
+    await ended();
+    throw error;
+  }
 
   const call = (
     method: PdfiumWorkerMethod,
@@ -276,14 +295,7 @@ export async function pdfiumWorkerEngine<E>(worker: Worker, deadline: number): P
       task(
         (async () => {
           stop(new Error(CLOSED));
-          let wait: NodeJS.Timeout | undefined;
-          await Promise.race([
-            exited,
-            new Promise<void>((resolve) => {
-              wait = setTimeout(resolve, EXIT_WAIT_MS);
-            }),
-          ]);
-          clearTimeout(wait);
+          await ended();
         })()
       ),
   };
