@@ -11,6 +11,7 @@
     "tagline": "Literature",
     "split": "Split right",
     "closePane": "Close pane",
+    "docGone": "The document “{{id}}” has been deleted.",
     "pane": {
       "switchView": "Change pane view"
     },

@@ -33,6 +33,11 @@ export interface WorkspaceStateSnapshot extends PaneState {
   /** The anchor of the deep link that opened `currentDoc`, until the Doc pane has used it. */
   pendingAnchor: string | null;
   copilotOpen: boolean;
+  /**
+   * A Back/Forward or a deep link arrived at the address of a Doc that is gone (ticket 11): the notice the Shell shows
+   * for a moment (`seq` tells one arrival from the next at the same Doc).
+   */
+  docGoneNotice: { docId: string; seq: number } | null;
 }
 
 export interface WorkspaceStateDeps {
@@ -43,6 +48,13 @@ export interface WorkspaceStateDeps {
   timers: TimerPort;
   leave: LeavePort;
   fetchPapers: () => Promise<string[]>;
+  /**
+   * The server's `library.changed` (a Doc deleted, added or rebuilt, here or elsewhere): the paper list is read again, so
+   * it stays fresh. Returns the unsubscribe. Optional: without it the list is read at boot and kept up locally.
+   */
+  onLibraryChanged?: (cb: () => void) => () => void;
+  /** The HTTP status of a Doc's description (`GET /api/paper/:id/description`): 404 says it is gone. Rejects when unreachable. */
+  docStatus: (docId: string) => Promise<number>;
   /** The appearance setter of the preferences (preferences.tsx): resolves with whether config.toml took the change. */
   setTweak: <K extends keyof Tweaks>(key: K, value: Tweaks[K]) => Promise<boolean>;
 }
@@ -66,12 +78,14 @@ export const SHOWN_TIMEOUT_MS = 1000;
 /** A Back/Forward the leave guard let through stays let through this long, and this long once it is taken. */
 const ALLOW_MS = 2000;
 const TAKEN_MS = 100;
+/** How long the notice that a Doc is gone stays (as the leave guard's own status toast). */
+export const DOC_GONE_NOTICE_MS = 5000;
 
-type Own = Pick<WorkspaceStateSnapshot, "papers" | "currentDoc" | "pendingAnchor" | "copilotOpen">;
+type Own = Pick<WorkspaceStateSnapshot, "papers" | "currentDoc" | "pendingAnchor" | "copilotOpen" | "docGoneNotice">;
 
 export function createWorkspaceState(deps: WorkspaceStateDeps) {
   const { browser, timers, leave } = deps;
-  let own: Own = { papers: [], currentDoc: null, pendingAnchor: null, copilotOpen: false };
+  let own: Own = { papers: [], currentDoc: null, pendingAnchor: null, copilotOpen: false, docGoneNotice: null };
   const listeners = new Set<() => void>();
 
   // A Doc pane's Reader actions name their Doc; one that is not open is opened through the workspace's own openDoc.
@@ -288,8 +302,12 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
     browser.setState({ ...stateObject(), argelanderEntry: token });
     return token;
   };
-  /** The Docs deleted in this page load (`docDeleted`): a record that would put one back is void. */
-  const deletedDocs = new Set<string>();
+  /**
+   * The Docs deleted in this page load (`docDeleted`, `docGone`), each with the number of paper-list reads sent by then
+   * (`readsSent`): a record that would put one back is void. A Doc re-ingested under the same id comes back: an applied
+   * read sent after its deletion that lists it takes it off (`applyRead`); a read sent before cannot.
+   */
+  const deletedDocs = new Map<string, number>();
   /** The current entry's record: none, void (its pane left that view session, or the Doc it names was deleted), or one that applies, with its pane. */
   type RecordLookup = { kind: "none" } | { kind: "invalid"; paneId: number } | { kind: "valid"; left: LeftRecord; pane: Pane };
   const leftRecord = (): RecordLookup => {
@@ -390,11 +408,13 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
       if (now.some((p) => p.view === "doc")) return undefined;
       return now.find((p) => p.id === here.paneId);
     };
-    // A refused switch puts a URL the browser already moved back; a click from the argument graph view has not moved
-    // it (the view is still open, and its URL must still say so).
+    // A refused open puts the open Doc's address back only where the address already names the Doc refused (the browser
+    // moved there: a Back/Forward the Library page's guard refused); any other address (`/`, `#explore/…`,
+    // `#argument/…`, another Doc's) still says what is on screen and stays (ticket 10).
     // The entry keeps its history state (its records and its shown session: it is the same entry, ticket 08).
     const restoreUrl = () => {
-      if (own.currentDoc && parseArgumentHash(browser.location().hash) === null) replaceKeepingState(docRouteUrl(own.currentDoc));
+      const at = browser.location();
+      if (own.currentDoc && parseDocRoute(at.pathname, at.hash)?.docId === nextDoc) replaceKeepingState(docRouteUrl(own.currentDoc));
     };
     // A late no puts the address back only while it is still the one the question was asked at: once a later navigation
     // (a Back with its own question) moved it, that entry is not this open's to rewrite (as leaveDocPane).
@@ -505,18 +525,108 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
 
   /**
    * A Doc was physically deleted (the Library page's delete, or the Copilot's): the paper list loses it and the current Doc
-   * moves per the three-state rule (applyDocDeletion); the address follows (the new main Doc, or `/` with nothing left).
+   * moves per the three-state rule (applyDocDeletion); an address that names the deleted Doc follows (the new main Doc,
+   * or `/` with nothing left), any other address (`/`, `#explore/…`, `#argument/…`, another Doc's) stays as it is: it
+   * still says what is on screen (ticket 10).
    * The entry keeps its history state (ticket 08): the Doc pane stays in its view session, so the records and the shown
    * session on it still apply. A record that names the deleted Doc as the one to put back is void (`leftRecord`): Back
-   * never shows a deleted Doc again.
+   * never shows a deleted Doc again, and an entry whose address names it is not opened (`docGone`, ticket 11).
    */
   const docDeleted = (docId: string, remaining: string[]) => {
-    deletedDocs.add(docId);
+    deletedDocs.set(docId, readsSent);
     const next = applyDocDeletion({ papers: own.papers, currentDoc: own.currentDoc }, docId, remaining);
     const moved = next.currentDoc !== own.currentDoc;
     setOwn(moved ? { papers: next.papers, currentDoc: next.currentDoc } : { papers: next.papers });
-    if (moved) replaceKeepingState(next.currentDoc ? docRouteUrl(next.currentDoc) : "/"); // `/`: nothing left to show
+    const at = browser.location();
+    const named = parseDocRoute(at.pathname, at.hash)?.docId === docId;
+    if (moved && named) replaceKeepingState(next.currentDoc ? docRouteUrl(next.currentDoc) : "/"); // `/`: nothing left to show
   };
+
+  /**
+   * The paper list read from the server (the boot, an arrival at a Doc address, `library.changed`, the Copilot's
+   * `open_doc`): reads can answer out of order, so only a read newer than the one last applied replaces the list. A read
+   * sent before a Doc's deletion in this page never brings it back; one sent after it that lists it means it was ingested
+   * again under that id, and once applied the Doc is no longer counted deleted. Rejects when it cannot be read.
+   */
+  let readsSent = 0;
+  let readApplied = 0;
+  /** What read `mine` says is there: a Doc deleted after that read was sent is left out. */
+  const listedBy = (mine: number, ids: string[]): string[] =>
+    ids.filter((id) => {
+      const at = deletedDocs.get(id);
+      return at === undefined || mine > at;
+    });
+  /** Read `mine` (listing `ids`, as `listedBy` gives them) becomes the paper list when it is the newest. */
+  const applyRead = (mine: number, ids: string[]) => {
+    if (mine <= readApplied) return;
+    readApplied = mine;
+    for (const id of ids) deletedDocs.delete(id); // re-ingested since its deletion: records naming it apply again
+    setOwn({ papers: ids });
+  };
+  const readPapers = async (): Promise<string[]> => {
+    const mine = ++readsSent;
+    const fresh = listedBy(mine, await deps.fetchPapers());
+    applyRead(mine, fresh);
+    return fresh;
+  };
+
+  /**
+   * Whether a Doc whose address the browser reached is gone, asked of the server (ticket 11): listed in `/api/papers` is
+   * there; one it does not list is asked about by its description (`GET /api/paper/:id/description`), and only a 404 is
+   * gone — the list leaves out PDF Docs not owned by exactly one Work, and one owned by more than one still exists
+   * (its description answers 500), so not being listed alone is not proof. A read that fails is `unknown`: the Doc opens
+   * as before and its pane shows the load error.
+   */
+  const docExists = async (docId: string): Promise<"gone" | "there" | "unknown"> => {
+    if (deletedDocs.has(docId)) return "gone";
+    let list: string[];
+    try {
+      list = await readPapers();
+    } catch {
+      return "unknown";
+    }
+    if (list.includes(docId)) return "there";
+    try {
+      return (await deps.docStatus(docId)) === 404 ? "gone" : "there";
+    } catch {
+      return "unknown";
+    }
+  };
+
+  let noticeTimer: number | null = null;
+  let noticeSeq = 0;
+  const showDocGone = (docId: string) => {
+    if (noticeTimer !== null) timers.clear(noticeTimer);
+    setOwn({ docGoneNotice: { docId, seq: ++noticeSeq } });
+    const mine = timers.set(() => {
+      if (noticeTimer !== mine) return;
+      noticeTimer = null;
+      setOwn({ docGoneNotice: null });
+    }, DOC_GONE_NOTICE_MS);
+    noticeTimer = mine;
+  };
+
+  /**
+   * The browser arrived at the address of a Doc that is gone (ticket 11: Back, Forward, or the boot deep link): it is not
+   * opened. A notice says the Doc was deleted; the Doc pane (the active one if it is one, else the first) turns back into
+   * the Library page through its leave guard, as the person's own move (refused, the open Doc's address is pushed back,
+   * as for any Back that leaves a Doc), and no other pane changes (a parked Doc session of that entry is dropped: Forward
+   * can never put the gone Doc back). The address becomes the plain URL, the entry keeping its history state (ticket 08).
+   */
+  const docGone = (docId: string) =>
+    batch(() => {
+      // from here on it counts as deleted in this page load: a record that would put it back is void (`leftRecord`),
+      // also when the Doc pane's guard keeps the open Doc and the entry stays with its record
+      deletedDocs.set(docId, readsSent);
+      exploreBus.exit(); // the address names no exploration any more
+      const here = parkingHere();
+      if (here) parks.delete(here.session);
+      replaceKeepingState("/");
+      showDocGone(docId);
+      const { panes: current, activeId } = manager.getState();
+      const pane = current.find((p) => p.id === activeId && p.view === "doc") ?? current.find((p) => p.view === "doc");
+      if (pane) leaveDocPane(pane, paneTo(pane, "library"));
+    });
 
   /** The Copilot approval that would take `docId` away: only the open Doc asks the leave guard (unsaved drafts), as the delete dialog does. */
   const leaveDoc = (docId: string): LeaveVerdict => (docId !== own.currentDoc ? true : leave.ask(undefined, undefined, "user"));
@@ -598,9 +708,7 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
     // `#argument/<work id>` drives the argument graph view; any other URL (a Doc, a plain URL, an exploration) leaves it
     if (!argumentWork) argumentBus.exit();
     if (route) {
-      // the Doc address leaves an exploration too: with a Doc pane already open the picture would not change otherwise
-      exploreBus.exit();
-      openDoc(route.docId, route.anchor, { libraryAsked: leavingView, urlIsDoc: true });
+      arriveAtDoc(route.docId, route.anchor, leavingView);
       return;
     }
     // Stage 14: `#explore/<bibcode>` drives the discovery mode; losing the
@@ -638,6 +746,40 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
       return;
     }
     libraryForPlainUrl();
+  };
+
+  /**
+   * Back/Forward (or a hand-edited address) arrived at a Doc's address: the Doc opens, unless it is gone (ticket 11). A Doc
+   * deleted in this page load is gone at once; any other is checked against the server's paper list (`/api/papers`, a
+   * directory listing), read again at each arrival: the page's own list cannot know a Doc deleted elsewhere (another tab,
+   * the Copilot, a bare DELETE) or ingested since. Its answer applies only while the address is still the one it was asked
+   * for, and a list that cannot be read opens the Doc as before (the Doc pane shows its load error). The same traversal's
+   * second event asks nothing.
+   */
+  let pendingCheck: { href: string } | null = null;
+  const arriveAtDoc = (docId: string, anchor: string | null, leavingView: boolean) => {
+    const open = () => {
+      // the Doc address leaves an exploration too: with a Doc pane already open the picture would not change otherwise
+      exploreBus.exit();
+      openDoc(docId, anchor, { libraryAsked: leavingView, urlIsDoc: true });
+    };
+    if (deletedDocs.has(docId)) return docGone(docId);
+    const href = browser.location().href;
+    // The traversal the Doc's own late yes let through (settleDocQuestion): the existence was checked before that
+    // question was asked, so it opens at once and its permission is still there (a slow read would outlast it and the
+    // person would be asked twice for one traversal).
+    if (allowed.get("doc")?.href === href) return open();
+    if (pendingCheck?.href === href) return;
+    const mine = { href };
+    pendingCheck = mine;
+    void docExists(docId).then((found) => {
+      if (pendingCheck !== mine) return;
+      pendingCheck = null;
+      if (browser.location().href !== href) return; // the address moved on: that navigation decides
+      // deleted in this page while the read was out: gone, whatever the read said
+      if (found === "gone" || deletedDocs.has(docId)) docGone(docId);
+      else open();
+    });
   };
 
   /** The pane a record put back as a Library page (where the exploration or the graph it left is to reappear), if any. */
@@ -819,7 +961,8 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
   // ---- boot ------------------------------------------------------------------------------------- //
 
   /**
-   * Load the paper list once and pick the first Doc; a deep link takes precedence: `/doc/<id>[#anchor]` opens it,
+   * Load the paper list once and pick the first Doc; a deep link takes precedence: `/doc/<id>[#anchor]` opens it (one the
+   * list read does not have is gone: `docGone`, ticket 11),
    * `#explore/<bibcode>` and `#argument/<work id>` open the Library pane and hand the request to its bus, `?doc=<id>`
    * picks a listed Doc. Listens to Back/Forward and hand-edited hashes. The returned function stops both (a boot still
    * waiting for the list is dropped).
@@ -830,16 +973,38 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
     const route = parseDocRoute(at.pathname, at.hash);
     void (async () => {
       let list: string[] = [];
+      let read = false;
+      // a read of its own, applied below in the boot's one change, counted with the others (`readPapers`)
+      const mine = ++readsSent;
       try {
-        list = await deps.fetchPapers();
+        list = listedBy(mine, await deps.fetchPapers());
+        read = true;
       } catch {
         /* reader may be offline; Library still works on fixture data */
       }
       if (!alive) return;
+      // A deep link to a Doc the list does not have is asked about by its description, as an arrival is (`docExists`):
+      // only a 404 is gone. With no list to check (offline) or no answer it is opened anyway: DocPane shows its load error.
+      let gone = false;
+      if (route && read && !list.includes(route.docId)) {
+        try {
+          gone = (await deps.docStatus(route.docId)) === 404;
+        } catch {
+          gone = false;
+        }
+        if (!alive) return;
+      }
       batch(() => {
-        setOwn({ papers: list });
+        // a newer read (an arrival, library.changed) that answered first keeps its list
+        applyRead(mine, list);
         if (route) {
-          // unknown ids are opened anyway: DocPane shows its normal load error
+          // A gone Doc (ticket 11): not opened; the Library page, the plain URL and the notice, as for Back/Forward to it.
+          if (gone) {
+            setOwn({ currentDoc: list[0] ?? null });
+            docGone(route.docId);
+            ensureLibraryPane(false); // the pane the deep link would have made the Doc pane (nothing to lose at boot)
+            return;
+          }
           openDoc(route.docId, route.anchor, { urlIsDoc: true });
           return;
         }
@@ -865,10 +1030,18 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
       });
     })();
     const unlisten = browser.listen(onNav);
+    // the server says the library changed (a Doc deleted or added, here or elsewhere): the paper list is read again; only
+    // the newest read is kept, and a read that fails leaves the list as it is
+    const unlistenLibrary =
+      deps.onLibraryChanged?.(() => {
+        if (alive) readPapers().catch(() => {});
+      }) ?? (() => {});
     return () => {
       alive = false;
       unlisten();
+      unlistenLibrary();
       dropAllowed();
+      pendingCheck = null;
     };
   };
 
@@ -883,12 +1056,11 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
     if (!own.papers.includes(docId)) {
       let fresh: string[];
       try {
-        fresh = await deps.fetchPapers();
+        fresh = await readPapers(); // the list is replaced too, when this read is the newest
       } catch {
         return { ok: false, detail: "unavailable" };
       }
       if (!fresh.includes(docId)) return { ok: false, detail: "not_found" };
-      setOwn({ papers: fresh });
     }
     if (!openDoc(docId, undefined, { origin: "agent" })) return { ok: false, detail: "leave_blocked" };
     return settled(() => own.currentDoc === docId && manager.getState().panes.some((pane) => pane.view === "doc"));

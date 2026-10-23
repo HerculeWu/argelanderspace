@@ -11,6 +11,7 @@
     "tagline": "文献工作台 · Literature",
     "split": "向右分屏",
     "closePane": "关闭窗格",
+    "docGone": "文档「{{id}}」已被删除。",
     "pane": {
       "switchView": "切换窗格视图"
     },
