@@ -90,6 +90,7 @@ test("the sidecar's required files name what the four resource classes need", ()
     "sidecar/app/LICENSE",
     "sidecar/app/dist/bin.js",
     "sidecar/app/dist/argelander.sty",
+    "sidecar/app/dist/pdfium-worker.js",
     "sidecar/app/dist/web/index.html",
     "sidecar/app/node_modules/@embedpdf/pdfium/dist/pdfium.wasm",
     "sidecar/app/node_modules/@napi-rs/keyring-linux-x64-gnu/keyring.linux-x64-gnu.node",

@@ -1115,7 +1115,8 @@ test("B1: the history's image total is enforced: images already there make a fur
   if (first.status !== 202) throw new Error(await first.clone().text());
   expect(first.status).toBe(202);
   // The run renders page 1 at longEdge 2048 before the total refuses it: alone that takes 1.4 to 4 s, about 1.1 to
-  // 1.4 s of it holding the event loop (measured, shelf-followups 05), so vi.waitFor's default 1 s ran out under
+  // 1.4 s of it holding the event loop (measured, shelf-followups 05; since shelf-followups 08 the render runs in a
+  // worker thread and no longer holds the loop, but it still takes that long), so vi.waitFor's default 1 s ran out under
   // load ("expected 'running' not to be 'running'"). It waits as long as `run` does; what it waits for is unchanged.
   await vi.waitFor(
     async () => {

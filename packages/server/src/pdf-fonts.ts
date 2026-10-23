@@ -6,18 +6,19 @@
  * The packages are dependencies of `@embedpdf/engines` (not of this package), so they are found from the engine's own
  * location: that holds in the workspace (pnpm), in an npm install, and in the desktop package's dependency folder.
  */
-import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  PDF_FALLBACK_FONT_PACKAGES,
   PDF_FONT_ROUTE,
   type PdfFallbackFontFile,
   type PdfFallbackFontPackage,
   pdfFallbackFont,
   pdfFontFallbackConfig,
 } from "@argelanderspace/contracts";
+import type { PdfiumWorkerFonts } from "./pdfium-worker.js";
 import type { ProtectedRoutes } from "./protected-app.js";
 
 let fromEngines: NodeJS.Require | undefined;
@@ -32,23 +33,24 @@ const fontFile = (pkg: PdfFallbackFontPackage, font: PdfFallbackFontFile) =>
   join(fallbackFontPackageDir(pkg.name), "fonts", font.file);
 
 /**
- * The server engine's `fontFallback`: each font named by a key `<name>/<version>/<file>` that the loader maps back to
- * the table (anything else, or a file that is not on disk, loads nothing and the text stays blank as before).
+ * The server engine's `fontFallback` as plain data for the PDFium worker thread (shelf-followups 08): each font is named
+ * by a key `<name>/<version>/<file>` of the table, and `files` maps exactly those keys to the file on disk. The worker's
+ * loader reads only a key listed here (anything else, or a file that is not on disk, loads nothing and the text stays
+ * blank as before).
  */
-export function serverFontFallback() {
-  return {
-    ...pdfFontFallbackConfig((pkg, font) => `${pkg.name}/${pkg.version}/${font.file}`),
-    fontLoader: (key: string): Uint8Array | null => {
-      const [name = "", version = "", file = ""] = key.split("/");
-      const found = pdfFallbackFont(name, version, file);
-      if (!found) return null;
+export function serverFontFallback(): PdfiumWorkerFonts {
+  const key = (pkg: PdfFallbackFontPackage, font: PdfFallbackFontFile) =>
+    `${pkg.name}/${pkg.version}/${font.file}`;
+  const files: Record<string, string> = {};
+  for (const pkg of PDF_FALLBACK_FONT_PACKAGES)
+    for (const font of pkg.files) {
       try {
-        return readFileSync(fontFile(found.pkg, found.font));
+        files[key(pkg, font)] = fontFile(pkg, font);
       } catch {
-        return null;
+        // the package cannot be found: its fonts load nothing
       }
-    },
-  };
+    }
+  return { ...pdfFontFallbackConfig(key), files };
 }
 
 /**

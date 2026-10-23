@@ -2,7 +2,8 @@
 // pack-contents.test.mjs) and shared with scripts/smoke-pack.mjs, which feeds it the real `npm pack` listing.
 //
 // Everything the bundle needs at run time must be IN the tarball (the versioned instruction text and the Pi runtime
-// glue and the PNG encoder (node:zlib code in pdf-material.ts) are inlined into dist/bin.js; the PDFium WASM and the
+// glue are inlined into dist/bin.js; the PDFium worker thread with the PNG encoder (node:zlib code) is
+// dist/pdfium-worker.js, copied from the server's build (shelf-followups 08); the PDFium WASM and the
 // Pi SDK come from the declared `dependencies`, installed next to the package). Nothing from the repository, a user library, a provider secret or a
 // private prototype may be in it.
 
@@ -28,6 +29,7 @@ export const REQUIRED_FILES = [
   "LICENSE",
   "dist/bin.js",
   "dist/argelander.sty",
+  "dist/pdfium-worker.js",
   "dist/web/index.html",
   "dist/icons.provenance.json",
   "dist/THIRD_PARTY_LICENSES.md",

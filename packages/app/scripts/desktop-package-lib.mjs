@@ -161,7 +161,7 @@ export const TUTORIAL_RESOURCE_DIR = "tutorial";
 
 /**
  * The files a sidecar must have, relative to the bundle's resource directory: the Node runtime and its license; the
- * app's build (CLI bundle, page resources, argelander.sty, notices) with its package.json (version, module type) and
+ * app's build (CLI bundle, PDFium worker, page resources, argelander.sty, notices) with its package.json (version, module type) and
  * license; PDFium's WASM and the keychain module's native file in the dependency directory with its notices; the skills;
  * the shell's crate notices; the tutorial sample's marker (what bundledTutorialDir looks for) and its notice.
  */
@@ -174,6 +174,7 @@ export function sidecarRequiredFiles(target) {
     "sidecar/app/LICENSE",
     "sidecar/app/dist/bin.js",
     "sidecar/app/dist/argelander.sty",
+    "sidecar/app/dist/pdfium-worker.js",
     "sidecar/app/dist/web/index.html",
     "sidecar/app/dist/THIRD-PARTY-BUNDLED-NOTICES.txt",
     "sidecar/app/dist/THIRD-PARTY-EDITOR-NOTICES.txt",

@@ -3,6 +3,7 @@
  * browser and no mocks of rendering or text extraction.
  */
 import { createHash } from "node:crypto";
+import { Worker } from "node:worker_threads";
 import { PDF_IMAGE_LONG_EDGE, PDF_OUTLINE_MAX_ENTRIES } from "@argelanderspace/contracts";
 import { expect, test } from "vitest";
 import {
@@ -16,7 +17,12 @@ import {
   renderPdfPageImage,
 } from "../src/pdf-material.js";
 import { probePdf } from "../src/pdfium-probe.js";
-import { PDF_QUEUE_MAX_WAITING, PDF_QUEUE_MAX_WAITING_BYTES } from "../src/pdfium-shared.js";
+import {
+  createPdfiumEngine,
+  PDF_QUEUE_MAX_WAITING,
+  PDF_QUEUE_MAX_WAITING_BYTES,
+  pdfiumWorkerEngine,
+} from "../src/pdfium-shared.js";
 import { syntheticPdf } from "./pdf-fixture.js";
 import { decodePng } from "./png-decode.js";
 
@@ -265,3 +271,105 @@ test("a PNG of a page is RGB or grayscale (no alpha) with real row filters, a fr
     expect([...back.rgba]).toEqual([...data]);
   }
 });
+
+// ---- PDFium off the event loop (shelf-followups 08) ------------------------------------------------------------- //
+
+/**
+ * The longest pause of a 10 ms timer while `work` runs (a pause that ends with the work counts too: the time since
+ * the last tick when the work's result arrives). Drawing the page itself held the event loop 1.1 to 1.3 s at longEdge 4096 before the engine moved to
+ * a worker thread (measured, shelf-followups 08), so a bound far below that shows the loop kept answering.
+ */
+async function longestPause(
+  work: () => Promise<unknown>
+): Promise<{ pause: number; took: number }> {
+  let last = performance.now();
+  let pause = 0;
+  const timer = setInterval(() => {
+    const now = performance.now();
+    pause = Math.max(pause, now - last);
+    last = now;
+  }, 10);
+  const started = performance.now();
+  try {
+    await work();
+    pause = Math.max(pause, performance.now() - last);
+  } finally {
+    clearInterval(timer);
+  }
+  return { pause, took: performance.now() - started };
+}
+
+test("drawing a page does not hold the event loop: a timer keeps firing while the page is rendered", async () => {
+  const bytes = syntheticPdf();
+  const { pause, took } = await longestPause(() =>
+    renderPdfPageImage(bytes, hash(bytes), 0, PDF_IMAGE_LONG_EDGE.max)
+  );
+  // the render itself still takes its time (the measurement is not vacuous) ...
+  expect(took).toBeGreaterThan(300);
+  // ... but the loop never waited for it
+  expect(pause).toBeLessThan(250);
+  expect(pdfMaterialResources).toMatchObject({ engines: 0, documents: 0, active: 0 });
+}, 30_000);
+
+test("the text of a long document and its upload probe do not hold the event loop either", async () => {
+  const bytes = syntheticPdf({ pageCount: 100 });
+  const text = await longestPause(() => readPdfTextMaterial(bytes, hash(bytes)));
+  const probed = await longestPause(() => probePdf(bytes));
+  expect(text.pause).toBeLessThan(250);
+  expect(probed.pause).toBeLessThan(250);
+}, 30_000);
+
+type Task<T> = { toPromise(): Promise<T> };
+type TestEngine = {
+  openDocumentBuffer(f: { id: string; content: ArrayBuffer }): Task<{ pages: unknown[] }>;
+  renderPage(d: unknown, p: unknown, o: object): Task<{ png: Buffer }>;
+  closeDocument(d: unknown): Task<unknown>;
+  destroy(): Task<unknown>;
+};
+
+test("a page that runs past the deadline is stopped with the parser's timeout error, long before it would finish", async () => {
+  const bytes = syntheticPdf();
+  const started = Date.now();
+  const attempt = (async () => {
+    const engine = await createPdfiumEngine<TestEngine>(Date.now() + 1500);
+    try {
+      const doc = await engine
+        .openDocumentBuffer({ id: "slow", content: Uint8Array.from(bytes).buffer })
+        .toPromise();
+      // about 25 million pixels: seconds of drawing and encoding
+      await engine
+        .renderPage(doc, doc.pages[0], {
+          scaleFactor: 12,
+          dpr: 1,
+          imageType: "image/png",
+          withAnnotations: false,
+        })
+        .toPromise();
+    } finally {
+      // the stopped engine is released at once: nothing waits for the abandoned page
+      await engine.destroy().toPromise();
+    }
+  })();
+  await expect(attempt).rejects.toThrow("PDF parser timed out");
+  expect(Date.now() - started).toBeLessThan(5000);
+}, 30_000);
+
+test("an engine whose thread dies is a clear error for its start and for the call in flight, never a hang", async () => {
+  // a thread that dies before it is ready
+  const early = new Worker("process.exit(3)", { eval: true });
+  await expect(pdfiumWorkerEngine<TestEngine>(early, Date.now() + 10_000)).rejects.toThrow(
+    "PDF engine stopped unexpectedly"
+  );
+  // a thread that is ready and dies in the middle of a call
+  const late = new Worker(
+    "const { parentPort } = require('node:worker_threads'); parentPort.postMessage({ ready: true }); parentPort.on('message', () => process.exit(7));",
+    { eval: true }
+  );
+  const engine = await pdfiumWorkerEngine<TestEngine>(late, Date.now() + 10_000);
+  await expect(
+    engine.openDocumentBuffer({ id: "x", content: new ArrayBuffer(8) }).toPromise()
+  ).rejects.toThrow("PDF engine stopped unexpectedly");
+  // a call after that is refused at once, and releasing it still works
+  await expect(engine.closeDocument({}).toPromise()).rejects.toThrow("PDF engine stopped");
+  await engine.destroy().toPromise();
+}, 30_000);

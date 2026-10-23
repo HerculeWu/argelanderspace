@@ -12,7 +12,7 @@ import { createApp } from "../src/app.js";
 import { JobRunner } from "../src/jobs.js";
 import { fallbackFontPackageDir } from "../src/pdf-fonts.js";
 import { renderPdfPageImage } from "../src/pdf-material.js";
-import { createPdfiumEngine, type RgbaImage } from "../src/pdfium-shared.js";
+import { createPdfiumEngine } from "../src/pdfium-shared.js";
 import { makeDataDir, stubPipelines, stubSources } from "./helpers.js";
 import { CJK_PDF, cjkPdf } from "./pdf-fixture.js";
 import { decodePng } from "./png-decode.js";
@@ -45,42 +45,38 @@ function ink(
   return dark;
 }
 
-/** The engine's own render, with or without the fallback (the `fontFallback: false` control). */
+/**
+ * The engine's own render, with or without the fallback (the `fontFallback: false` control). The engine runs in its
+ * worker thread and answers the page as a PNG (shelf-followups 08), decoded back to the pixels here.
+ */
 async function renderRaw(bytes: Buffer, fontFallback: boolean) {
-  let raw: RgbaImage | undefined;
   type Doc = { pages: unknown[] };
   type Task<T> = { toPromise(): Promise<T> };
   const engine = await createPdfiumEngine<{
     openDocumentBuffer(f: { id: string; content: ArrayBuffer }): Task<Doc>;
-    renderPage(d: Doc, p: unknown, o: object): Task<unknown>;
+    renderPage(d: Doc, p: unknown, o: object): Task<{ png: Buffer }>;
     closeDocument(d: Doc): Task<unknown>;
     destroy(): Task<unknown>;
-  }>(
-    (getData) => {
-      raw = getData();
-      return Promise.resolve(Buffer.alloc(0));
-    },
-    Date.now() + 60_000,
-    { fontFallback }
-  );
+  }>(Date.now() + 60_000, { fontFallback });
+  let png: Buffer | undefined;
   try {
     const doc = await engine
       .openDocumentBuffer({ id: "cjk", content: Uint8Array.from(bytes).buffer })
       .toPromise();
-    await engine
+    ({ png } = await engine
       .renderPage(doc, doc.pages[0], {
         scaleFactor: 2,
         dpr: 1,
         imageType: "image/png",
         withAnnotations: false,
       })
-      .toPromise();
+      .toPromise());
     await engine.closeDocument(doc).toPromise();
   } finally {
     await engine.destroy().toPromise();
   }
-  if (!raw) throw new Error("no image");
-  return { width: raw.width, height: raw.height, rgba: Uint8Array.from(raw.data) };
+  if (!png) throw new Error("no image");
+  return decodePng(png);
 }
 
 describe("non-embedded CJK text", () => {

@@ -669,6 +669,10 @@ test("the default arXiv PDF job follows the page's rule: identifier yes, BibTeX 
   ];
   await run(page());
   expect(pdfJobs()).toHaveLength(viaUi + 1);
+  // The jobs run on after the assertions (PDFium probe in its worker thread, then `library.changed{cause:"upload"}`
+  // through the shared `broadcasts`): let them finish here, or a later test counts this test's notification
+  // (shelf-followups 08, where starting the worker made each probe about 80 ms longer).
+  await Promise.all(pdfJobs().map((job) => runner.waitFor(job.id)));
 });
 
 test("importing is a background edit: nothing is selected or opened, and the new work can then be opened in the sidebar", async () => {

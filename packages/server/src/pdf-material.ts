@@ -11,11 +11,12 @@
  *    expected SHA-256, so both the text and the image of a request come from the same verified snapshot and later
  *    caller changes cannot leak in; a Buffer changed while waiting is a content error, never wrong material;
  *  - the document is closed and the engine destroyed in `finally`, also on failure and timeout;
+ *  - the engine runs in its own worker thread (`pdfium-worker.ts`, shelf-followups 08): drawing, encoding and reading
+ *    a page never hold the service's event loop, and at the deadline the thread is stopped, not waited for;
  *  - page images are controlled by the LONGER edge in pixels and a pixel budget: the scale is derived from them,
  *    so a huge or tiny page is rendered at a sensible size instead of being refused.
  */
 import { createHash } from "node:crypto";
-import { crc32, deflateSync } from "node:zlib";
 import {
   buildPdfTextTarget,
   PDF_IMAGE_LONG_EDGE,
@@ -41,11 +42,14 @@ import {
   type PdfiumTask,
   PdfQueueFullError,
   pdfiumResources,
-  type RgbaImage,
+  type RenderedPng,
   serialized,
   timed,
 } from "./pdfium-shared.js";
+import type { PdfRegion } from "./pdfium-worker.js";
 
+/** The PNG encoder and the region cut run in the PDFium worker thread, where the page is drawn (shelf-followups 08). */
+export { cropRgba, encodePng } from "./pdfium-worker.js";
 export { PdfQueueFullError };
 /** Resource counters (see `pdfium-shared.ts`): the probe and the material share them. */
 export const pdfMaterialResources = pdfiumResources;
@@ -93,130 +97,22 @@ interface Engine {
   getPageGeometry(document: Doc, page: Page): Task<PdfGeometryPage>;
   extractText(document: Doc, pageIndexes: number[]): Task<string>;
   getBookmarks(document: Doc): Task<{ bookmarks: Bookmark[] }>;
+  /** Drawn and encoded in the worker thread; `crop` is the region of the rendered page to encode. */
   renderPage(
     document: Doc,
     page: Page,
-    options: { scaleFactor: number; dpr: number; imageType: string; withAnnotations: boolean }
-  ): Task<Buffer>;
+    options: {
+      scaleFactor: number;
+      dpr: number;
+      imageType: string;
+      withAnnotations: boolean;
+      crop?: PdfRegion;
+    }
+  ): Task<RenderedPng>;
   closeDocument(document: Doc): Task<unknown>;
   destroy(): Task<unknown>;
 }
 const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
-/**
- * A small PNG: Node's zlib is the encoder, no image dependency is added. A page with no transparency (every PDFium
- * page render) is written as 8-bit RGB, or as 8-bit grayscale when every pixel is grey, and each row uses the
- * adaptive filter (None/Sub/Up/Avg/Paeth, whichever leaves the smallest residual), so the bytes shrink a lot against
- * unfiltered RGBA. The result is what both the HTTP route and the model input carry, byte for byte.
- */
-export function encodePng({ width, height, data }: RgbaImage): Buffer {
-  if (
-    !Number.isInteger(width) ||
-    !Number.isInteger(height) ||
-    width < 1 ||
-    height < 1 ||
-    data.length !== width * height * 4
-  )
-    throw new Error("invalid RGBA image");
-  let opaque = true;
-  let gray = true;
-  for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] !== 255) {
-      opaque = false;
-      break;
-    }
-    if (gray && (data[i] !== data[i + 1] || data[i] !== data[i + 2])) gray = false;
-  }
-  const colorType = !opaque ? 6 : gray ? 0 : 2;
-  const bpp = colorType === 6 ? 4 : colorType === 0 ? 1 : 3;
-  const stride = width * bpp;
-  const raw = (y: number): Uint8Array => {
-    const row = new Uint8Array(stride);
-    const base = y * width * 4;
-    for (let x = 0; x < width; x++) {
-      const at = base + x * 4;
-      if (bpp === 4)
-        row.set([data[at] ?? 0, data[at + 1] ?? 0, data[at + 2] ?? 0, data[at + 3] ?? 0], x * 4);
-      else if (bpp === 3) row.set([data[at] ?? 0, data[at + 1] ?? 0, data[at + 2] ?? 0], x * 3);
-      else row[x] = data[at] ?? 0;
-    }
-    return row;
-  };
-  const paeth = (a: number, b: number, c: number) => {
-    const p = a + b - c;
-    const pa = Math.abs(p - a);
-    const pb = Math.abs(p - b);
-    const pc = Math.abs(p - c);
-    return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
-  };
-  const scanlines = Buffer.alloc(height * (stride + 1));
-  let previous: Uint8Array = new Uint8Array(stride);
-  const candidates = [0, 1, 2, 3].map(() => new Uint8Array(stride));
-  const candidate4 = new Uint8Array(stride);
-  for (let y = 0; y < height; y++) {
-    const current = raw(y);
-    const sub = candidates[0] as Uint8Array;
-    const up = candidates[1] as Uint8Array;
-    const avg = candidates[2] as Uint8Array;
-    const pae = candidate4;
-    for (let i = 0; i < stride; i++) {
-      const left = i >= bpp ? (current[i - bpp] as number) : 0;
-      const above = previous[i] as number;
-      const upLeft = i >= bpp ? (previous[i - bpp] as number) : 0;
-      const cur = current[i] as number;
-      sub[i] = (cur - left) & 255;
-      up[i] = (cur - above) & 255;
-      avg[i] = (cur - ((left + above) >> 1)) & 255;
-      pae[i] = (cur - paeth(left, above, upLeft)) & 255;
-    }
-    const cost = (row: Uint8Array) => {
-      let sum = 0;
-      for (let i = 0; i < stride; i++) {
-        const v = row[i] as number;
-        sum += v < 128 ? v : 256 - v;
-      }
-      return sum;
-    };
-    const options: [number, Uint8Array][] = [
-      [0, current],
-      [1, sub],
-      [2, up],
-      [3, avg],
-      [4, pae],
-    ];
-    let best = options[0] as [number, Uint8Array];
-    let bestCost = cost(best[1]);
-    for (const option of options.slice(1)) {
-      const c = cost(option[1]);
-      if (c < bestCost) {
-        best = option;
-        bestCost = c;
-      }
-    }
-    scanlines[y * (stride + 1)] = best[0];
-    scanlines.set(best[1], y * (stride + 1) + 1);
-    previous = current;
-  }
-  const chunk = (type: string, body: Buffer) => {
-    const typed = Buffer.concat([Buffer.from(type), body]);
-    const size = Buffer.alloc(4);
-    size.writeUInt32BE(body.length);
-    const checksum = Buffer.alloc(4);
-    checksum.writeUInt32BE(crc32(typed));
-    return Buffer.concat([size, typed, checksum]);
-  };
-  const header = Buffer.alloc(13);
-  header.writeUInt32BE(width, 0);
-  header.writeUInt32BE(height, 4);
-  header[8] = 8;
-  header[9] = colorType;
-  return Buffer.concat([
-    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
-    chunk("IHDR", header),
-    chunk("IDAT", deflateSync(scanlines)),
-    chunk("IEND", Buffer.alloc(0)),
-  ]);
-}
-
 /**
  * Scale (render pixels per PDF point) that gives the longer edge `longEdge` pixels without exceeding the pixel
  * budget. A page of any size gets a usable scale; nothing is refused for being large or small.
@@ -227,41 +123,10 @@ export function imageScale(width: number, height: number, longEdge: number): num
   return Math.min(byEdge, byPixels);
 }
 
-/** What the image converter of one request records (and the region it cuts out of the rendered page, if any). */
-interface Captured {
-  image?: { width: number; height: number };
-  crop?: { x: number; y: number; width: number; height: number };
-}
-
-/** The pixels of a region (fractions of the rendered, visible page from its top-left); never empty, never outside. */
-export function cropRgba(
-  image: RgbaImage,
-  region: { x: number; y: number; width: number; height: number }
-): RgbaImage {
-  const x0 = Math.min(image.width - 1, Math.max(0, Math.floor(region.x * image.width + 1e-9)));
-  const y0 = Math.min(image.height - 1, Math.max(0, Math.floor(region.y * image.height + 1e-9)));
-  const x1 = Math.min(
-    image.width,
-    Math.max(x0 + 1, Math.ceil((region.x + region.width) * image.width - 1e-9))
-  );
-  const y1 = Math.min(
-    image.height,
-    Math.max(y0 + 1, Math.ceil((region.y + region.height) * image.height - 1e-9))
-  );
-  const width = x1 - x0;
-  const height = y1 - y0;
-  const data = new Uint8Array(width * height * 4);
-  for (let row = 0; row < height; row++) {
-    const from = ((y0 + row) * image.width + x0) * 4;
-    data.set(image.data.subarray(from, from + width * 4), row * width * 4);
-  }
-  return { width, height, data };
-}
-
 async function withEngine<T>(
   bytes: Buffer,
   expectedHash: string,
-  work: (engine: Engine, document: Doc, captured: Captured) => Promise<T>
+  work: (engine: Engine, document: Doc) => Promise<T>
 ): Promise<T> {
   if (!Buffer.isBuffer(bytes) || bytes.length < 1 || bytes.length > PDF_MAX_BYTES)
     throw new PdfMaterialInputError("PDF is empty or larger than 50 MiB");
@@ -276,14 +141,7 @@ async function withEngine<T>(
         const snapshot = Buffer.from(bytes);
         if (sha256(snapshot) !== expectedHash) throw new PdfMaterialContentError();
         const deadline = Date.now() + 60_000;
-        const captured: Captured = {};
-        const engine = await createPdfiumEngine<Engine>((getData, type) => {
-          if (type !== "image/png") throw new Error("PNG only");
-          const raw = getData();
-          const out = captured.crop ? cropRgba(raw, captured.crop) : raw;
-          captured.image = { width: out.width, height: out.height };
-          return Promise.resolve(encodePng(out));
-        }, deadline);
+        const engine = await createPdfiumEngine<Engine>(deadline);
         let document: Doc | undefined;
         try {
           try {
@@ -308,7 +166,7 @@ async function withEngine<T>(
             throw new Error("encrypted PDF is not supported");
           if (document.pageCount < 1 || document.pageCount > PDF_MAX_PAGES)
             throw new Error("PDF page count is outside the supported limit");
-          return await timed(work(engine, document, captured), deadline);
+          return await timed(work(engine, document), deadline);
         } finally {
           if (document) {
             await engine
@@ -522,7 +380,7 @@ export async function renderPdfPageImage(
     );
   if (!Number.isInteger(pageIndex) || pageIndex < 0)
     throw new PdfMaterialInputError("pageIndex must be a zero-based non-negative integer");
-  return withEngine(bytes, expectedHash, async (engine, document, captured) => {
+  return withEngine(bytes, expectedHash, async (engine, document) => {
     if (pageIndex >= document.pageCount)
       throw new PdfMaterialInputError(
         `pageIndex is outside 0..${document.pageCount - 1} (pages are zero-based)`
@@ -538,7 +396,7 @@ export async function renderPdfPageImage(
       throw new Error("PDF page geometry is invalid");
     const { runs } = await engine.getPageTextRuns(document, page).toPromise();
     const scale = imageScale(page.size.width, page.size.height, longEdge);
-    const png = await engine
+    const image = await engine
       .renderPage(document, page, {
         scaleFactor: scale,
         dpr: 1,
@@ -546,14 +404,13 @@ export async function renderPdfPageImage(
         withAnnotations: false,
       })
       .toPromise();
-    if (!captured.image) throw new Error("PDF page image was not produced");
     return {
       contentSha256: expectedHash,
       pageIndex,
       pageCount: document.pageCount,
-      png,
-      width: captured.image.width,
-      height: captured.image.height,
+      png: image.png,
+      width: image.width,
+      height: image.height,
       hasTextLayer: runs.length > 0,
       scale,
     };
@@ -590,7 +447,7 @@ export async function renderPdfRegionImage(
     throw new PdfMaterialInputError("pageIndex must be a zero-based non-negative integer");
   if (!Number.isInteger(longEdge) || longEdge < 1)
     throw new PdfMaterialInputError("longEdge must be a positive integer");
-  return withEngine(bytes, expectedHash, async (engine, document, captured) => {
+  return withEngine(bytes, expectedHash, async (engine, document) => {
     if (pageIndex >= document.pageCount)
       throw new PdfMaterialInputError(
         `pageIndex is outside 0..${document.pageCount - 1} (pages are zero-based)`
@@ -609,23 +466,22 @@ export async function renderPdfRegionImage(
     const byEdge = longEdge / regionEdge;
     const byPixels = Math.sqrt(TEXT_PDF_IMAGE_MAX_PIXELS / (page.size.width * page.size.height));
     const scale = Math.min(byEdge, byPixels);
-    captured.crop = region ? rect : undefined;
-    const png = await engine
+    const image = await engine
       .renderPage(document, page, {
         scaleFactor: scale,
         dpr: 1,
         imageType: "image/png",
         withAnnotations: false,
+        ...(region ? { crop: rect } : {}),
       })
       .toPromise();
-    if (!captured.image) throw new Error("PDF page image was not produced");
     return {
       contentSha256: expectedHash,
       pageIndex,
       pageCount: document.pageCount,
-      png,
-      width: captured.image.width,
-      height: captured.image.height,
+      png: image.png,
+      width: image.width,
+      height: image.height,
       scale,
       region: region ?? null,
     };

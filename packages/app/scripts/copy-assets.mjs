@@ -7,6 +7,13 @@
 //    `new URL("./argelander.sty", import.meta.url)` resolves to
 //    dist/argelander.sty (MS4 checkpoint; missing asset = silent
 //    clean-compile fallback that loses the event stream);
+//  - packages/server/dist/pdfium-worker.js is copied to dist/ next to the
+//    bundle — the server's PDFium engine runs in a worker thread
+//    (shelf-followups 08) whose file pdfium-shared.ts finds by
+//    `new URL("./pdfium-worker.js", import.meta.url)`, i.e. dist/ once the
+//    server is inlined into bin.js; the file is self-contained (Node
+//    built-ins and the @embedpdf/* runtime dependencies only). Missing, every
+//    PDF upload, page and text read fails;
 //  - the root README.md / LICENSE are copied to the package root because npm
 //    only auto-includes them from there (both are git-ignored here).
 // The @argelanderspace/web devDependency exists purely so `pnpm -r build`
@@ -45,6 +52,14 @@ if (!existsSync(stySrc)) {
   throw new Error("packages/infra/src/tex/argelander.sty is missing");
 }
 copyFileSync(stySrc, join(appRoot, "dist", "argelander.sty"));
+
+const pdfiumWorkerSrc = join(repoRoot, "packages", "server", "dist", "pdfium-worker.js");
+if (!existsSync(pdfiumWorkerSrc)) {
+  throw new Error(
+    "packages/server/dist/pdfium-worker.js is missing — build @argelanderspace/server first"
+  );
+}
+copyFileSync(pdfiumWorkerSrc, join(appRoot, "dist", "pdfium-worker.js"));
 
 // The tutorial sample (in-app-tutorial ticket 16): the frozen sample project at the repository root goes to
 // dist/tutorial, where infra's bundledTutorialDir finds it in the npm and development layouts (the desktop package

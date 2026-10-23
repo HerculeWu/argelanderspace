@@ -57,7 +57,7 @@ async function probe(bytes: Buffer): Promise<ProbedPdf> {
     if (Date.now() > deadline) throw new Error("PDF parser timed out");
     return result;
   };
-  const engine = await createPdfiumEngine<ProbeEngine>((getImageData) => getImageData(), deadline);
+  const engine = await createPdfiumEngine<ProbeEngine>(deadline);
   const { PdfiumErrorCode } = (await import("@embedpdf/engines/pdfium")) as unknown as {
     PdfiumErrorCode: { Password: number };
   };
