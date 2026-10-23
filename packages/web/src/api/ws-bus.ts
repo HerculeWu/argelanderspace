@@ -112,6 +112,8 @@ function createRouter(send: (frame: object) => void) {
     "text-doc.published": emit,
     "mail.changed": emit,
     "settings.changed": emit,
+    // The Shelf changed through this server (shelf ticket 03); its page is ticket 05: only an explicit `on`.
+    "shelf.changed": emit,
     // A folder the shell picked waits for the user's confirmation (desktop-app ticket 19): only an explicit `on`.
     "host.switch-confirmation": emit,
     // A tutorial entry the host took failed (in-app-tutorial ticket 25): only an explicit `on`.

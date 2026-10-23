@@ -2,12 +2,12 @@
  * The annotations access path of a LaTeX (or text) Doc: the archive authority of the contract
  * (docs/contracts.md "归档权限与 PUT", "内容指纹三态硬规则", "Reader 与 annotations 共同 epoch").
  *
- * `GET`/`PUT /api/paper/:doc_id/annotations` and the Copilot `reader` tool's annotation reads and writes all go
+ * `GET`/`PUT /api/paper/:doc_id/annotations`, the Shelf add (shelf-add.ts) and the Copilot `reader` tool's annotation reads and writes all go
  * through ONE instance of this module, made by `createApp` with the app's one annotationLock (the same lock the text
  * Doc publication, the PDF annotation writes, the annotation risk read and the Doc delete description take) and its
  * DocMutationRegistry. `onChanged` is the app's `annotation.changed` notification.
  *
- * Only `commit` and `read` may archive (through core's idempotent `ensureCurrentAnnotationsWithDocument`); `peek`
+ * Only `commit`, `read` and the `ensure` of `together` (the Shelf add's one critical section) may archive (through core's idempotent `ensureCurrentAnnotationsWithDocument`); `peek`
  * is the read-only twin for the Copilot's background read. Every failure to compute the fingerprint or to read the
  * stored file is an `AnnotationsError` thrown to the caller (a system error, never a mismatch) and leaves the user's
  * data as it was, except the contract's intermediate state (code `new_current`: the old batch is safely archived,
@@ -51,6 +51,14 @@ export type AnnotationsPeek =
   | { kind: "pdf" }
   | { kind: "ok"; reading: ReturnType<typeof readDocumentForReading> };
 
+/** What `together` hands its caller inside the critical section. */
+export interface TogetherAccess {
+  busy(docId: string): boolean;
+  ensure(
+    docId: string
+  ): { kind: "busy" } | { kind: "pdf" } | { kind: "ok"; epoch: AnnotationsEpoch };
+}
+
 export interface AnnotationAccessDeps {
   paths: LibraryPaths;
   /** The app's one annotationLock (received, never made here). */
@@ -82,6 +90,16 @@ export interface AnnotationAccess {
    * lock and refused while a content mutation is queued or running: the Copilot's background read.
    */
   peek(docId: string): Promise<AnnotationsPeek>;
+  /**
+   * One critical section on the lock for a caller that reads several Docs' current annotations together with other
+   * files of the project, so that everything it reads is of one moment (the Shelf add, shelf ticket 03). `run` must be
+   * synchronous (no await: the section ends when it returns). It gets the content-busy check and `ensure`, the very
+   * ensure of `read` — idempotent, the only step that may archive, and it announces `invalidate` when it did — which
+   * refuses a busy Doc itself (`busy`: nothing ensured, nothing archived), refuses a PDF Doc (`pdf`) and throws the
+   * same `AnnotationsError`/`DocMetadataError` as `read`. The caller also checks `busy` for every Doc before its first
+   * `ensure`, so one busy Doc stops the whole read before any other Doc was archived.
+   */
+  together<T>(run: (access: TogetherAccess) => T): Promise<T>;
   /** What a system error of this path answers; the detail names no path. Each code has its own, accurate, message. */
   describeError(err: AnnotationsError): { status: 404 | 500; detail: string };
 }
@@ -152,6 +170,21 @@ export function createAnnotationAccess(deps: AnnotationAccessDeps): AnnotationAc
       return { kind: "ok", reading: readDocumentForReading(paths.dataDir, docId) };
     });
 
+  const together = <T>(run: (access: TogetherAccess) => T): Promise<T> =>
+    lock.run(
+      (): T =>
+        run({
+          busy: (docId) => docMutations.isDocumentContentBusy(docId),
+          ensure: (docId) => {
+            if (docMutations.isDocumentContentBusy(docId)) return { kind: "busy" };
+            if (isPdf(docId)) return { kind: "pdf" };
+            const epoch = ensureCurrentAnnotationsWithDocument(paths.dataDir, docId);
+            if (epoch.invalidated) onChanged(docId, "invalidate");
+            return { kind: "ok", epoch };
+          },
+        })
+    );
+
   const describeError = (err: AnnotationsError): { status: 404 | 500; detail: string } => {
     switch (err.code) {
       case "corrupt_ir":
@@ -188,5 +221,5 @@ export function createAnnotationAccess(deps: AnnotationAccessDeps): AnnotationAc
     }
   };
 
-  return { commit, read, peek, describeError };
+  return { commit, read, peek, together, describeError };
 }
