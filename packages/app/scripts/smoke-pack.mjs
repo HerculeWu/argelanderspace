@@ -520,7 +520,7 @@ const seen = [];
 // entry whose gate holds in the smoke's full workbench -- Mail is not mounted (no account), so there is no `mail`. File
 // and command tools: contracts' FILE_TOOL_NAMES minus the other platform's shell, offered unless config.toml says "off"
 // (default "ask": the same tools, each call confirmed). A new tool must be added here on purpose.
-const APP_TOOLS = ["argument", "library", "plan", "reader", "text", "workspace", "writer"];
+const APP_TOOLS = ["argument", "library", "plan", "reader", "shelf", "text", "workspace", "writer"];
 const FILE_TOOLS_ASK = FILE_TOOL_NAMES.filter(
   (n) => n !== (process.platform === "win32" ? "bash" : "powershell")
 );
