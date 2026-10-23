@@ -13,6 +13,7 @@ import { ImportDialog } from "../src/library/ImportDialog";
 import { LibraryView } from "../src/library/LibraryView";
 import type { LibraryData, LibraryRef, ManualWorkResponse } from "../src/library/types";
 import { identifierIds, projectHas } from "../src/shelf/already-on-shelf";
+import { projectWorkFor } from "../src/shelf/ShelfDialog";
 import { ShelfAvailabilityValue } from "../src/shelf/availability";
 import { ENTRY_A, ENTRY_B, json, must, OK_ROW, OTHER_ROW, type Route, stubFetch } from "./shelf-fixtures";
 
@@ -536,6 +537,18 @@ describe("review: the project already has the paper by arXiv id", () => {
     expect(projectHas({ doi: "10.48550/arXiv.1804.09378" }, [work({ arxiv_id: "1804.09378v2" })])).toBe(true);
     expect(projectHas({ arxiv: "arXiv:1804.09378" }, [work({ doi: "https://doi.org/10.48550/ARXIV.1804.09378" })])).toBe(true);
     expect(projectHas({ arxiv: "1804.09378" }, [work({ arxiv_id: "1804.09379" })])).toBe(false);
+  });
+
+  it("the Shelf dialog's \"in this project\" uses the same rule as the take: DataCite DOI, OpenAlex, and never when two Works match", () => {
+    const work = (over: Partial<LibraryRef>): LibraryRef => ({ ...CREATED, doi: undefined, ...over });
+    const row = (identity: { doi: string | null; arxiv: string | null; openalex: string | null }) => ({ identity }) as never;
+    const datacite = work({ id: "w1", doi: "10.48550/arXiv.2301.00001" });
+    expect(projectWorkFor(row({ doi: null, arxiv: "2301.00001", openalex: null }), [datacite])?.id).toBe("w1");
+    const byOpenAlex = work({ id: "w2", openalex_id: "W123" });
+    expect(projectWorkFor(row({ doi: null, arxiv: null, openalex: "W123" }), [byOpenAlex])?.id).toBe("w2");
+    const a = work({ id: "a", doi: "10.1/x" });
+    const b = work({ id: "b", arxiv_id: "2301.00001" });
+    expect(projectWorkFor(row({ doi: "10.1/x", arxiv: "2301.00001", openalex: null }), [a, b])).toBeUndefined();
   });
 
   it("exploration: a candidate whose arXiv id the project has is not looked up", async () => {

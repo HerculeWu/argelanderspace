@@ -55,10 +55,20 @@ export function identifierIds(value: string): ShelfIds | null {
 
 /** The project already has this paper (same DOI or arXiv id): adding it only opens that Work, so no hint. */
 export function projectHas(ids: ShelfIds, works: readonly LibraryRef[]): boolean {
+  return projectWorksMatching(ids, works).length > 0;
+}
+
+/** The project Works that are this paper by DOI, arXiv id or OpenAlex id, compared as the Shelf and the take do. */
+export function projectWorksMatching(ids: ShelfIds, works: readonly LibraryRef[]): LibraryRef[] {
   const a = identity(ids.doi, ids.arxiv);
-  return works.some((w) => {
+  const oa = (ids.openalex ?? "").trim().toUpperCase();
+  return works.filter((w) => {
     const b = identity(w.doi, w.arxiv_id);
-    return (a.doi !== "" && a.doi === b.doi) || (a.arxiv !== "" && a.arxiv === b.arxiv);
+    return (
+      (a.doi !== "" && a.doi === b.doi) ||
+      (a.arxiv !== "" && a.arxiv === b.arxiv) ||
+      (oa !== "" && oa === (w.openalex_id ?? "").trim().toUpperCase())
+    );
   });
 }
 

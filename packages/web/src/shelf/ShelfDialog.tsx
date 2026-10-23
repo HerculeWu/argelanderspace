@@ -7,6 +7,7 @@ import type { LibraryRef } from "../library/types";
 import { ActionButton, Badge, Dialog, InlineMessage } from "../ui";
 import { AnnotationText, DocKindIcon, formatTime } from "./AddToShelf";
 import { damageText, formatBytes, shelfFailureLines, type Translate } from "./format";
+import { projectWorksMatching } from "./already-on-shelf";
 import "./shelf.css";
 
 /*
@@ -39,14 +40,13 @@ type ListState = { state: "loading" } | { state: "error"; failure: ShelfFailure 
 type Pane = { kind: "summary" } | { kind: "take" } | { kind: "result"; result: ShelfTakeResult };
 type OkRow = Extract<ShelfListRow, { status: "ok" }>;
 
-const norm = (s: string | null | undefined) => (s ?? "").trim().toLowerCase();
-const normArxiv = (s: string | null | undefined) => norm(s).replace(/^arxiv:/, "").replace(/v\d+$/, "");
-
-/** The project Work that is this entry's paper (same DOI or arXiv id), if any. */
+/**
+ * The project Work that is this entry's paper, by the take's own rule (DOI, arXiv id, OpenAlex id). None when two or
+ * more Works match: the take then refuses (`multiple_works`), so "it merges into it" would not be true.
+ */
 export function projectWorkFor(row: ShelfEntrySummary, works: readonly LibraryRef[]): LibraryRef | undefined {
-  const doi = norm(row.identity.doi);
-  const arxiv = normArxiv(row.identity.arxiv);
-  return works.find((w) => (doi !== "" && norm(w.doi) === doi) || (arxiv !== "" && normArxiv(w.arxiv_id) === arxiv));
+  const found = projectWorksMatching(row.identity, works);
+  return found.length === 1 ? found[0] : undefined;
 }
 
 function matches(row: ShelfListRow, q: string): boolean {
