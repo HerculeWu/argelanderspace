@@ -860,11 +860,11 @@ input, textarea { font-family: inherit; color: inherit; }
    link (Shell.tsx, owner-review-observations ticket 11). Both sit outside the reader's .reader-root, so they take the
    shell's tokens. Fixed under the title bar, above the dialog overlay (z-index 250): the Reader's .ann-toast sits at the
    bottom of its own pane, whose height and wrapping vary, so they never meet. The two notices can be up at once (a Back
-   to a deleted Doc whose pane's leave is refused): the deleted notice takes the second slot (--second), one line lower,
-   so neither covers the other. Its own entry animation keeps the centring transform. */
+   to a deleted Doc whose pane's leave is refused): the later one in the DOM (the deleted notice follows the leave dialog's toast) moves one
+   line lower, so neither covers the other; alone, either sits in the usual slot. Its own entry animation keeps the centring transform. */
 .app-status-toast { position: fixed; left: 50%; top: 56px; transform: translateX(-50%); z-index: 300; max-width: 92%; padding: 8px 14px; border-radius: var(--radius-lg); background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-pop); font-size: var(--fs-sm); color: var(--text); animation: appStatusToastIn .2s ease; }
 @keyframes appStatusToastIn { from { transform: translate(-50%, -5px); opacity: 0; } to { transform: translateX(-50%); opacity: 1; } }
-.app-status-toast--second { top: 100px; }
+.app-status-toast ~ .app-status-toast { top: 100px; }
 .plan-notice { position: absolute; left: 50%; bottom: 68px; transform: translateX(-50%); z-index: 80; padding: 8px 14px; border-radius: var(--radius-lg); background: var(--surface); border: 1px solid var(--warn); box-shadow: var(--shadow-pop); font-size: var(--fs-sm); color: var(--warn); }
 
 /* ---------- adaptive narrow split panes ---------- */

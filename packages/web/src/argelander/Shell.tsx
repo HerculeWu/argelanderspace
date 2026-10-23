@@ -246,7 +246,7 @@ export function Shell() {
         {leaveDialog}
         {/* Back/Forward or a deep link reached a Doc that is gone (ticket 11): the app's status toast, as the leave guard's */}
         {docGoneNotice && (
-          <div key={docGoneNotice.seq} className="app-status-toast app-status-toast--second" role="status" data-ui="doc-gone-notice">
+          <div key={docGoneNotice.seq} className="app-status-toast" role="status" data-ui="doc-gone-notice">
             {t("shell.docGone", { id: docGoneNotice.docId })}
           </div>
         )}
