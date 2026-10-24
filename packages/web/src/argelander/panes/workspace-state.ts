@@ -997,6 +997,11 @@ export function createWorkspaceState(deps: WorkspaceStateDeps) {
       batch(() => {
         // a newer read (an arrival, library.changed) that answered first keeps its list
         applyRead(mine, list);
+        // A Doc opened while the list was read (the person's open, the Copilot's open_doc: it wrote `/doc/<id>`) stays open
+        // with its address, over the boot's own deep link or default too: the later open wins. The current Doc starts
+        // empty and only an open sets it, so a page that merely pushed an exploration or a graph meanwhile still gets the
+        // boot's choice (shelf-followups 11).
+        if (own.currentDoc !== null) return;
         if (route) {
           // A gone Doc (ticket 11): not opened; the Library page, the plain URL and the notice, as for Back/Forward to it.
           if (gone) {

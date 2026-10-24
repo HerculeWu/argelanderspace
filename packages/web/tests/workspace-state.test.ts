@@ -321,6 +321,72 @@ describe("boot", () => {
     }
   });
 
+  it("a Doc opened while the list was being read stays open with its address: the boot picks no default over it (shelf-followups 11)", async () => {
+    // the person's open (a Doc pane's Reader action, the task drawer): the list answers after it
+    for (const url of ["/", "/?doc=d1"]) {
+      let answer!: (papers: string[]) => void;
+      const t = setup({ url, fetchPapers: () => new Promise((resolve) => (answer = resolve)) });
+      await flush();
+      expect(t.x.openDoc("d2")).toBe(true);
+      expect(t.x.getState().currentDoc).toBe("d2");
+      answer(["d1", "d2"]);
+      await flush();
+      expect(t.x.getState()).toMatchObject({ papers: ["d1", "d2"], currentDoc: "d2" });
+      expect(t.views()).toEqual(["doc"]);
+      expect(t.browser.url()).toBe("/doc/d2");
+      for (const cleanup of cleanups.splice(0)) cleanup();
+    }
+  });
+
+  it("a Doc opened while the list was being read also outranks the boot's own Doc deep link, whether that Doc is there or gone (shelf-followups 11)", async () => {
+    for (const url of ["/doc/d1", "/doc/gone"]) {
+      let answer!: (papers: string[]) => void;
+      const t = setup({ url, fetchPapers: () => new Promise((resolve) => (answer = resolve)) });
+      await flush();
+      expect(t.x.openDoc("d2")).toBe(true);
+      answer(["d1", "d2"]);
+      await flush();
+      expect(t.x.getState()).toMatchObject({ papers: ["d1", "d2"], currentDoc: "d2" });
+      expect(t.views()).toEqual(["doc"]);
+      expect(t.browser.url()).toBe("/doc/d2");
+      for (const cleanup of cleanups.splice(0)) cleanup();
+    }
+  });
+
+  it("the Copilot's open_doc while the boot's list is still out: its own read answers first, and the boot's later list keeps that Doc", async () => {
+    const answers: ((papers: string[]) => void)[] = [];
+    let calls = 0;
+    const t = setup({
+      fetchPapers: () => (++calls === 1 ? new Promise((resolve) => answers.push(resolve)) : Promise.resolve(["d1", "d2"])),
+    });
+    await flush();
+    expect(await t.x.runWorkspaceAction({ action: "open_doc", docId: "d2" })).toEqual({ ok: true });
+    expect(t.browser.url()).toBe("/doc/d2");
+    answers[0]!(["d1", "d2"]); // the boot's read, sent first, answers last
+    await flush();
+    expect(t.x.getState()).toMatchObject({ papers: ["d1", "d2"], currentDoc: "d2" });
+    expect(t.views()).toEqual(["doc"]);
+    expect(t.browser.url()).toBe("/doc/d2");
+  });
+
+  it("only an exploration or a graph pushed while the list was being read (no Doc opened): the boot still picks the default Doc", async () => {
+    for (const [boot, url, want] of [
+      ["/", "/#explore/2020X", "d1"],
+      ["/?doc=d2", "/#argument/w1", "d2"],
+    ] as const) {
+      let answer!: (papers: string[]) => void;
+      const t = setup({ url: boot, panes: [{ id: 1, view: "library", size: 1 }], fetchPapers: () => new Promise((resolve) => (answer = resolve)) });
+      await flush();
+      t.browser.port.push(url);
+      answer(["d1", "d2"]);
+      await flush();
+      expect(t.x.getState()).toMatchObject({ papers: ["d1", "d2"], currentDoc: want });
+      expect(t.views()).toEqual(["library"]);
+      expect(t.browser.url()).toBe(url);
+      for (const cleanup of cleanups.splice(0)) cleanup();
+    }
+  });
+
   it("stopped before the list arrives (React StrictMode's first mount), nothing is applied and nothing listens", async () => {
     let answer!: (papers: string[]) => void;
     const t = setup({ url: "/doc/d1", fetchPapers: () => new Promise((resolve) => (answer = resolve)) });
