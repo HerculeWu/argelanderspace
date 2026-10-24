@@ -48,7 +48,6 @@ function tool(shelf: Partial<ShelfOpDeps>, onAsk: () => void = () => {}) {
     take: { take: vi.fn(), preview: vi.fn() } as never,
     list: vi.fn(async () => [okRow]),
     work: () => ({ id: WORK, title: "A", docIds: ["paper-a"] }),
-    inTutorialProject: () => false,
     ...shelf,
   };
   const confirm = {

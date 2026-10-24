@@ -20,7 +20,6 @@ import { argumentBus, clearArgumentUrl, pushArgumentUrl } from "../lib/argument-
 import { ArgumentGraphMode, type ArgumentModeControl } from "../argument/ArgumentGraphMode";
 import type { ArgumentPage } from "../argument/page";
 import type { LibraryData, LibraryRef } from "./types";
-import { useShelfAvailable } from "../shelf/availability";
 import { ShelfDialog } from "../shelf/ShelfDialog";
 import { shelfTakeTarget } from "../shelf/already-on-shelf";
 
@@ -297,8 +296,7 @@ function LibraryBody({
   // (created/existing) ref is selected by its work id — the saved graph node
   // carries the same id, and the WS library.changed reload lands right after.
   const [importMode, setImportMode] = useState<ImportMode | null>(null);
-  // The Shelf dialog (shelf ticket 05): the import menu's fourth item; never in the tutorial Project.
-  const shelfAvailable = useShelfAvailable();
+  // The Shelf dialog (shelf ticket 05): the import menu's fourth item.
   // `candidate`: opened from an exploration candidate's already-on-Shelf hint (ticket 06); a take of one of its hits
   // (`hitIds`) marks it as saved, a take of any other entry does not.
   const [shelfOpen, setShelfOpen] = useState<{ entryId?: string; take?: boolean; candidate?: { bibcode: string; hitIds: string[] } } | null>(null);
@@ -527,7 +525,7 @@ function LibraryBody({
   // The Shelf dialog, from the import menu, the identifier dialog's hint or an exploration candidate's hint (tickets
   // 05, 06). A take from the exploration stays there: the candidate is marked as in the Library; only "View in
   // Library" leaves it, as the candidate's own button does.
-  const shelfDialog = shelfOpen && shelfAvailable && (
+  const shelfDialog = shelfOpen && (
     <ShelfDialog
       entryId={shelfOpen.entryId}
       take={shelfOpen.take}
@@ -624,28 +622,26 @@ function LibraryBody({
                     </span>
                   </ActionButton>
                 ))}
-                {shelfAvailable && (
-                  <ActionButton
-                    unstyled
-                    mode="text"
-                    label={t("library.import.shelf.title")}
-                    tooltip={t("library.import.shelf.title")}
-                    data-ui="import-option" data-ui-key="shelf"
-                    className="import-opt"
-                    onClick={() => {
-                      setShelfOpen({});
-                      setImportOpen(false);
-                    }}
-                  >
-                    <span className="import-ic">
-                      <Icon name="archive" cls="ico-sm" />
-                    </span>
-                    <span className="import-body">
-                      <span className="import-t">{t("library.import.shelf.title")}</span>
-                      <span className="import-d">{t("library.import.shelf.desc")}</span>
-                    </span>
-                  </ActionButton>
-                )}
+                <ActionButton
+                  unstyled
+                  mode="text"
+                  label={t("library.import.shelf.title")}
+                  tooltip={t("library.import.shelf.title")}
+                  data-ui="import-option" data-ui-key="shelf"
+                  className="import-opt"
+                  onClick={() => {
+                    setShelfOpen({});
+                    setImportOpen(false);
+                  }}
+                >
+                  <span className="import-ic">
+                    <Icon name="archive" cls="ico-sm" />
+                  </span>
+                  <span className="import-body">
+                    <span className="import-t">{t("library.import.shelf.title")}</span>
+                    <span className="import-d">{t("library.import.shelf.desc")}</span>
+                  </span>
+                </ActionButton>
               </div>
             )}
           </div>

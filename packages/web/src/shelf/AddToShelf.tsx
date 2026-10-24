@@ -7,7 +7,6 @@ import { addToShelf, fetchAddCandidates, fetchPdfAnnotationsForShelf, lookupShel
 import { Icon } from "../lib/icons";
 import type { LibraryRef } from "../library/types";
 import { ActionButton, Badge, Dialog, InlineMessage } from "../ui";
-import { useShelfAvailable } from "./availability";
 import { counts, formatBytes, shelfFailureLines, type Translate } from "./format";
 import { dismissIngestPrompt, useIngestPrompt } from "./ingest-prompt";
 import "./shelf.css";
@@ -92,11 +91,10 @@ export interface AddedNotice {
 
 /**
  * The Work detail's Shelf parts: the head button, the dialog, the result line under the title and the ingest reminder
- * for the Full text tab. All null in the tutorial Project (and until that is known).
+ * for the Full text tab.
  */
 export function useWorkShelf(work: LibraryRef): { button: ReactNode; dialog: ReactNode; feedback: ReactNode; ingestPrompt: ReactNode } {
   const { t } = useTranslation();
-  const available = useShelfAvailable();
   const [open, setOpen] = useState(false);
   const [fromPrompt, setFromPrompt] = useState(false);
   const [notice, setNotice] = useState<AddedNotice | null>(null);
@@ -105,7 +103,6 @@ export function useWorkShelf(work: LibraryRef): { button: ReactNode; dialog: Rea
     setOpen(false);
     setNotice(null);
   }, [work.id]);
-  if (!available) return { button: null, dialog: null, feedback: null, ingestPrompt: null };
   const openDialog = (viaPrompt: boolean) => {
     setNotice(null);
     setFromPrompt(viaPrompt);

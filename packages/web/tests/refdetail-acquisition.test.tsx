@@ -29,6 +29,9 @@ vi.mock("../src/api/library", () => ({
   patchRef: h.patchRef,
 }));
 
+// The Work detail's add-to-Shelf button asks the Shelf about the paper; these tests are not about it.
+vi.mock("../src/api/shelf", async (importOriginal) => ({ ...(await importOriginal<typeof import("../src/api/shelf")>()), lookupShelf: () => null }));
+
 vi.mock("../src/api/annotations", () => ({
   deletePaperDoc: vi.fn(),
   fetchAnnotations: h.fetchAnnotations,

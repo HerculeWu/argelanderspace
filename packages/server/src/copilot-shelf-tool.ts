@@ -14,8 +14,6 @@
  * again (`copilot-confirmations/shelf.ts`), the tool checks once more before writing, and the server compares under
  * its own locks (`confirmation_changed`, `plan_changed`, `rev_mismatch`): a difference writes nothing, and the model is
  * told so and may ask again (a new card).
- *
- * The tool is not offered in the tutorial project (contracts「文献仓」「教程」), decided when a run starts.
  */
 import {
   type CopilotOperation,
@@ -61,8 +59,6 @@ export interface ShelfOpDeps {
   list(): Promise<ShelfListRow[]>;
   /** A Work of this project, as the library lists it; "error" when the library cannot be read. */
   work(workId: string): { id: string; title: string; docIds: string[] } | null | "error";
-  /** Whether the open project is the tutorial project (then the tool is not offered). */
-  inTutorialProject(): boolean;
 }
 
 export interface ShelfToolContext extends ToolHostContext {

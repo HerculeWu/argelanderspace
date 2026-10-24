@@ -254,7 +254,7 @@ describe("LibraryView import menu (Stage 13)", () => {
     vi.unstubAllGlobals();
   });
 
-  it("offers the three real entries (no browser-capture placeholder) and opens the dialog", async () => {
+  it("offers the four real entries (no browser-capture placeholder) and opens the dialog", async () => {
     const { container } = render(
       <WorkspaceProvider value={WORKSPACE}>
         <LibraryView />
@@ -264,8 +264,9 @@ describe("LibraryView import menu (Stage 13)", () => {
 
     fireEvent.click(container.querySelector(".lib-import .btn")!);
     const opts = [...container.querySelectorAll(".import-opt")].map((b) => b.textContent);
-    expect(opts).toHaveLength(3);
+    expect(opts).toHaveLength(4);
     expect(opts.join()).toContain("从 DOI / arXiv ID");
+    expect(opts.join()).toContain("从文献仓");
     expect(opts.join()).toContain("从 ADS bibcode");
     expect(opts.join()).toContain("导入 BibTeX");
     expect(opts.join()).not.toContain("浏览器");

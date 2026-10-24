@@ -191,7 +191,6 @@ describe("the Copilot list", () => {
       // what app.ts wires: the rows of the route, over the real store
       list: async () => shelfListRows(store, await store.list()),
       work: () => null,
-      inTutorialProject: () => false,
     };
     const tool = createShelfTool({
       admitting: () => true,

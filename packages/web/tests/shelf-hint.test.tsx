@@ -14,7 +14,6 @@ import { LibraryView } from "../src/library/LibraryView";
 import type { LibraryData, LibraryRef, ManualWorkResponse } from "../src/library/types";
 import { identifierIds, projectHas, ShelfHint } from "../src/shelf/already-on-shelf";
 import { projectWorkFor } from "../src/shelf/ShelfDialog";
-import { ShelfAvailabilityValue } from "../src/shelf/availability";
 import { ENTRY_A, ENTRY_B, json, must, OK_ROW, OTHER_ROW, type Route, stubFetch } from "./shelf-fixtures";
 
 const h = vi.hoisted(() => ({ createWorks: vi.fn<(req: unknown) => Promise<ManualWorkResponse | null>>() }));
@@ -66,14 +65,12 @@ afterEach(() => {
 
 // ------------------------------------------------------------------------------------ identifier dialog ----
 
-function openDialog(available: boolean | undefined, works: LibraryRef[] = []) {
+function openDialog(works: LibraryRef[] = []) {
   const onResolved = vi.fn();
   const onClose = vi.fn();
   const onTakeFromShelf = vi.fn();
   render(
-    <ShelfAvailabilityValue value={available}>
-      <ImportDialog mode="identifier" onClose={onClose} onResolved={onResolved} works={works} onTakeFromShelf={onTakeFromShelf} />
-    </ShelfAvailabilityValue>
+    <ImportDialog mode="identifier" onClose={onClose} onResolved={onResolved} works={works} onTakeFromShelf={onTakeFromShelf} />
   );
   const submit = (value: string) => {
     fireEvent.change(must('[data-ui="import-input"]'), { target: { value } });
@@ -85,7 +82,7 @@ function openDialog(available: boolean | undefined, works: LibraryRef[] = []) {
 describe("identifier dialog", () => {
   it("an exact DOI hit: after submit (not while typing) the hint says what the entry carries; nothing is created; Take opens its take step", async () => {
     const fetchMock = stubFetch(shelfRoutes(gaiaLookup));
-    const { onTakeFromShelf, onClose, submit } = openDialog(true);
+    const { onTakeFromShelf, onClose, submit } = openDialog();
     fireEvent.change(must('[data-ui="import-input"]'), { target: { value: "https://doi.org/10.1051/GAIA.2018" } });
     expect(lookups(fetchMock)).toEqual([]); // typing asks nothing (review Q6)
     submit("https://doi.org/10.1051/GAIA.2018");
@@ -113,7 +110,7 @@ describe("identifier dialog", () => {
     expect(identifierIds("1804.09378")).toBeNull();
     expect(identifierIds("Gaia Data Release 2")).toBeNull();
     stubFetch(shelfRoutes(gaiaLookup));
-    const { submit } = openDialog(true);
+    const { submit } = openDialog();
     submit("arXiv:1804.09378v2");
     await waitFor(() => must('[data-ui="already-on-shelf-hint"]'));
     expect(h.createWorks).not.toHaveBeenCalled();
@@ -122,7 +119,7 @@ describe("identifier dialog", () => {
   it("only the same title is not the same paper: no hint, the add goes ahead as usual", async () => {
     // a Shelf entry with exactly this paper's title, but another DOI: the lookup (identity only) has nothing
     const fetchMock = stubFetch(shelfRoutes(gaiaLookup));
-    const { onResolved, onClose, submit } = openDialog(true);
+    const { onResolved, onClose, submit } = openDialog();
     submit("10.9999/other-gaia-paper");
     await waitFor(() => expect(onResolved).toHaveBeenCalledWith(CREATED));
     expect(onClose).toHaveBeenCalled();
@@ -133,7 +130,7 @@ describe("identifier dialog", () => {
 
   it("declining adds as usual (the same request, not asked again)", async () => {
     const fetchMock = stubFetch(shelfRoutes(gaiaLookup));
-    const { onResolved, onTakeFromShelf, submit } = openDialog(true);
+    const { onResolved, onTakeFromShelf, submit } = openDialog();
     submit("10.1051/gaia.2018");
     await waitFor(() => must('[data-ui="already-on-shelf-hint"]'));
     fireEvent.click(must('[data-ui="import-as-usual"]'));
@@ -146,7 +143,7 @@ describe("identifier dialog", () => {
 
   it("editing the identifier takes the hint away; the next submit asks again", async () => {
     const fetchMock = stubFetch(shelfRoutes(gaiaLookup));
-    const { submit } = openDialog(true);
+    const { submit } = openDialog();
     submit("10.1051/gaia.2018");
     await waitFor(() => must('[data-ui="already-on-shelf-hint"]'));
     fireEvent.change(must('[data-ui="import-input"]'), { target: { value: "10.1051/gaia.2018 " } });
@@ -156,23 +153,11 @@ describe("identifier dialog", () => {
     await waitFor(() => must('[data-ui="already-on-shelf-hint"]'));
   });
 
-  it("the tutorial Project (or not known yet): no lookup, the usual add", async () => {
-    for (const available of [false, undefined]) {
-      const fetchMock = stubFetch(shelfRoutes(gaiaLookup));
-      h.createWorks.mockClear();
-      const { onResolved, submit } = openDialog(available);
-      submit("10.1051/gaia.2018");
-      await waitFor(() => expect(onResolved).toHaveBeenCalledWith(CREATED));
-      expect(fetchMock).not.toHaveBeenCalled();
-      cleanup();
-    }
-  });
-
   it("a lookup that fails (refused or no answer) does not hold the add up: it goes ahead as usual", async () => {
     for (const broken of [() => json({ detail: "x", code: "shelf_unreadable" }, 500), () => Promise.reject(new TypeError("network down"))]) {
       stubFetch((url) => (url.startsWith("/api/shelf/lookup?") ? broken() : undefined));
       h.createWorks.mockClear();
-      const { onResolved, submit } = openDialog(true);
+      const { onResolved, submit } = openDialog();
       submit("10.1051/gaia.2018");
       await waitFor(() => expect(onResolved).toHaveBeenCalledWith(CREATED));
       expect(h.createWorks).toHaveBeenCalledTimes(1);
@@ -186,7 +171,7 @@ describe("identifier dialog", () => {
     stubFetch(
       shelfRoutes(() => json({ entries: [lookupHit(GAIA_ROW, ["doi"]), lookupHit(other, ["arxiv"])] }), (url) => (url === `/api/shelf/entries/${ENTRY_B}` ? json(entryBody(other)) : undefined))
     );
-    const { onTakeFromShelf, submit } = openDialog(true);
+    const { onTakeFromShelf, submit } = openDialog();
     submit("10.1051/gaia.2018");
     const hint = await waitFor(() => must('[data-ui="already-on-shelf-hint"]'));
     expect(hint.textContent).toContain("文献仓里有 2 个条目是这一篇");
@@ -198,7 +183,7 @@ describe("identifier dialog", () => {
 
   it("an entry whose summary cannot be read is still offered, without counts", async () => {
     stubFetch(shelfRoutes(gaiaLookup, (url) => (url === `/api/shelf/entries/${ENTRY_A}` ? json({ detail: "x" }, 500) : undefined)));
-    const { submit } = openDialog(true);
+    const { submit } = openDialog();
     submit("10.1051/gaia.2018");
     const hint = await waitFor(() => must('[data-ui="already-on-shelf-hint"]'));
     expect(hint.textContent).toContain("直接取入，免重新摄入？");
@@ -207,7 +192,7 @@ describe("identifier dialog", () => {
 
   it("the project already has this paper: no hint (the add opens that Work)", async () => {
     const fetchMock = stubFetch(shelfRoutes(gaiaLookup));
-    const { onResolved, submit } = openDialog(true, [{ ...CREATED, doi: "10.1051/GAIA.2018" }]);
+    const { onResolved, submit } = openDialog([{ ...CREATED, doi: "10.1051/GAIA.2018" }]);
     submit("10.1051/gaia.2018");
     await waitFor(() => expect(onResolved).toHaveBeenCalled());
     expect(lookups(fetchMock)).toEqual([]);
@@ -281,12 +266,10 @@ function libraryRoutes(extra?: Route) {
   );
 }
 const workspace = { openDoc: () => {}, docDeleted: () => {}, currentDoc: null } as unknown as Workspace;
-function renderLibrary(available: boolean | undefined) {
+function renderLibrary() {
   return render(
     <WorkspaceProvider value={workspace}>
-      <ShelfAvailabilityValue value={available}>
-        <LibraryView />
-      </ShelfAvailabilityValue>
+      <LibraryView />
     </WorkspaceProvider>
   );
 }
@@ -294,7 +277,7 @@ function renderLibrary(available: boolean | undefined) {
 describe("in the Library", () => {
   it("identifier dialog → Take from Shelf… opens the Shelf dialog on that entry's take step", async () => {
     libraryRoutes();
-    renderLibrary(true);
+    renderLibrary();
     await waitFor(() => must(`[data-ui="work-item"][data-ui-key="${SEED_REF.id}"]`));
     fireEvent.click(must('[data-ui="open-import-menu"]'));
     fireEvent.click(must('[data-ui="import-option"][data-ui-key="identifier"]'));
@@ -329,7 +312,7 @@ const candidate = (bibcode: string) => {
 describe("exploration candidate", () => {
   it("Add with an exact DOI hit shows the hint in the candidate's detail instead of adding; no mark on the list or graph", async () => {
     const fetchMock = libraryRoutes();
-    renderLibrary(true);
+    renderLibrary();
     await exploreSeed();
     // nothing about the Shelf before an Add (spec Q22: no marks)
     expect(lookups(fetchMock)).toEqual([]);
@@ -349,7 +332,7 @@ describe("exploration candidate", () => {
 
   it("only the title matches: no lookup (no DOI / arXiv id), the usual add", async () => {
     const fetchMock = libraryRoutes();
-    renderLibrary(true);
+    renderLibrary();
     await exploreSeed();
     candidate("TWIN");
     fireEvent.click(must('[data-ui="save-discovery-paper"]'));
@@ -360,7 +343,7 @@ describe("exploration candidate", () => {
 
   it("declining adds the candidate as usual", async () => {
     libraryRoutes();
-    renderLibrary(true);
+    renderLibrary();
     await exploreSeed();
     candidate("GAIA");
     fireEvent.click(must('[data-ui="save-discovery-paper"]'));
@@ -373,7 +356,7 @@ describe("exploration candidate", () => {
 
   it("the list display's Add asks too and opens the candidate with the hint", async () => {
     libraryRoutes();
-    renderLibrary(true);
+    renderLibrary();
     await exploreSeed();
     fireEvent.click(must('[data-ui="show-discovery-list"]'));
     fireEvent.click(must('[data-ui="save-discovery-paper"][data-ui-key="GAIA"]'));
@@ -383,7 +366,7 @@ describe("exploration candidate", () => {
 
   it("Take from Shelf… takes it in the Shelf dialog and stays in the exploration, the candidate now in the Library", async () => {
     const fetchMock = libraryRoutes();
-    renderLibrary(true);
+    renderLibrary();
     await exploreSeed();
     candidate("GAIA");
     fireEvent.click(must('[data-ui="save-discovery-paper"]'));
@@ -407,20 +390,9 @@ describe("exploration candidate", () => {
     expect(h.createWorks).not.toHaveBeenCalled();
   });
 
-  it("the tutorial Project: no lookup, the usual add", async () => {
-    const fetchMock = libraryRoutes();
-    renderLibrary(false);
-    await exploreSeed();
-    candidate("GAIA");
-    fireEvent.click(must('[data-ui="save-discovery-paper"]'));
-    await waitFor(() => expect(h.createWorks).toHaveBeenCalledWith({ mode: "bibcode", bibcode: "GAIA" }));
-    expect(lookups(fetchMock)).toEqual([]);
-    expect(fetchMock.mock.calls.some(([u]) => String(u).startsWith("/api/shelf"))).toBe(false);
-  });
-
   it("a lookup that fails: the candidate is added as usual", async () => {
     libraryRoutes((url) => (url.startsWith("/api/shelf/lookup?") ? json({ detail: "x", code: "shelf_unreadable" }, 500) : undefined));
-    renderLibrary(true);
+    renderLibrary();
     await exploreSeed();
     candidate("GAIA");
     fireEvent.click(must('[data-ui="save-discovery-paper"]'));
@@ -459,7 +431,7 @@ const gaiaSaved = () => Boolean(document.querySelector('[data-ui="discovery-deta
 describe("review: a take marks the candidate only when it took one of its hits", () => {
   it("back from the take step, another (non-hit) entry taken: the candidate is not marked", async () => {
     libraryRoutes();
-    renderLibrary(true);
+    renderLibrary();
     await exploreSeed();
     await hintAndOpenShelf();
     await waitFor(() => must(`[data-ui="take-from-shelf"][data-ui-key="${ENTRY_A}"]`));
@@ -474,7 +446,7 @@ describe("review: a take marks the candidate only when it took one of its hits",
   it("several hits: taking the other hit marks it", async () => {
     const other = OTHER_ROW as typeof GAIA_ROW;
     libraryRoutes((url) => (url.startsWith("/api/shelf/lookup?") ? json({ entries: [lookupHit(GAIA_ROW, ["doi"]), lookupHit(other, ["arxiv"])] }) : undefined));
-    renderLibrary(true);
+    renderLibrary();
     await exploreSeed();
     await hintAndOpenShelf();
     // several hits: the summary of the first, to choose
@@ -487,7 +459,7 @@ describe("review: a take marks the candidate only when it took one of its hits",
 
   it("the hit entry is gone when the Shelf is read: another is selected, and taking it does not mark the candidate", async () => {
     libraryRoutes((url) => (url === "/api/shelf" ? json({ entries: [OTHER_ROW] }) : undefined));
-    renderLibrary(true);
+    renderLibrary();
     await exploreSeed();
     await hintAndOpenShelf();
     fireEvent.click(await waitFor(() => must(`[data-ui="shelf-entry-summary"][data-ui-key="${ENTRY_B}"] [data-ui="take-shelf-entry"]`)));
@@ -500,7 +472,7 @@ describe("review: late lookups", () => {
   it("identifier dialog: an answer for an input that was edited meanwhile is dropped (no hint, nothing created)", async () => {
     const held = deferred();
     stubFetch(shelfRoutes(gaiaLookup, (url) => (url.startsWith("/api/shelf/lookup?") ? held.promise : undefined)));
-    const { submit } = openDialog(true);
+    const { submit } = openDialog();
     submit("10.1051/gaia.2018");
     fireEvent.change(must('[data-ui="import-input"]'), { target: { value: "10.9999/another" } });
     held.release(json({ entries: [lookupHit(GAIA_ROW, ["doi"])] }));
@@ -514,7 +486,7 @@ describe("review: late lookups", () => {
   it("exploration: a hit that comes back after another candidate was opened does not pull the selection back", async () => {
     const held = deferred();
     libraryRoutes((url) => (url.startsWith("/api/shelf/lookup?") && url.includes("gaia") ? held.promise : undefined));
-    renderLibrary(true);
+    renderLibrary();
     await exploreSeed();
     candidate("GAIA");
     fireEvent.click(must('[data-ui="save-discovery-paper"]'));
@@ -566,7 +538,7 @@ describe("review: the project already has the paper by arXiv id", () => {
     const graph: DiscoveryGraph = { ...GRAPH, nodes: [...GRAPH.nodes, paper("ARX", { arxivId: "2101.00001", relatedRank: 3 })] };
     const payload = { ...PAYLOAD, refs: [...PAYLOAD.refs, { ...CREATED, id: "arxiv:2101.00001", doi: undefined, arxiv_id: "2101.00001" }] } as LibraryData;
     const fetchMock = libraryRoutes((url) => (url.startsWith("/api/library/discovery?") ? json(graph) : url === "/api/library" ? json(payload) : undefined));
-    renderLibrary(true);
+    renderLibrary();
     await exploreSeed();
     candidate("ARX");
     fireEvent.click(must('[data-ui="save-discovery-paper"]'));

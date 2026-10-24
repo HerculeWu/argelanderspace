@@ -9,7 +9,7 @@ import { DEFAULT_LANGUAGE } from "../i18n";
 import { resizeDivider, shareOf } from "./layout";
 import { createWorkspaceState, pageFields, type Pane, type PaneAdapter, type ViewActionOutcome, windowBrowser, windowTimers, workspaceLeave, type WorkspaceState } from "./panes";
 import { PreferencesProvider, usePreferencesState } from "./preferences";
-import { ShelfAvailabilityProvider } from "../shelf/availability";
+import { useIngestPromptProject } from "../shelf/ingest-prompt";
 import { ACCENTS } from "./theme";
 import { notePane } from "../page-errors";
 import { claimViewId, loadViewIdentity, saveViewIdentity } from "./view-identity";
@@ -64,6 +64,8 @@ export function Shell() {
   const { t } = useTranslation();
   // The appearance and the settings behind it: read from and written to config.toml through the server (preferences.tsx).
   const preferences = usePreferencesState();
+  // The ingest reminders are kept per project folder (shelf/ingest-prompt.ts).
+  useIngestPromptProject(preferences.settings ? (preferences.settings.running.project_root?.path ?? null) : undefined);
   const { tweaks, setTweak } = preferences;
   const [cmdOpen, setCmdOpen] = useState(false);
   const [tweaksOpen, setTweaksOpen] = useState(false);
@@ -242,7 +244,6 @@ export function Shell() {
   // Scope selectors by workspace-pane key when multiple panes show the same view.
   return (
     <PreferencesProvider value={preferences}>
-    <ShelfAvailabilityProvider>
     <WorkspaceProvider value={workspace}>
       <div className="app" data-ui="app-shell">
         {leaveDialog}
@@ -360,7 +361,6 @@ export function Shell() {
         <TutorialLayer context={pageContext} onViewAction={runViewAction} />
       </div>
     </WorkspaceProvider>
-    </ShelfAvailabilityProvider>
     </PreferencesProvider>
   );
 }

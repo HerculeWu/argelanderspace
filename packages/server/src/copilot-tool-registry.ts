@@ -272,8 +272,7 @@ export const TOOL_TABLE: readonly AnyToolEntry[] = Object.freeze([
   {
     id: SHELF_TOOL_NAME,
     names: [SHELF_TOOL_NAME],
-    // Not in the tutorial project (contracts「文献仓」「教程」): asked when the run's tools are chosen.
-    gate: (g) => !!g.workbench?.shelf && g.workbench.shelf.inTutorialProject?.() !== true,
+    gate: (g) => !!g.workbench?.shelf,
     requires: [PLAN_TOOL_NAME],
     host: "full",
     context: (host, _deps, { workbench }) => ({

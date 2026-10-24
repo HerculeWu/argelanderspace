@@ -16,6 +16,9 @@ export const SAMPLE_WORK_IDS = {
   kroupa2022: "doi:10.1093/mnras/stac2563",
 } as const;
 
+/** Jerabkova 2021's arXiv id (library.json `arxiv_id`): the identity of the Shelf entry chapter 2 adds. */
+export const SAMPLE_JERABKOVA_ARXIV = "2103.12080";
+
 /** The one Doc of the sample: the main Doc of Jerabkova 2021. */
 export const SAMPLE_DOC_ID = "arxiv-2103.12080";
 

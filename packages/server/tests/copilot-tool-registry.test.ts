@@ -515,12 +515,10 @@ describe("what each tool is given", () => {
   });
 });
 
-describe("the shelf tool and the tutorial project (shelf ticket 07)", () => {
-  test("is offered with the Shelf seam and not while the open project is the tutorial project, asked when a run's tools are chosen", () => {
+describe("the shelf tool is the same in every project (shelf ticket 07, tutorial-shelf 01)", () => {
+  test("is offered whenever the Shelf seam is there, whatever the open project is", () => {
     const { wb } = workbench(["library", "shelf"]);
-    let tutorial = false;
-    const inTutorialProject = vi.fn(() => tutorial);
-    (wb as unknown as { shelf: object }).shelf = { inTutorialProject };
+    (wb as unknown as { shelf: object }).shelf = {};
     const names = () =>
       assembleRunTools({
         gates: { workbench: wb, mailMount: "off" },
@@ -530,15 +528,9 @@ describe("the shelf tool and the tutorial project (shelf ticket 07)", () => {
         hasSkills: () => false,
       }).toolNames;
     expect(names()).toEqual(["plan", "workspace", "library", "shelf"]);
-    tutorial = true;
-    expect(names()).toEqual(["plan", "workspace", "library"]);
-    expect(footprintTools({ workbench: wb, mailMount: "off" }).tools.map(nameOf)).not.toContain(
+    expect(footprintTools({ workbench: wb, mailMount: "off" }).tools.map(nameOf)).toContain(
       "shelf"
     );
-    // the next run of the same host, once the project is no longer the tutorial project, has it again
-    tutorial = false;
-    expect(names()).toContain("shelf");
-    expect(inTutorialProject).toHaveBeenCalled();
   });
 });
 

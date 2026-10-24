@@ -301,10 +301,11 @@ export function TutorialRunner({ initial, projectDisplay, context, onViewAction,
       paletteOpen: dom.present({ ui: "command-palette" }),
       dom,
       data,
+      projectRoot: initial.project?.path ?? null,
     };
     // domVersion: the DOM is looked at again when it changed; open / stepId: and when a step starts (its gate is looked at
     // against the page as it is then).
-  }, [context, data, activePaneId, domVersion, open, stepId]);
+  }, [context, data, activePaneId, domVersion, open, stepId, initial.project?.path]);
 
   // One showing of a step: its baseline (taken once the step's own first L2 read is in) and the scratch record of a
   // process gate.

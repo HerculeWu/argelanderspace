@@ -42,6 +42,11 @@ export interface WorkbenchSnapshot {
   readonly paletteOpen: boolean;
   readonly dom: DomQuery;
   readonly data: Readonly<Record<string, unknown>>;
+  /**
+   * The folder of the tutorial Project the layer is mounted in (`tutorial.json`'s binding, equal to the open project's
+   * root): what a gate compares a record's origin with (step 2.7: the Shelf entry must have been added from here).
+   */
+  readonly projectRoot?: string | null;
 }
 
 /** One showing of a gated step: the snapshot at its start (baselines) and a scratch record for process gates. */
@@ -53,7 +58,7 @@ export interface GateRun {
 export type Gate = (snapshot: WorkbenchSnapshot, run: GateRun) => boolean;
 
 /** Where a requirement sends the user back to (`tutorial.ui.where.*`; the copy test checks every one). */
-export const WHERE_KEYS = ["library", "workDetail", "reader", "plan", "writer", "settings", "argumentGraph", "copilot"] as const;
+export const WHERE_KEYS = ["library", "workDetail", "reader", "plan", "writer", "settings", "argumentGraph", "copilot", "shelfDialog"] as const;
 export type WhereKey = (typeof WHERE_KEYS)[number];
 
 /** The interface state a step needs before its anchor can be shown. */

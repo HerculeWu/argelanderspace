@@ -435,8 +435,7 @@ export interface Workbench {
   /** The argument graph store, its lock and the library lookup of the page's PUT (argument graph ticket 09); absent in headless hosts. */
   argument?: ArgumentOpDeps;
   /**
-   * The Shelf (文献仓, shelf ticket 07): the app's own writer, take and list; absent in headless hosts. The tool is not
-   * offered while the open project is the tutorial project.
+   * The Shelf (文献仓, shelf ticket 07): the app's own writer, take and list; absent in headless hosts.
    */
   shelf?: ShelfOpDeps;
   /**

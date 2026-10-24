@@ -3,7 +3,7 @@
  * routes, annotations access path, library lock, disk) and a real Shelf store in a throwaway directory (never the
  * global data directory). Only the model provider is scripted. Acceptance: every write (add, replace, delete, take)
  * waits for the real user's card; what the card shows is what runs; nothing the model sends approves or changes it; a
- * change between the card and the click writes nothing and says so; the tutorial project has no shelf tool.
+ * change between the card and the click writes nothing and says so; the tutorial project has the shelf tool like any project.
  */
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -886,7 +886,7 @@ describe("delete", () => {
 });
 
 // ---- tutorial ------------------------------------------------------------------------------------------------ //
-describe("the tutorial project", () => {
+describe("the tutorial project (no different from any project)", () => {
   const bindTutorial = () => {
     writeFileSync(
       join(projectA, "argelanderspace-tutorial.json"),
@@ -909,27 +909,25 @@ describe("the tutorial project", () => {
   const declared = (context: TranscriptContext | undefined) =>
     JSON.stringify(context?.messages ?? []).includes('"name":"shelf"');
 
-  test("has no shelf tool: a run there cannot list or write the Shelf; the same project unbound has it again", async () => {
-    // the tool is declared to the model in an ordinary project
-    script = [() => ({ text: "hello" })];
-    let id = await start(page());
-    await settled(id);
-    expect(declared(seen[0])).toBe(true);
-
+  test("has the shelf tool like any project: a run there lists the Shelf and an add still waits on a human's card", async () => {
     await shelveB();
     bindTutorial();
+    const view = page();
     const shelfBefore = tree(join(root, "global", "shelf"));
-    seen = [];
     script = [
       () => ({ call: { action: "list" } }),
       () => ({ call: { action: "add", workId: W_A } }),
     ];
-    id = await start(page());
+    const id = await start(view);
+    const c = await card(id);
+    expect(c.action).toBe("shelf_add");
+    expect(declared(seen[0])).toBe(true);
+    expect(resultSeenAt(1)).toMatchObject({ ok: true, total: 1 });
+    // the model cannot approve itself: nothing is written until the person answers
+    expect(tree(join(root, "global", "shelf"))).toEqual(shelfBefore);
+    expect((await answer(c, view.viewId, "decline")).status).toBe(200);
     await settled(id);
-    expect(declared(seen[0])).toBe(false);
-    for (const n of [1, 2]) expect(resultSeenAt(n).ok).not.toBe(true);
-    expect(JSON.stringify(seen.map((s) => s.messages))).not.toContain("Shelf Paper B");
-    expect((await host.snapshot(id)).confirmations).toEqual([]);
+    expect(resultSeenAt(2)).toMatchObject({ ok: false, status: "declined" });
     expect(tree(join(root, "global", "shelf"))).toEqual(shelfBefore);
   });
 });

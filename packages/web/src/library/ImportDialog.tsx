@@ -14,7 +14,6 @@ import { type ArgumentGraphMergeNote, libraryImportRequest } from "@argelandersp
 import { createWorks } from "../api/library";
 import { Icon } from "../lib/icons";
 import { findOnShelf, identifierIds, projectHas, type ShelfHit, ShelfHint, shelfTakeTarget } from "../shelf/already-on-shelf";
-import { useShelfAvailable } from "../shelf/availability";
 import { ActionButton } from "../ui";
 import { MergeNoteList } from "./MergeNotes";
 import type { LibraryRef, ManualWorkRequest, ManualWorkResult } from "./types";
@@ -77,8 +76,7 @@ export function ImportDialog({
   const [merges, setMerges] = useState<ArgumentGraphMergeNote[]>([]);
   const [fatal, setFatal] = useState<string | null>(null);
   // The already-on-Shelf hint (shelf ticket 06): asked only after a submit, never while typing (review Q6).
-  const shelfAvailable = useShelfAvailable();
-  const checkShelf = mode === "identifier" && shelfAvailable && onTakeFromShelf !== undefined;
+  const checkShelf = mode === "identifier" && onTakeFromShelf !== undefined;
   const [hits, setHits] = useState<ShelfHit[] | null>(null);
   const lookup = useRef<AbortController | null>(null);
   useEffect(() => () => lookup.current?.abort(), []);

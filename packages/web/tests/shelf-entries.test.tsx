@@ -1,19 +1,17 @@
 /**
- * Where the Shelf is entered (shelf ticket 05): the Library's import menu item and the Work detail's add button,
- * both absent in the tutorial Project (spec Q21) and until that is known; the one-time ingest reminder (review Q2/Q3).
+ * Where the Shelf is entered (shelf ticket 05): the Library's import menu item and the Work detail's add button, the
+ * same in every Project — the tutorial Project and an unreadable tutorial state included (tutorial-shelf ticket 01);
+ * the one-time ingest reminder (review Q2/Q3).
  */
 import type { Job, TutorialState } from "@argelanderspace/contracts";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Preferences } from "../src/argelander/preferences";
-import { PreferencesProvider } from "../src/argelander/preferences";
 import { type Workspace, WorkspaceProvider } from "../src/argelander/workspace";
 import i18n from "../src/i18n";
 import { LibraryView } from "../src/library/LibraryView";
 import type { LibraryData, LibraryRef } from "../src/library/types";
 import { useWorkShelf } from "../src/shelf/AddToShelf";
-import { ShelfAvailabilityProvider, ShelfAvailabilityValue, shelfAvailable, useShelfAvailable } from "../src/shelf/availability";
-import { dismissIngestPrompt, ingestPromptJob, resetIngestPromptsForTests, setIngestPromptProject, useIngestPrompt } from "../src/shelf/ingest-prompt";
+import { dismissIngestPrompt, ingestPromptJob, resetIngestPromptsForTests, setIngestPromptProject, useIngestPrompt, useIngestPromptProject } from "../src/shelf/ingest-prompt";
 import { json, must, stubFetch } from "./shelf-fixtures";
 
 vi.mock("../src/api/ws", () => ({ onArgumentGraphChanged: () => () => {}, onLibraryChanged: () => () => {}, onJobEvent: () => () => {} }));
@@ -21,8 +19,14 @@ vi.mock("../src/api/ws-instance", async () => {
   const { createFakeBus } = await import("../src/api/ws-bus");
   return { bus: createFakeBus() };
 });
-const tutorialState = vi.hoisted(() => ({ value: null as TutorialState | null }));
-vi.mock("../src/api/tutorial", () => ({ fetchTutorial: async () => tutorialState.value, putTutorial: async () => ({}) }));
+const tutorialState = vi.hoisted(() => ({ value: null as TutorialState | null, reads: 0 }));
+vi.mock("../src/api/tutorial", () => ({
+  fetchTutorial: async () => {
+    tutorialState.reads += 1;
+    return tutorialState.value;
+  },
+  putTutorial: async () => ({}),
+}));
 
 const BOUND = "/home/u/ArgelanderSpace-Tutorial";
 const bound = (state: "ready" | "missing" = "ready"): TutorialState => ({
@@ -30,7 +34,6 @@ const bound = (state: "ready" | "missing" = "ready"): TutorialState => ({
   project: { path: BOUND, display: "~/ArgelanderSpace-Tutorial", state } as TutorialState["project"],
   sample: { bundled: 1, project: 1 },
 });
-const prefsAt = (root: string | null) => ({ settings: { running: { project_root: root ? { path: root, display: root } : null } } }) as unknown as Preferences;
 
 const REF: LibraryRef = { id: "doi:10.1/x", title: "Paper X", authors: "Able", year: 2020, venue: "ApJ", type: "article", cite: "able2020", tags: [], pdf: true, read: false, star: false, doi: "10.1/x", doc_id: "arxiv-1", doc_ids: ["arxiv-1"] };
 const PAYLOAD: LibraryData = { project: { name: "T" }, refs: [REF], tags: [], graph: { nodes: [{ id: "doi:10.1/x", ref: REF.id, y: 2020, c: 1, a: "Able", v: "ApJ", t: "Paper X" }], links: [] } };
@@ -46,12 +49,10 @@ function libraryRoutes() {
 }
 
 const workspace = { openDoc: () => {}, docDeleted: () => {}, currentDoc: null } as unknown as Workspace;
-function renderLibrary(available: boolean | undefined) {
+function renderLibrary() {
   return render(
     <WorkspaceProvider value={workspace}>
-      <ShelfAvailabilityValue value={available}>
-        <LibraryView />
-      </ShelfAvailabilityValue>
+      <LibraryView />
     </WorkspaceProvider>
   );
 }
@@ -65,60 +66,40 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("tutorial Project: no Shelf entry", () => {
-  it("the rule: hidden while unknown, hidden in the bound tutorial folder, shown elsewhere", () => {
-    expect(shelfAvailable(undefined, "/p")).toBeUndefined();
-    expect(shelfAvailable(bound(), undefined)).toBeUndefined();
-    expect(shelfAvailable(bound(), BOUND)).toBe(false);
-    expect(shelfAvailable(bound(), `${BOUND}/`)).toBe(false);
-    expect(shelfAvailable(bound(), "/home/u/research")).toBe(true);
-    expect(shelfAvailable(bound("missing"), BOUND)).toBe(true);
-    // the tutorial state could not be read: not known, hidden
-    expect(shelfAvailable(null, "/p")).toBeUndefined();
-    expect(shelfAvailable({ ...bound(), progress: null, project: null }, "/p")).toBe(true);
-  });
-
-  it("the Shell's provider reads the tutorial state and the open folder", async () => {
-    function Probe() {
-      return <span data-testid="probe">{String(useShelfAvailable())}</span>;
-    }
-    tutorialState.value = bound();
-    render(
-      <PreferencesProvider value={prefsAt(BOUND)}>
-        <ShelfAvailabilityProvider>
-          <Probe />
-        </ShelfAvailabilityProvider>
-      </PreferencesProvider>
-    );
-    await act(async () => {});
-    expect(screen.getByTestId("probe").textContent).toBe("false");
-    cleanup();
-    render(
-      <PreferencesProvider value={prefsAt("/home/u/research")}>
-        <ShelfAvailabilityProvider>
-          <Probe />
-        </ShelfAvailabilityProvider>
-      </PreferencesProvider>
-    );
-    await waitFor(() => expect(screen.getByTestId("probe").textContent).toBe("true"));
-  });
-
-  for (const [label, available, shown] of [["tutorial Project", false, false], ["not known yet", undefined, false], ["a user's Project", true, true]] as const) {
-    it(`${label}: import menu item and Work detail button ${shown ? "shown" : "absent"}`, async () => {
+describe("the Shelf entries are the same in every Project", () => {
+  // The Project is the tutorial Project, the tutorial state is not readable, or there is no tutorial: no difference.
+  for (const [label, state] of [["the tutorial Project", bound()], ["an unreadable tutorial state", null], ["a user's Project", { ...bound(), progress: null, project: null }]] as const) {
+    it(`${label}: import menu item and Work detail button shown`, async () => {
+      tutorialState.value = state as TutorialState | null;
       libraryRoutes();
-      renderLibrary(available);
+      renderLibrary();
       await waitFor(() => must('[data-ui="open-import-menu"]'));
       fireEvent.click(must('[data-ui="open-import-menu"]'));
       await waitFor(() => must('[data-ui="import-option"][data-ui-key="bib"]'));
-      expect(document.querySelector('[data-ui="import-option"][data-ui-key="shelf"]') !== null).toBe(shown);
+      expect(document.querySelector('[data-ui="import-option"][data-ui-key="shelf"]')).not.toBeNull();
       await waitFor(() => must('[data-ui="work-detail-actions"]'));
-      expect(document.querySelector('[data-ui="add-work-to-shelf"]') !== null).toBe(shown);
+      expect(document.querySelector('[data-ui="add-work-to-shelf"]')).not.toBeNull();
     });
   }
 
+  it("the Shell's one piece of Shelf state is the open folder for the reminders: it never reads the tutorial state, and the folder is the key whatever it is", async () => {
+    function Probe({ root }: { root: string }) {
+      useIngestPromptProject(root);
+      return null;
+    }
+    tutorialState.value = bound();
+    tutorialState.reads = 0;
+    render(<Probe root={BOUND} />);
+    await act(async () => {});
+    act(() => ingestPromptJob(doneJob(REF.id), "job.done"));
+    const stored = JSON.parse(localStorage.getItem("argelander.shelfIngestPrompts") ?? "{}") as Record<string, { pending: string[] }>;
+    expect(stored[BOUND]?.pending).toEqual([REF.id]);
+    expect(tutorialState.reads).toBe(0);
+  });
+
   it("the import menu's fourth item opens the Shelf dialog", async () => {
     const fetchMock = libraryRoutes();
-    renderLibrary(true);
+    renderLibrary();
     await waitFor(() => must('[data-ui="open-import-menu"]'));
     fireEvent.click(must('[data-ui="open-import-menu"]'));
     const items = await waitFor(() => {
@@ -153,23 +134,17 @@ describe("the ingest reminder", () => {
     const other: LibraryRef = { ...REF, id: "doi:10.1/y", title: "Y" };
     stubFetch(async (url) => (url === "/api/shelf/entries/preview" ? json({ impact: null, carried: { docs: [], argumentGraph: false, note: false }, notCarried: [] }) : undefined));
     const { rerender } = render(
-      <ShelfAvailabilityValue value={true}>
-        <Harness work={REF} />
-      </ShelfAvailabilityValue>
+      <Harness work={REF} />
     );
     expect(document.querySelector('[data-ui="ingest-add-to-shelf-prompt"]')).toBeNull();
     act(() => ingestPromptJob(doneJob(REF.id), "job.done"));
     expect(must('[data-ui="ingest-add-to-shelf-prompt"]').textContent).toContain("要把这篇加入文献仓");
     rerender(
-      <ShelfAvailabilityValue value={true}>
-        <Harness work={other} />
-      </ShelfAvailabilityValue>
+      <Harness work={other} />
     );
     expect(document.querySelector('[data-ui="ingest-add-to-shelf-prompt"]')).toBeNull();
     rerender(
-      <ShelfAvailabilityValue value={true}>
-        <Harness work={REF} />
-      </ShelfAvailabilityValue>
+      <Harness work={REF} />
     );
     expect(must('[data-ui="ingest-add-to-shelf-prompt"]')).toBeTruthy();
     // its button opens the ordinary add dialog (no direct add)
@@ -182,7 +157,7 @@ describe("the ingest reminder", () => {
     expect(document.querySelector('[data-ui="ingest-add-to-shelf-prompt"]')).toBeNull();
   });
 
-  it("is kept per project folder across a reload, and is never shown in the tutorial Project", () => {
+  it("is kept per project folder across a reload", () => {
     setIngestPromptProject("/home/u/a");
     ingestPromptJob(doneJob(REF.id), "job.done");
     resetIngestPromptsForTests(false); // a reload: memory gone, storage kept
@@ -199,12 +174,9 @@ describe("the ingest reminder", () => {
     expect(screen.getByTestId("p").textContent).toBe("false");
     cleanup();
     act(() => ingestPromptJob(doneJob("doi:10.1/z"), "job.done"));
-    render(
-      <ShelfAvailabilityValue value={false}>
-        <Harness work={{ ...REF, id: "doi:10.1/z" }} />
-      </ShelfAvailabilityValue>
-    );
-    expect(document.querySelector('[data-ui="ingest-add-to-shelf-prompt"]')).toBeNull();
+    // the folder here may as well be the tutorial Project: the reminder is the same
+    render(<Harness work={{ ...REF, id: "doi:10.1/z" }} />);
+    expect(must('[data-ui="ingest-add-to-shelf-prompt"]')).toBeTruthy();
   });
 
   function ShelfParts({ work }: { work: LibraryRef }) {
@@ -229,9 +201,7 @@ describe("the ingest reminder", () => {
       return undefined;
     });
     render(
-      <ShelfAvailabilityValue value={true}>
-        <ShelfParts work={REF} />
-      </ShelfAvailabilityValue>
+      <ShelfParts work={REF} />
     );
     act(() => ingestPromptJob(doneJob(REF.id), "job.done"));
     fireEvent.click(must('[data-ui="ingest-open-add-to-shelf"]'));
@@ -258,9 +228,7 @@ describe("the ingest reminder", () => {
         return undefined;
       });
       render(
-        <ShelfAvailabilityValue value={true}>
-          <ShelfParts work={REF} />
-        </ShelfAvailabilityValue>
+        <ShelfParts work={REF} />
       );
       fireEvent.click(must('[data-ui="add-work-to-shelf"]'));
       const submit = await waitFor(() => must('[data-ui="submit-add-to-shelf"]') as HTMLButtonElement);
@@ -273,9 +241,7 @@ describe("the ingest reminder", () => {
   it("the add button: the chosen icon from icons.json; says 'replaces' when the Shelf has the paper (by DOI, arXiv or OpenAlex)", async () => {
     const fetchMock = stubFetch(async (url) => (url.startsWith("/api/shelf/lookup") ? json({ entries: [{ entryId: "e".repeat(32), rev: 1, title: "X", matchedOn: ["openalex"] }] }) : undefined));
     render(
-      <ShelfAvailabilityValue value={true}>
-        <ShelfParts work={{ ...REF, doi: undefined, openalex_id: "W42" }} />
-      </ShelfAvailabilityValue>
+      <ShelfParts work={{ ...REF, doi: undefined, openalex_id: "W42" }} />
     );
     const button = must('[data-ui="add-work-to-shelf"]');
     expect(button.querySelector("svg")).not.toBeNull();

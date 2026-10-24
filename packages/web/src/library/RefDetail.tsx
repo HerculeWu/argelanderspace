@@ -168,7 +168,7 @@ export function RefDetail({
   const [mainErr, setMainErr] = useState<string | null>(null);
   // Text Doc creation (ticket 25): one in-flight request; the new Doc opens on its source editor (text-doc-creation.ts).
   const textDoc = useTextDocCreation(r.id, workSession, onOpenDoc);
-  // The Shelf's parts of the detail (shelf ticket 05); all null in the tutorial Project.
+  // The Shelf's parts of the detail (shelf ticket 05).
   const shelf = useWorkShelf(r);
   const [acquisition, setAcquisition] = useState<AcquisitionFlow | null>(null);
   const acquisitionFlowSequence = useRef(0);

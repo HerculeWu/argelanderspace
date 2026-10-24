@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { type Job, jobTarget } from "@argelanderspace/contracts";
 import { bus } from "../api/ws-instance";
 
@@ -107,6 +107,13 @@ export function setIngestPromptProject(root: string | null): void {
     save();
   }
   publish();
+}
+
+/** The Shell keeps the reminders per open folder: `undefined` while the settings are not read, `null` for no project. */
+export function useIngestPromptProject(root: string | null | undefined): void {
+  useEffect(() => {
+    if (root !== undefined) setIngestPromptProject(root);
+  }, [root]);
 }
 
 /** The reminder for this Work was closed (×) or used to add it: it does not come back. */

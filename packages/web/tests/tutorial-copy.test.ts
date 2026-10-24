@@ -94,4 +94,76 @@ describe("tutorial copy says what the product and the sample really do", () => {
     }
     expect(zhLength(String(get(zh, "tutorial.steps.writer.render.alt")))).toBeLessThanOrEqual(40);
   });
+  it("2.7: the card names the product's own button, says the Shelf is the person's own, shared by all projects and deletable, and the replace case", () => {
+    const [z, e] = both("tutorial.steps.library.shelf-add.body");
+    expect(z).toContain(`「${String(get(zh, "shelf.add.button"))}」`);
+    expect(e).toContain(`“${String(get(en, "shelf.add.button"))}”`);
+    expect(z).toContain("你自己的文献仓");
+    expect(z).toContain("可删");
+    expect(z).toContain("取消");
+    expect(z).toContain("跳过");
+    expect(e).toMatch(/your own Shelf/);
+    expect(e).toMatch(/deletable/);
+    expect(e).toMatch(/cancel and skip/i);
+    // The copy file's rules: at most 80 characters and 3 sentences; the waiting line at most 20.
+    expect(zhLength(z)).toBeLessThanOrEqual(80);
+    expect(z.split(/[。！？]/).filter(Boolean).length).toBeLessThanOrEqual(3);
+    expect(zhLength(String(get(zh, "tutorial.steps.library.shelf-add.waiting")))).toBeLessThanOrEqual(20);
+    expect(zhLength(String(get(zh, "tutorial.steps.library.shelf-add.title")))).toBeLessThanOrEqual(12);
+  });
+  it("2.5: tells the person the Shelf prompt after ingesting can be closed for now, within the length rule", () => {
+    const [z, e] = both("tutorial.steps.library.upload-source.body");
+    expect(z).toContain("文献仓");
+    expect(z).toContain("先关掉");
+    expect(e).toMatch(/Shelf/);
+    expect(e).toMatch(/close that for now/);
+    expect(zhLength(z)).toBeLessThanOrEqual(80);
+    expect(z.split(/[。！？]/).filter(Boolean).length).toBeLessThanOrEqual(3);
+  });
+  it("2.8: names the import menu and the Shelf option as the product does, and what the summary shows; the Shelf's own words", () => {
+    const [z, e] = both("tutorial.steps.library.shelf-browse.body");
+    for (const [text, q, key] of [
+      [z, "「」", "zh"],
+      [e, "“”", "en"],
+    ] as const) {
+      const tree = key === "zh" ? zh : en;
+      for (const path of ["library.import.button", "library.import.shelf.title", "shelf.inProject"]) expect(text).toContain(`${q[0]}${String(get(tree, path))}${q[1]}`);
+    }
+    expect(z).toContain("标注");
+    expect(z).toContain("论证");
+    expect(e).toMatch(/annotation/i);
+    expect(e).toMatch(/argument/i);
+    expect(zhLength(z)).toBeLessThanOrEqual(80);
+    expect(z.split(/[。！？]/).filter(Boolean).length).toBeLessThanOrEqual(3);
+    expect(zhLength(String(get(zh, "tutorial.steps.library.shelf-browse.waiting")))).toBeLessThanOrEqual(20);
+    expect(zhLength(String(get(zh, "tutorial.steps.library.shelf-browse.title")))).toBeLessThanOrEqual(12);
+  });
+  it("2.9: taking is done in another project and is a copy; Delete removes only the Shelf's copy; not clicked in the tutorial", () => {
+    const [z, e] = both("tutorial.steps.library.shelf-take.body");
+    expect(z).toContain(`「${String(get(zh, "shelf.take.open"))}」`);
+    expect(z).toContain(`「${String(get(zh, "shelf.delete.button"))}」`);
+    expect(z).toContain("别的项目");
+    expect(z).toContain("复制");
+    expect(z).toContain("互不影响");
+    expect(z).toContain("文献仓");
+    expect(e).toContain(`“${String(get(en, "shelf.take.open"))}”`);
+    expect(e).toContain(`“${String(get(en, "shelf.delete.button"))}”`);
+    expect(e).toMatch(/another of your projects/);
+    expect(e).toMatch(/copy/);
+    expect(e).toMatch(/Shelf/);
+    expect(zhLength(z)).toBeLessThanOrEqual(80);
+    expect(z.split(/[。！？]/).filter(Boolean).length).toBeLessThanOrEqual(3);
+    expect(zhLength(String(get(zh, "tutorial.steps.library.shelf-take.title")))).toBeLessThanOrEqual(12);
+    expect(get(zh, "tutorial.ui.where.shelfDialog")).toBeTruthy();
+    expect(get(en, "tutorial.ui.where.shelfDialog")).toBeTruthy();
+  });
+  it("the finish page tells both forms of \"open your own project\" that the Shelf can take Jerabkova in", () => {
+    const [z, e] = both("tutorial.steps.finish.page.openOwnShelf");
+    expect(z).toContain("文献仓");
+    expect(z).toContain("Jerabkova");
+    expect(z).toContain(`「${String(get(zh, "library.import.shelf.title"))}」`);
+    expect(e).toContain("Shelf");
+    expect(e).toContain("Jerabkova");
+    expect(e).toContain(`“${String(get(en, "library.import.shelf.title"))}”`);
+  });
 });

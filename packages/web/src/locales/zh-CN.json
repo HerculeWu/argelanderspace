@@ -2963,7 +2963,8 @@
         "writer": "稿件编辑器",
         "settings": "设置页",
         "argumentGraph": "{{work}} 的论证图",
-        "copilot": "Copilot 面板"
+        "copilot": "Copilot 面板",
+        "shelfDialog": "文献仓对话框"
       }
     },
     "entry": {
@@ -3094,13 +3095,27 @@
         },
         "upload-source": {
           "title": "上传源码包摄入",
-          "body": "选「上传 LaTeX 源码包」，选 tutorial-assets 里的 evans-oh-2022-source.zip，点「上传并处理」。摄入（Ingest）把源码变成正文，随后联网补全元数据，不用 ADS token。",
+          "body": "选「上传 LaTeX 源码包」，选 evans-oh-2022-source.zip，点「上传并处理」。摄入（Ingest）把源码变成正文，联网补全元数据。若问加入文献仓（Shelf），先关掉，稍后讲。",
           "waiting": "摄入完成、正文出现后自动前进",
           "alt": "没有 TeX 不能摄入。改看 Jerabkova 2021 的「全文」标签里已摄入的正文。"
         },
         "cite-key": {
           "title": "引用键与 BibTeX",
           "body": "详情里的「复制引用键」给你写作时用的 cite key；「BibTeX」标签能复制整条。每篇文献只有一个引用键。"
+        },
+        "shelf-add": {
+          "title": "加入文献仓",
+          "body": "选中 Jerabkova 2021，点「加入文献仓」。Doc 默认全选，标注与论证图默认不带，各勾一条。进你自己的文献仓，各项目可见、可删；提示替换且是别的项目加的，取消并跳过。",
+          "waiting": "加入文献仓后自动前进"
+        },
+        "shelf-browse": {
+          "title": "打开文献仓",
+          "body": "点「导入文献」→「从文献仓」。刚加入的 Jerabkova 2021 标着「本项目已有」，右边摘要里有 Doc、标注数和论证条数。",
+          "waiting": "文献仓打开后自动前进"
+        },
+        "shelf-take": {
+          "title": "取入与删除",
+          "body": "取入要在你别的项目里点「取入当前项目…」，是复制，两边互不影响。这里的「删除」只删文献仓里那一份，教程里不要点。"
         },
         "agent": {
           "title": "也可以让 agent 添加",
@@ -3265,6 +3280,7 @@
           "body": "你已经在教程项目里过了一遍工作台：添加、阅读、探索、论证、计划、写作，还有 Copilot。这个项目会留着，随时能回来。",
           "openOwn": "打开自己的项目",
           "openOwnBrowser": "在终端运行 `argelanderspace serve` 打开自己的项目",
+          "openOwnShelf": "在自己的项目里点「导入文献」→「从文献仓」，可以把 Jerabkova 取进去。",
           "review": "回看任一章",
           "close": "关闭教程",
           "settingsNote": "外观、语言和日志级别都在设置页改。",

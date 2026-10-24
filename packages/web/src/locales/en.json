@@ -2963,7 +2963,8 @@
         "writer": "the manuscript editor",
         "settings": "Settings",
         "argumentGraph": "the argument graph of {{work}}",
-        "copilot": "the Copilot panel"
+        "copilot": "the Copilot panel",
+        "shelfDialog": "the Shelf dialog"
       }
     },
     "entry": {
@@ -3094,13 +3095,27 @@
         },
         "upload-source": {
           "title": "Upload and ingest the source",
-          "body": "Choose “Upload LaTeX source”, pick evans-oh-2022-source.zip in tutorial-assets, and click “Upload and process”. Ingest turns the source into the full text; the metadata is then completed online, no ADS token needed.",
+          "body": "Choose “Upload LaTeX source”, pick evans-oh-2022-source.zip, and click “Upload and process”. Ingest turns the source into the full text and completes the metadata online. If asked whether to add it to the Shelf, close that for now; it comes later.",
           "waiting": "Moves on once ingested and the document appears",
           "alt": "Without TeX it cannot be ingested. Look at the full text already ingested in the “Full text” tab of Jerabkova 2021 instead."
         },
         "cite-key": {
           "title": "Citation key and BibTeX",
           "body": "“Copy citation key” in the details gives you the cite key for writing; the “BibTeX” tab copies the whole entry. Each paper has exactly one citation key."
+        },
+        "shelf-add": {
+          "title": "Add to the Shelf",
+          "body": "Select Jerabkova 2021 and click “Add to Shelf”. Documents are checked by default; annotations and the argument graph are not, so check one of each. It goes into your own Shelf, visible to every project and deletable; if it offers to replace an entry another project added, cancel and skip this step.",
+          "waiting": "Moves on once it is added to the Shelf"
+        },
+        "shelf-browse": {
+          "title": "Open the Shelf",
+          "body": "Click “Import literature” → “From Shelf”. The Jerabkova 2021 you just added is marked “In this project”; its summary shows the Docs, the annotation count and how many arguments it has.",
+          "waiting": "Moves on once the Shelf opens"
+        },
+        "shelf-take": {
+          "title": "Take and delete",
+          "body": "Taking is done in another of your projects, with “Take into this project…”. It is a copy, so the two sides never affect each other. “Delete” here removes only the Shelf's copy; do not click it in the tutorial."
         },
         "agent": {
           "title": "An agent can add it too",
@@ -3265,6 +3280,7 @@
           "body": "You have been through the workbench in the tutorial project: adding, reading, exploring, arguments, planning, writing, and the Copilot. This project stays, and you can come back to it any time.",
           "openOwn": "Open your own project",
           "openOwnBrowser": "Run `argelanderspace serve` in a terminal to open your own project",
+          "openOwnShelf": "In your own project, click “Import literature” → “From Shelf” to take Jerabkova in.",
           "review": "Review any chapter",
           "close": "Close the tutorial",
           "settingsNote": "Appearance, language and log level are changed in Settings.",

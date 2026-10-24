@@ -135,6 +135,19 @@ describe("the three ways out", () => {
     expect(line.textContent).toContain("argelanderspace serve");
     expect(line.querySelector("code")?.textContent).toBe("argelanderspace serve");
   });
+  it("both forms add that the Shelf can take Jerabkova into your own project (tutorial-shelf ticket 03)", async () => {
+    host.pick = vi.fn(async () => true);
+    setup();
+    await tick(16);
+    expect(ui("tutorial-finish-open-own-shelf")?.textContent).toContain("文献仓");
+    expect(ui("tutorial-finish-open-own-shelf")?.textContent).toContain("Jerabkova");
+    cleanup();
+    document.body.innerHTML = "";
+    setup({ desktop: false });
+    await tick(16);
+    expect(ui("tutorial-finish-open-own-browser")).not.toBeNull();
+    expect(ui("tutorial-finish-open-own-shelf")?.textContent).toContain("文献仓");
+  });
   it("'Review any chapter' opens the folded chapter rail and puts the focus on its first chapter", async () => {
     setup();
     await tick(16);

@@ -10,6 +10,7 @@ import {
   SAMPLE_COPILOT_CELL_ID,
   SAMPLE_COPILOT_TASK_ID,
   SAMPLE_DOC_ID,
+  SAMPLE_JERABKOVA_ARXIV,
   SAMPLE_LAST_CELL_ID,
   SAMPLE_MANUSCRIPT_ID,
   SAMPLE_PLAN_ID,
@@ -26,10 +27,11 @@ const json = (path: string) => JSON.parse(readFileSync(path, "utf8"));
 
 describe("the tutorial sample ids", () => {
   it("names the five Works of the sample library, and the Doc is Jerabkova's main Doc", () => {
-    const works: { id: string; doc_ids?: string[] }[] = json(join(LIT, "library", "library.json")).works;
+    const works: { id: string; doc_ids?: string[]; arxiv_id?: string }[] = json(join(LIT, "library", "library.json")).works;
     expect(works.map((w) => w.id).sort()).toEqual(Object.values(SAMPLE_WORK_IDS).sort());
     const jerabkova = works.find((w) => w.id === SAMPLE_WORK_IDS.jerabkova2021);
     expect(jerabkova?.doc_ids?.[0]).toBe(SAMPLE_DOC_ID);
+    expect(jerabkova?.arxiv_id).toBe(SAMPLE_JERABKOVA_ARXIV);
     expect(existsSync(join(LIT, "output", SAMPLE_DOC_ID, `${SAMPLE_DOC_ID}.json`))).toBe(true);
   });
 

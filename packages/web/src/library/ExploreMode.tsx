@@ -22,7 +22,6 @@ import { captureDiscoveryPage } from "../copilot/discovery-context";
 import type { GraphCanvasController } from "../graph/GraphCanvas";
 import { Icon } from "../lib/icons";
 import { findOnShelf, projectHas, type ShelfHit } from "../shelf/already-on-shelf";
-import { useShelfAvailable } from "../shelf/availability";
 import { ActionButton } from "../ui";
 import { DiscoveryDetail } from "./DiscoveryDetail";
 import { DiscoveryGraphView } from "./DiscoveryGraphView";
@@ -85,9 +84,9 @@ export function ExploreMode({
     setSelection(bibcode);
   };
   // The already-on-Shelf hint (shelf ticket 06): an Add asks the Shelf first (DOI / arXiv only, read-only); with a hit
-  // the candidate's detail shows the hint instead of adding. Never in the tutorial Project; no mark on the graph or
-  // the candidate list (spec Q22).
-  const shelfAvailable = useShelfAvailable() && onTakeFromShelf !== undefined;
+  // the candidate's detail shows the hint instead of adding. No mark on the graph or the candidate
+  // list (spec Q22).
+  const shelfAvailable = onTakeFromShelf !== undefined;
   const [shelfHint, setShelfHint] = useState<{ bibcode: string; hits: ShelfHit[] } | null>(null);
   const [checkingShelf, setCheckingShelf] = useState<string | null>(null);
   const lookup = useRef<AbortController | null>(null);

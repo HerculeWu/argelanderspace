@@ -101,6 +101,7 @@ export function FinishCard({ desktop, yielded = false, onReview, onClose, onLeav
               <WithCode text={tk(t, `${KEY}.openOwnBrowser`)} />
             </p>
           )}
+          <p className="tut-text" data-ui="tutorial-finish-open-own-shelf">{tk(t, `${KEY}.openOwnShelf`)}</p>
           {refused && (
             <InlineMessage tone="danger" uiId="tutorial-finish-open-own-failed">{t("settings.host.requestFailed")}</InlineMessage>
           )}

@@ -183,7 +183,7 @@ import {
   type TextDocDeps,
   TextDocService,
 } from "./text-docs.js";
-import { isTutorialProject, mountTutorialRoutes } from "./tutorial-routes.js";
+import { mountTutorialRoutes } from "./tutorial-routes.js";
 import {
   createManuscriptOp,
   deleteManuscriptOp,
@@ -1090,7 +1090,7 @@ export function createApp(deps: AppDeps): Hono {
       },
       undo: new ArgumentUndoRegistry(),
     },
-    // The Shelf tool (shelf ticket 07): the routes' own writer, take and list; not offered in the tutorial project.
+    // The Shelf tool (shelf ticket 07): the routes' own writer, take and list.
     shelf: {
       writer: shelfWriter,
       take: shelfTake,
@@ -1108,7 +1108,6 @@ export function createApp(deps: AppDeps): Hono {
           return "error";
         }
       },
-      inTutorialProject: () => isTutorialProject(tutorialFile(), projectRoot),
     },
     plans: {
       statusDir: deps.statusDir,
