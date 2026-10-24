@@ -269,6 +269,11 @@ describe("the Shelf dialog", () => {
     expect(summary.textContent).toContain("论证图7 条论证");
     // the summary's note row shows the same opening (prototype)
     await waitFor(() => expect(summary.textContent).toContain("Work 笔记与 Röser 2019 同期发现 Hyades 潮汐尾…"));
+    // every summary value sits in its own text box: right-aligned while it is one line, left-aligned once it wraps (shelf follow-up 10, Q5)
+    const values = [...summary.querySelectorAll(".shelf-meta .rml-row")].filter((row) => !row.querySelector('[data-ui="shelf-entry-docs"]')).map((row) => row.querySelector(".rml-v")!);
+    expect(values.length).toBeGreaterThan(3);
+    for (const v of values) expect(v.firstElementChild?.className).toBe("shelf-meta-text");
+    expect(values.find((v) => v.textContent?.startsWith("与 Röser"))?.firstElementChild?.textContent).toBe("与 Röser 2019 同期发现 Hyades 潮汐尾…");
     fireEvent.click(must('[data-ui="take-shelf-entry"]'));
     await waitFor(() => must('[data-ui="take-from-shelf"]'));
     expect(must('[data-ui="take-argument-graph"]').textContent).toContain("7 条论证");

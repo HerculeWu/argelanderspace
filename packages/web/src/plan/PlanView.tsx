@@ -582,7 +582,6 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
                     key={m.k}
                     unstyled
                     mode="icon"
-                    iconSize="small"
                     iconName={m.ic}
                     label={m.label}
                     tooltip={m.label}
@@ -775,7 +774,7 @@ function PlansSidebar({
 
       <div className="plan-side-section">
         <div className="plan-side-label">{t("plan.side.plans")}</div>
-        <ActionButton unstyled mode="icon" iconSize="small" iconName="plus" label={t("plan.action.newPlan")} tooltip={t("plan.action.newPlan")} className="plan-side-add" data-ui="create-plan" onClick={onAddPlan} />
+        <ActionButton unstyled mode="icon" iconName="plus" label={t("plan.action.newPlan")} tooltip={t("plan.action.newPlan")} className="plan-side-add" data-ui="create-plan" onClick={onAddPlan} />
       </div>
 
       <div className="plan-list">

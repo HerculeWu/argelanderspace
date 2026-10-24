@@ -1288,21 +1288,33 @@
       ]
     },
     "edit-argument": {
-      "set": "lucide",
-      "file": "Pencil",
-      "originalHash": "2296d99aba12d9ac2827f339f6abd443708acb3e48efb8b5df18bd49a80e21a8",
-      "normalizedHash": "2296d99aba12d9ac2827f339f6abd443708acb3e48efb8b5df18bd49a80e21a8",
+      "set": "dazzle-line-icons",
+      "file": "pen-line.svg",
+      "originalHash": "fe018db09f448c8dc7a91e7ca34dbb3ef8e933958ce2140184faefbf55ce74bc",
+      "normalizedHash": "61d23c2ac2428ed68f01bb2ee5d1f5910b28d386e287d58f791e79aa2704a094",
       "modifications": [
-        "lucide-react 0.460.0 icon nodes as inline SVG with Lucide's default root attributes; React keys omitted; provenance recorded 2026-10-23 after an element-by-element match with the installed package"
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
       ]
     },
     "delete-argument": {
-      "set": "lucide",
-      "file": "Trash2",
-      "originalHash": "b9876a46e90de11df7dc9d3ba3c83ee1972a882426a012eaf9d05ab9d0a6cfd5",
-      "normalizedHash": "b9876a46e90de11df7dc9d3ba3c83ee1972a882426a012eaf9d05ab9d0a6cfd5",
+      "set": "dazzle-line-icons",
+      "file": "trash.svg",
+      "originalHash": "ee71c06713db40da2823e1f7e9656016c8d550d801a65853bb9b7e5de5f39661",
+      "normalizedHash": "eff543f9291c71383b9a469a041e50ea7cceda4151729acd441e2f225c899b93",
       "modifications": [
-        "lucide-react 0.460.0 icon nodes as inline SVG with Lucide's default root attributes; React keys omitted; provenance recorded 2026-10-23 after an element-by-element match with the installed package"
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
       ]
     },
     "add-argument-link": {
@@ -1351,12 +1363,18 @@
       ]
     },
     "tutorial-rail-more": {
-      "set": "lucide",
-      "file": "Ellipsis",
-      "originalHash": "f461794d4776efdc943645da3eb32f0d6ff3f04a6395fba92f5e1fbd36466597",
-      "normalizedHash": "f461794d4776efdc943645da3eb32f0d6ff3f04a6395fba92f5e1fbd36466597",
+      "set": "dazzle-line-icons",
+      "file": "dots-horizontal.svg",
+      "originalHash": "002ce5873fd748d62e25c334860d10d765ce1d168363778891937256a63d7fb9",
+      "normalizedHash": "a9c4ca40f1f573cb47ab58c4cd92621a0f8135149b09b7ca342b1ea9eb083699",
       "modifications": [
-        "lucide-react 0.460.0 icon nodes as inline SVG with Lucide's default root attributes; React keys omitted; provenance recorded 2026-10-23 after an element-by-element match with the installed package"
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
       ]
     },
     "toggle-latex-annotation-body": {

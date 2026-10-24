@@ -168,6 +168,11 @@ describe("the chapter rail's “Restart…”", () => {
     ));
   }
 
+  it("the rail head's icon-only buttons both use the small preset (shelf follow-up 10, Q1)", () => {
+    rail(true);
+    for (const ui of ["tutorial-rail-more", "toggle-tutorial-chapters"]) expect(q(`[data-ui="${ui}"] svg`)?.getAttribute("class")).toBe("ui-icon ui-icon-size--small");
+    expect(q('[data-ui="tutorial-rail-more"] svg [stroke-width]')).toBeNull();
+  });
   it("the confirmation names the folder in its display form from its first frame (the layer's own state), not the raw path", async () => {
     rail(true, SHOWN);
     fireEvent.click(q('[data-ui="tutorial-rail-more"]')!);

@@ -602,7 +602,6 @@ input, textarea { font-family: inherit; color: inherit; }
 .plan-seg-btn:hover { color: var(--text-dim); }
 .plan-seg-btn.on { background: var(--bg); color: var(--text); box-shadow: var(--shadow-1); }
 .plan-seg-btn.on svg { color: var(--accent); }
-.plan-seg-btn:has(> svg.ui-icon) { padding: 0 7px; } /* small18 artwork in place of the 14px glyph: keep the button box */
 .plan-body { flex: 1; min-height: 0; display: flex; position: relative; }
 .plan-canvas { flex: 1; min-width: 0; overflow: hidden; }
 .plan-canvas-scroll { height: 100%; overflow-y: auto; padding: 14px 18px 40px; }
@@ -641,7 +640,7 @@ input, textarea { font-family: inherit; color: inherit; }
 .plan-reject-nudge { bottom: 114px; } /* sit above PlanView's write-flash notice (68px) */
 .plan-list-group-head { display: flex; align-items: center; gap: 8px; padding: 6px 4px; font-size: var(--fs-sm); font-weight: 600; color: var(--text-dim); }
 .plan-list-group-n { color: var(--text-faint); font-weight: 500; }
-.plan-list-fold { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 4px; color: var(--text-faint); }
+.plan-list-fold { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 4px; color: var(--text-faint); margin: 0 -6px 0 -5px; } /* the 18px box centred on the other groups' 7px dot, so its label starts where theirs do (shelf follow-up 10) */
 .plan-list-fold:hover { background: var(--hover); color: var(--text); }
 .plan-task-row { display: flex; align-items: center; gap: 11px; padding: 9px 10px; border-radius: var(--radius); cursor: pointer; transition: background .1s; border: 1px solid transparent; }
 .plan-task-row:hover { background: var(--surface); border-color: var(--border-soft); }

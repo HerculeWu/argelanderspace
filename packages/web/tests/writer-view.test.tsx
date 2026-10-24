@@ -329,6 +329,12 @@ describe("editor", () => {
     expect(edit.getAttribute("aria-label")).toBe("编辑单元格");
     expect(edit.textContent).toBe("");
     expect(edit.querySelector("svg")).not.toBeNull();
+    // the cell tools beside the text take the icon without a preset: their own 12/11 px rules apply (shelf follow-up 10, Q3)
+    for (const ui of ["edit-cell", "comment-on-cell", "add-cell-after"]) {
+      const svgs = [...container.querySelectorAll(`[data-ui="${ui}"] svg`)];
+      expect(svgs.length).toBeGreaterThan(0);
+      for (const s of svgs) expect(s.getAttribute("class")).toBe("ico-sm");
+    }
     const tooltipId = edit.getAttribute("aria-describedby");
     expect(tooltipId && container.querySelector(`[id="${tooltipId}"][role="tooltip"]`)?.textContent).toBe("编辑单元格");
     const renderButton = container.querySelector<HTMLButtonElement>('[data-ui="render-manuscript"]')!;

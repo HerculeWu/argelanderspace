@@ -106,6 +106,7 @@ export function ChapterRail(props: ChapterRailProps) {
               ref={moreRef}
               unstyled
               mode="icon"
+              iconSize="small"
               iconName="ellipsis"
               className="btn icon ghost"
               data-ui="tutorial-rail-more"

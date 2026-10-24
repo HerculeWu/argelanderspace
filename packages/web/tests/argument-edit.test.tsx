@@ -193,6 +193,16 @@ describe("new argument", () => {
 });
 
 describe("editing an existing argument", () => {
+  it("the detail header's icon-only actions all use the small preset, and delete draws the graph's trash (shelf follow-up 10, Q1)", async () => {
+    const { container } = mount();
+    await ready(container);
+    await open(container, "m2");
+    const svg = (ui: string) => must(container, ui).querySelector("svg")!;
+    for (const ui of ["edit-argument", "delete-argument", "close-argument-detail"]) expect(svg(ui).getAttribute("class")).toBe("ui-icon ui-icon-size--small");
+    expect(svg("delete-argument").innerHTML).toBe(svg("clear-argument-graph").innerHTML);
+    expect(svg("edit-argument").querySelector("[stroke-width]")).toBeNull();
+  });
+
   it("edits the title, kind, fields and Warrant's implicit flag, saving only what changed over the stored argument", async () => {
     const { container } = mount();
     await ready(container);

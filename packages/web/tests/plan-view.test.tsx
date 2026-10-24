@@ -252,7 +252,8 @@ describe("PlanView: plans empty → create → inline add", () => {
     });
     expect(create.getAttribute("aria-label")).toBe("新建计划");
     expect(create.textContent).toBe("");
-    expect(create.querySelector("svg")?.classList.contains("ui-icon-size--small")).toBe(true);
+    // 18×18 hit box: the 14 px icon without a preset (shelf follow-up 10, Q2)
+    expect(create.querySelector("svg")?.getAttribute("class")).toBe("ico-sm");
     expect(create.querySelector("path")?.getAttribute("d")).toBe("M6 12H18M12 6V18");
     // The satisfied text CTA remains a separate action with no glyph preset.
     const cta = await waitFor(() => byText(container, ".plan-empty button", "新建第一个研究计划"));
@@ -693,6 +694,18 @@ describe("PlanView: a task the Copilot deleted gets the same undo snackbar", () 
 });
 
 describe("PlanView: board + timeline smoke", () => {
+  it("the display-mode segments and the completed fold use the 14 px icon without a preset (shelf follow-up 10, Q2)", async () => {
+    serverDoc = mkDoc([mkTask({ title: "进行" }), mkTask({ title: "完了", status: "done" })]);
+    const { container } = renderPlan();
+    await waitFor(() => rowOf(container, "进行"));
+    const modes = [...container.querySelectorAll('[data-ui="plan-display-mode"]')];
+    expect(modes.length).toBeGreaterThan(1);
+    for (const m of modes) expect(m.querySelector("svg")?.getAttribute("class")).toBe("ico-sm");
+    expect(container.querySelector('[data-ui="toggle-completed-tasks"] svg')?.getAttribute("class")).toBe("ico-sm");
+    // edit/delete plan in the same toolbar keep the small preset (not part of Q2)
+    expect(container.querySelector('[data-ui="edit-plan"] svg')?.getAttribute("class")).toBe("ui-icon ui-icon-size--small");
+  });
+
   it("board mode renders the four columns", async () => {
     serverDoc = mkDoc([mkTask({ title: "看板任务" })]);
     const { container } = renderPlan();

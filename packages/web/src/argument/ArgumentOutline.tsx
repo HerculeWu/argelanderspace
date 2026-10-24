@@ -41,7 +41,6 @@ export function ArgumentOutline({
           <ActionButton
             unstyled
             mode="icon"
-            iconSize="small"
             iconName={r.open ? "chevron-down" : "chevron-right"}
             className="ag-out-tw"
             data-ui="toggle-argument-outline-node"

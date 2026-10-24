@@ -85,6 +85,9 @@
 .shelf-title { margin: 0; }
 .shelf-pane-title { margin: 2px 0 0; font-size: 17px; font-weight: 500; line-height: 1.4; color: var(--text); }
 .shelf-meta .rml-v { min-width: 0; }
+/* one rule for every summary value (shelf follow-up 10): a one-line value stays right-aligned, a value that wraps (a long
+   note preview) reads left-aligned; inline-flex keeps the first line on the label's baseline */
+.shelf-meta .shelf-meta-text { display: inline-flex; max-width: 100%; text-align: left; }
 /* English labels ("Annotations", "Argument graph") are wider than the Library's 56px label column: never split a word. */
 .shelf-meta .rml-k { width: auto; min-width: 56px; max-width: 40%; padding-right: 12px; overflow-wrap: normal; word-break: normal; }
 .shelf-result-list { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; color: var(--text); }

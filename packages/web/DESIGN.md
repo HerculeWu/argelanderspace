@@ -154,7 +154,7 @@ Dazzle mappings against the shipped files.
 Legacy migration (user decision 2026-10-23, reviewed per glyph in a private candidate
 overview): the other 117 pre-provenance resources now use Dazzle artwork, rendered with the
 `small` preset (the old glyphs were mostly 10–15 CSSpx; 18 is the nearest preset). Button
-boxes are unchanged: where a button sized to its content (Plan display-mode segments, LaTeX
+boxes are unchanged: where a button sized to its content (LaTeX
 annotation editor buttons, the Task-note edit button, the reader undo FAB, RefCard icon
 buttons, PDF selection copy), a local rule trims padding (or, for the bare copy button, the
 artwork's margin) by the artwork growth. One user-decided exception: the Library label
@@ -163,3 +163,17 @@ swatch (`set-work-label`, 20 px circle with a 16 px interior) keeps the original
 (the existing preservation exception above, no Dazzle artwork) and the figure-invert
 `contrast` state, kept by the user; its `sun` state is Dazzle, and both states share the
 button's `small` preset.
+
+Icon size follow-up (user decision 2026-10-24, shelf follow-up 10, after a browser review of the
+migration): **icon-only buttons that share a row use the `small` preset with Dazzle artwork**, and the
+same action draws the same artwork (the argument detail's edit/delete/close beside the graph's clear,
+which shares the trash; the tutorial rail's more beside its collapse). Text buttons are not covered.
+**Where the 18 px artwork fills a small hit box or sits beside running text, the control takes no
+preset** and renders the catalog's default `ico-sm` (14 px, the pre-preset glyph size, with the local
+size rules that already existed): the Plan list's completed fold and new-plan button (18×18), the
+argument outline twisty (18×22), the Plan display-mode segments, and the Writer cell tools (edit,
+comment 12 px; add-after 11 px). This is the same no-preset rendering as the label swatch, not a fourth
+preset; its stroke is the old glyphs' thinner one. The completed fold's box is centred on the other
+groups' status dot so all group labels start at the same edge. The task drawer's status buttons keep
+`small`. Shelf summary values follow one alignment rule: right-aligned while one line, left-aligned
+once a value wraps (a long note preview).

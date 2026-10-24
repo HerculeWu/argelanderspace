@@ -277,6 +277,8 @@ describe("the view in a narrow pane", () => {
     const { container } = await mount(1440);
     const before = container.querySelectorAll('[data-ui="argument-outline-item"]').length;
     const tw = container.querySelector<HTMLElement>('[data-ui="toggle-argument-outline-node"]')!;
+    // the 18 px-wide twisty takes the 14 px icon without a preset (shelf follow-up 10, Q2)
+    expect(tw.querySelector("svg")?.getAttribute("class")).toBe("ico-sm");
     fireEvent.click(tw);
     const after = container.querySelectorAll('[data-ui="argument-outline-item"]').length;
     expect(after).not.toBe(before);

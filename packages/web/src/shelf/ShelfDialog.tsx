@@ -360,7 +360,9 @@ function MetaRow({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
   return (
     <div className="rml-row">
       <span className="rml-k">{k}</span>
-      <span className={"rml-v" + (mono ? " mono" : "")}>{v}</span>
+      <span className={"rml-v" + (mono ? " mono" : "")}>
+        <span className="shelf-meta-text">{v}</span>
+      </span>
     </div>
   );
 }

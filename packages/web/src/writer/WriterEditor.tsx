@@ -821,7 +821,7 @@ export function WriterEditor({
                       ctx={ctx}
                     />
                     <div className="w-add-row">
-                      <ActionButton unstyled mode="icon" iconSize="small" iconName="plus" className="w-add-cell"
+                      <ActionButton unstyled mode="icon" iconName="plus" className="w-add-cell"
                         data-add-index={idx + 1} data-ui="add-cell-after" label={t("writer.cell.addCell")} tooltip={t("writer.cell.addCell")}
                         onClick={(e) => openAddMenu(idx + 1, e)} />
                     </div>

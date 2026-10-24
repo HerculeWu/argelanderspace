@@ -390,13 +390,13 @@ export function CellWrap({
         </ActionButton>
         <div className="w-cell-right-tools">
           <ActionButton
-            unstyled mode="icon" iconSize="small" iconName="pencil" className="w-cell-tool"
+            unstyled mode="icon" iconName="pencil" className="w-cell-tool"
             data-action="edit" data-ui="edit-cell"
             label={t("writer.cell.edit")} tooltip={t("writer.cell.edit")}
             onClick={() => ctx.onEdit(cell.id)}
           />
           <ActionButton
-            unstyled mode="icon" iconSize="small" iconName="message-square-plus" className="w-cell-tool"
+            unstyled mode="icon" iconName="message-square-plus" className="w-cell-tool"
             data-action="comment" data-ui="comment-on-cell"
             label={t("writer.cell.comment")} tooltip={t("writer.cell.comment")}
             onClick={() => ctx.onComment(cell.id)}
