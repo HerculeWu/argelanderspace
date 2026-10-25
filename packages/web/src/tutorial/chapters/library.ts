@@ -195,14 +195,14 @@ const ACQUISITION_STATUS = { ui: "acquisition-status" } as const;
 const WORK_DOCUMENTS = { ui: "work-documents" } as const;
 const EVANS_OH_DOC = { ui: "doc-item", key: EVANS_OH_2022_UPLOAD_DOC_ID } as const;
 const COPY_CITE_KEY = { ui: "copy-cite-key" } as const;
-/** The Work detail header's "Add to Shelf", the add dialog it opens (a product modal: the card yields), and its submit. */
+/** The Work detail header's "Add to Shelf", the add dialog it opens (a product modal: the card yields; 2.9 floats over it), and its submit. */
 const ADD_WORK_TO_SHELF = { ui: "add-work-to-shelf" } as const;
 const ADD_TO_SHELF_DIALOG = { ui: "add-to-shelf-dialog" } as const;
 const SUBMIT_ADD_TO_SHELF = { ui: "submit-add-to-shelf" } as const;
-/** 2.8: the import menu's "From Shelf" option and the Shelf dialog it opens (a product modal: the card yields). 2.9: that dialog's Delete button. */
+/** 2.8: the import menu's "From Shelf" option and the Shelf dialog it opens (a product modal: the card yields; 2.9 floats over it). 2.9: that dialog's Delete button. */
 const IMPORT_OPTION_SHELF = { ui: "import-option", key: "shelf" } as const;
 const SHELF_DIALOG = { ui: "shelf-dialog" } as const;
-const DELETE_SHELF_ENTRY = { ui: "delete-shelf-entry" } as const;
+const DELETE_SHELF_ENTRY = { ui: "delete-shelf-entry", within: SHELF_DIALOG } as const;
 const SHELF_DIALOG_OPEN: Requirement = { test: (s) => s.dom.present(SHELF_DIALOG), where: "shelfDialog" };
 
 /** Chapter 2, "library" (appendix A): the sample library, a BibTeX entry, an uploaded source archive, the cite key, the Shelf (add, browse, take and delete). */
@@ -293,7 +293,10 @@ export const LIBRARY: ChapterDefinition = {
       id: "library.shelf-take",
       kind: "look",
       anchors: [SHELF_DIALOG, DELETE_SHELF_ENTRY],
-      // Looked at in the dialog; no registered view action opens it, so "first go back to …" has no take-me-there.
+      // Floats over the Shelf dialog (tutorial-shelf ticket 04): the card and the Delete highlight stay above its overlay
+      // (any other modal still makes it yield). No registered view action opens the dialog, so "first go back to …" has
+      // no take-me-there.
+      floatsOver: "shelf-dialog",
       requires: SHELF_DIALOG_OPEN,
     },
     {

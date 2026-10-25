@@ -134,6 +134,11 @@ const NO_ANCHORS: AnchorLadder = [];
  * modal. Any of them present is the snapshot's `modalOpen`: the card and the rail step below it.
  */
 const MODAL_OVERLAYS = ["dialog-overlay", "writer-dialog-overlay"] as const;
+/** The named dialog is on the page and is the only modal there: every modal overlay present holds it. */
+function onlyModalOpen(ui: string): boolean {
+  const overlays = MODAL_OVERLAYS.flatMap((name) => [...document.querySelectorAll(`[data-ui="${name}"]`)]);
+  return overlays.length > 0 && overlays.every((overlay) => overlay.querySelector(`[data-ui="${ui}"]`) !== null);
+}
 const NO_DATA: Readonly<Record<string, unknown>> = Object.freeze({});
 
 /**
@@ -351,6 +356,10 @@ export function TutorialRunner({ initial, projectDisplay, context, onViewAction,
   // The rungs that apply in this state of the workbench (a rung may carry a condition).
   const rungs = useMemo(() => activeRungs(ladder, snapshot), [ladder, snapshot]);
   const modalOpen = snapshot.modalOpen;
+  // A product modal makes the card yield, unless the step floats over exactly that dialog (looked at again with the
+  // snapshot, i.e. whenever the DOM changed).
+  const floating = modalOpen && !!step?.floatsOver && onlyModalOpen(step.floatsOver);
+  const yieldsToModal = modalOpen && !floating;
   // Where the anchor is: looked at every frame while it is found and shown beside it (scrolling, resizing, layout).
   // With no anchor to look for, an anchor not found, or a product modal open, it is looked at once per change of the
   // snapshot (the DOM observer above) instead of every frame.
@@ -361,7 +370,7 @@ export function TutorialRunner({ initial, projectDisplay, context, onViewAction,
     }
     let frame = 0;
     const tick = () => {
-      const found = rungs.length && !modalOpen ? resolveLadder(document, rungs, activePaneId, deps.rendered) : null;
+      const found = rungs.length && !yieldsToModal ? resolveLadder(document, rungs, activePaneId, deps.rendered) : null;
       const m = found ? deps.measure(found.element) : { rect: null, box: null, visible: false };
       const rail = document.querySelector('[data-ui="tutorial-chapter-rail"]');
       const railBox = rail ? deps.railBox(rail) : null;
@@ -371,7 +380,7 @@ export function TutorialRunner({ initial, projectDisplay, context, onViewAction,
         rect: m.rect,
         box: m.box ?? m.rect,
         visible: m.visible,
-        railRight: railBox && !railHidden ? Math.round(railBox.right) : 0,
+        railRight: railBox && !railHidden && !modalOpen ? Math.round(railBox.right) : 0,
         railBox,
       };
       setPlacement((prev) => (samePlacement(prev, next) ? prev : next));
@@ -380,7 +389,7 @@ export function TutorialRunner({ initial, projectDisplay, context, onViewAction,
     tick();
     return () => cancelAnimationFrame(frame);
     // snapshot: an anchor that appeared or changed is looked for again (the loop does not run while none is found).
-  }, [open, rungs, snapshot, activePaneId, deps, modalOpen, railCollapsed, railHidden, stepId]);
+  }, [open, rungs, snapshot, activePaneId, deps, modalOpen, yieldsToModal, railCollapsed, railHidden, stepId]);
 
   // The rail covers the highlighted element. Open (the settings groups, the library's left column): it folds to 44 px,
   // unless the user opened it again during this step (user ruling 2026-10-21). Folded (a control on the page's left
@@ -388,15 +397,16 @@ export function TutorialRunner({ initial, projectDisplay, context, onViewAction,
   // looked at again on the next step (user ruling F3, ticket 21). Otherwise as the prototype. A layout effect, so the
   // folded rail is not painted for a frame over an element it is about to leave.
   useLayoutEffect(() => {
-    if (!open || !stepId || railHidden || placement.step !== stepId) return;
+    // Under a modal the rail is below its overlay: it does not cover anything the card points at.
+    if (!open || !stepId || railHidden || modalOpen || placement.step !== stepId) return;
     if (!placement.box || !placement.railBox || !overlaps(placement.box, placement.railBox)) return;
     if (!railCollapsed) {
       if (railOpenedAt !== stepId) setRailCollapsed(true);
     } else setRailHiddenAt(stepId);
-  }, [open, railCollapsed, railHidden, stepId, railOpenedAt, placement]);
+  }, [open, railCollapsed, railHidden, modalOpen, stepId, railOpenedAt, placement]);
 
   const requiresOk = !step?.requires || step.requires.test(snapshot);
-  const lookingForAnchor = open && ladder.length > 0 && requiresOk && !modalOpen && !placement.element;
+  const lookingForAnchor = open && ladder.length > 0 && requiresOk && !yieldsToModal && !placement.element;
   // A missing anchor is waited for (MutationObserver above), then said to be missing after ANCHOR_MISSING_MS.
   useEffect(() => {
     setMissing(false);
@@ -450,7 +460,7 @@ export function TutorialRunner({ initial, projectDisplay, context, onViewAction,
   const gated = Boolean(step.gate) && (record?.state !== "done" || passed === step.id);
   const take = step.requires?.takeMeThere;
   let dock: Dock = null;
-  if (snapshot.modalOpen) dock = { kind: "modal" };
+  if (yieldsToModal) dock = { kind: "modal" };
   else if (ladder.length === 0) dock = { kind: "none" };
   else if (!requiresOk && step.requires) dock = { kind: "requires", where: step.requires.where, whereValues: step.requires.whereValues, canTake: Boolean(take) };
   else if (!placement.element) dock = missing ? { kind: "missing" } : { kind: "waiting" };

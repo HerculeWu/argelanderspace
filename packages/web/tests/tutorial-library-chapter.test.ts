@@ -484,7 +484,12 @@ describe("2.9: taking and deleting (a look step that requires the Shelf dialog o
     expect(s.kind).toBe("look");
     expect(s.gate).toBeUndefined();
     expect(s.sources).toBeUndefined();
-    expect(s.anchors).toEqual([{ ui: "shelf-dialog" }, { ui: "delete-shelf-entry" }]);
+    expect(s.anchors).toEqual([{ ui: "shelf-dialog" }, { ui: "delete-shelf-entry", within: { ui: "shelf-dialog" } }]);
+  });
+  it("floats over the Shelf dialog (tutorial-shelf ticket 04); no other step of any chapter declares a floating dialog, 2.8 included", () => {
+    expect(s.floatsOver).toBe("shelf-dialog");
+    expect(CHAPTERS.flatMap((c) => c.steps).filter((x) => x.floatsOver).map((x) => x.id)).toEqual(["library.shelf-take"]);
+    expect(step("library.shelf-browse").floatsOver).toBeUndefined();
   });
   it("requires the Shelf dialog open; when it is not, the card says to go back to it and offers no take-me-there (nothing registered opens it)", () => {
     const open = { ...onLibrary({ id: JERABKOVA }), dom: fakeDom({ "shelf-dialog": {} }) } as WorkbenchSnapshot;

@@ -145,11 +145,13 @@ describe("tutorial copy says what the product and the sample really do", () => {
     expect(z).toContain("别的项目");
     expect(z).toContain("复制");
     expect(z).toContain("互不影响");
+    expect(z).toContain("高亮");
     expect(z).toContain("文献仓");
     expect(e).toContain(`“${String(get(en, "shelf.take.open"))}”`);
     expect(e).toContain(`“${String(get(en, "shelf.delete.button"))}”`);
     expect(e).toMatch(/another of your projects/);
     expect(e).toMatch(/copy/);
+    expect(e).toMatch(/highlighted/);
     expect(e).toMatch(/Shelf/);
     expect(zhLength(z)).toBeLessThanOrEqual(80);
     expect(z.split(/[。！？]/).filter(Boolean).length).toBeLessThanOrEqual(3);
@@ -157,13 +159,18 @@ describe("tutorial copy says what the product and the sample really do", () => {
     expect(get(zh, "tutorial.ui.where.shelfDialog")).toBeTruthy();
     expect(get(en, "tutorial.ui.where.shelfDialog")).toBeTruthy();
   });
-  it("the finish page tells both forms of \"open your own project\" that the Shelf can take Jerabkova in", () => {
-    const [z, e] = both("tutorial.steps.finish.page.openOwnShelf");
-    expect(z).toContain("文献仓");
-    expect(z).toContain("Jerabkova");
-    expect(z).toContain(`「${String(get(zh, "library.import.shelf.title"))}」`);
-    expect(e).toContain("Shelf");
-    expect(e).toContain("Jerabkova");
-    expect(e).toContain(`“${String(get(en, "library.import.shelf.title"))}”`);
+  it("the finish page has one Shelf line per form of \"open your own project\" (desktop button, browser command), each naming Jerabkova and the Shelf entry", () => {
+    for (const key of ["openOwnShelf", "openOwnShelfBrowser"]) {
+      const [z, e] = both(`tutorial.steps.finish.page.${key}`);
+      expect(z).toContain("文献仓");
+      expect(z).toContain("Jerabkova");
+      expect(z).toContain(`「${String(get(zh, "library.import.shelf.title"))}」`);
+      expect(e).toContain("Shelf");
+      expect(e).toContain("Jerabkova");
+      expect(e).toContain(`“${String(get(en, "library.import.shelf.title"))}”`);
+      expect(zhLength(z)).toBeLessThanOrEqual(80);
+    }
+    expect(both("tutorial.steps.finish.page.openOwnShelf")[0]).not.toBe(both("tutorial.steps.finish.page.openOwnShelfBrowser")[0]);
+    expect(both("tutorial.steps.finish.page.openOwnShelf")[1]).not.toBe(both("tutorial.steps.finish.page.openOwnShelfBrowser")[1]);
   });
 });

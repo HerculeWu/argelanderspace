@@ -3115,7 +3115,7 @@
         },
         "shelf-take": {
           "title": "Take and delete",
-          "body": "Taking is done in another of your projects, with “Take into this project…”. It is a copy, so the two sides never affect each other. “Delete” here removes only the Shelf's copy; do not click it in the tutorial."
+          "body": "Taking is done in another of your projects, with “Take into this project…”. It is a copy, so the two sides never affect each other. The highlighted “Delete” removes only the Shelf's copy; do not click it in the tutorial."
         },
         "agent": {
           "title": "An agent can add it too",
@@ -3280,7 +3280,8 @@
           "body": "You have been through the workbench in the tutorial project: adding, reading, exploring, arguments, planning, writing, and the Copilot. This project stays, and you can come back to it any time.",
           "openOwn": "Open your own project",
           "openOwnBrowser": "Run `argelanderspace serve` in a terminal to open your own project",
-          "openOwnShelf": "In your own project, click “Import literature” → “From Shelf” to take Jerabkova in.",
+          "openOwnShelf": "Once it opens, click “Import literature” → “From Shelf” in your own project to take Jerabkova in.",
+          "openOwnShelfBrowser": "Once it is running, click “Import literature” → “From Shelf” in your own project to take Jerabkova in.",
           "review": "Review any chapter",
           "close": "Close the tutorial",
           "settingsNote": "Appearance, language and log level are changed in Settings.",

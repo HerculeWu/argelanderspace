@@ -87,6 +87,13 @@ export interface L2Source<T = unknown> {
  */
 export type StepKind = "do" | "look" | "agent";
 
+/**
+ * The product dialogs a step may float above (their `data-ui`): the Shelf dialog, whose Delete button step 2.9 points at.
+ * Not a switch for "any modal": a new entry is a new, deliberate exception.
+ */
+export const FLOATABLE_DIALOGS = ["shelf-dialog"] as const;
+export type FloatableDialog = (typeof FLOATABLE_DIALOGS)[number];
+
 export interface StepDefinition {
   /** Stable string id, `<chapter id>.<name>`; its copy is `tutorial.steps.<id>.*`. */
   readonly id: string;
@@ -96,6 +103,13 @@ export interface StepDefinition {
   /** In the browser form, a different ladder (empty: docked) and the browser variants of the copy. */
   readonly browser?: { readonly anchors: AnchorLadder; readonly copy: "browser" };
   readonly gate?: Gate;
+  /**
+   * The named product dialog this step floats above (tutorial-shelf ticket 04). By default a product modal makes the card
+   * yield (below its overlay, no highlight); a step that names its dialog keeps the card and the highlight above that
+   * overlay while that dialog is the only modal open — any other modal, or a second one over it, still makes it yield.
+   * The anchors are looked up in the whole document as usual (give a rung `within` the dialog to pin it there).
+   */
+  readonly floatsOver?: FloatableDialog;
   readonly sources?: readonly L2Source[];
   readonly requires?: Requirement;
   /**

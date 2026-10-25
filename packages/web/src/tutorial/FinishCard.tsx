@@ -92,16 +92,21 @@ export function FinishCard({ desktop, yielded = false, onReview, onClose, onLeav
         <p className="tut-text">{tk(t, `${KEY}.body`)}</p>
         <div className="tut-finish-ways">
           {desktop && pickFolder ? (
-            <Button appearance="primary" data-ui="tutorial-finish-open-own" busy={asking} disabled={asking} onClick={openOwn}>
-              <Icon name="folder-open" cls="ico-sm" />
-              {tk(t, `${KEY}.openOwn`)}
-            </Button>
+            <>
+              <Button appearance="primary" data-ui="tutorial-finish-open-own" busy={asking} disabled={asking} onClick={openOwn}>
+                <Icon name="folder-open" cls="ico-sm" />
+                {tk(t, `${KEY}.openOwn`)}
+              </Button>
+              <p className="tut-text" data-ui="tutorial-finish-open-own-shelf">{tk(t, `${KEY}.openOwnShelf`)}</p>
+            </>
           ) : (
-            <p className="tut-text" data-ui="tutorial-finish-open-own-browser">
-              <WithCode text={tk(t, `${KEY}.openOwnBrowser`)} />
-            </p>
+            <>
+              <p className="tut-text" data-ui="tutorial-finish-open-own-browser">
+                <WithCode text={tk(t, `${KEY}.openOwnBrowser`)} />
+              </p>
+              <p className="tut-text" data-ui="tutorial-finish-open-own-shelf-browser">{tk(t, `${KEY}.openOwnShelfBrowser`)}</p>
+            </>
           )}
-          <p className="tut-text" data-ui="tutorial-finish-open-own-shelf">{tk(t, `${KEY}.openOwnShelf`)}</p>
           {refused && (
             <InlineMessage tone="danger" uiId="tutorial-finish-open-own-failed">{t("settings.host.requestFailed")}</InlineMessage>
           )}
