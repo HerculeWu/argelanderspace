@@ -2021,7 +2021,31 @@
       "chosenSmallBody": "所选模型放不下 Copilot 的系统指令和工具。请在面板的模型选择器里换一个窗口更大的模型，然后再开始。"
     },
     "windowSmall": "已设置的模型上下文窗口都太小，放不下 Copilot。请在模型设置里添加窗口更大的模型。",
-    "windowSmallTag": "{{name}}（窗口太小）"
+    "windowSmallTag": "{{name}}（窗口太小）",
+    "compaction": {
+      "menu": "会话菜单",
+      "compact": "压缩上下文",
+      "menuRunning": "回复进行中，结束后可压缩",
+      "menuShort": "会话还很短，暂无需压缩",
+      "menuBusy": "正在压缩",
+      "marker": "上下文已压缩",
+      "count": "{{count}} 条较早的消息已换成摘要",
+      "auto": "自动",
+      "manual": "手动",
+      "summaryLabel": "上下文摘要（只读）",
+      "summaryNote": "模型从这里起看到的是摘要和下方消息。上方的完整历史不变。",
+      "generatedBy": "由 {{model}} 生成",
+      "includesPrevious": "已并入上一份摘要",
+      "running": "正在压缩上下文…",
+      "runningNote": "完成前不能发送新消息；停止可中断，会话保持不变。",
+      "runningAuto": "回复暂停，正在压缩上下文…",
+      "runningAutoNote": "完成后自动继续回复；停止会结束本次回复，会话保持不变。",
+      "lockedPlaceholder": "正在压缩上下文，完成后可继续发送…",
+      "stopped": "已停止压缩，会话没有改变。",
+      "failedTitle": "上下文压缩失败",
+      "failedBody": "会话和历史没有改变。可以重试，或新建会话继续。",
+      "autoFailedTitle": "自动压缩未能完成"
+    }
   },
   "mail": {
     "live": {

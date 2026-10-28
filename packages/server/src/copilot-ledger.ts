@@ -22,8 +22,11 @@ import { fitEnvelope, historyCost, restateGone } from "./copilot-batching.js";
 /** The parts of a history entry this module reads. */
 export interface RawEntry {
   type: string;
+  id?: string;
   customType?: string;
   data?: unknown;
+  /** A compaction entry: the first entry the model still sees as written. */
+  firstKeptEntryId?: string;
   message?: {
     role: string;
     content?: unknown;
