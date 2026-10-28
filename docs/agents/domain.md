@@ -10,6 +10,7 @@
 - 全局数据与邮件：[全局数据范围](../adr/0007-global-data-scope.md)、[邮件以远端为准与真人确认](../adr/0008-mail-remote-authority.md)。尚未实施。
 - 文献仓：[跨项目复制存取，而非全局 Library](../adr/0013-shelf-copy-not-global-library.md)（局部修订 0007「不授权全局 Library 复用」）。尚未实施。
 - 项目迁入：[agent 访谈加迁入清单，而非导入器](../adr/0014-project-intake-by-interview.md)（局部修订 0011 的随包 skill 白名单）；数据保护见 [contracts](../contracts.md)「项目迁入」。尚未实施。
+- 操作目录与外部 agent：[Copilot 与 CLI 共用一份操作目录](../adr/0015-one-operation-catalog-for-copilot-and-cli.md)（局部修订 0011 的 skill 白名单与 CLI 只读、0014 的外部 agent 只读）；数据保护见 [contracts](../contracts.md)「操作目录与外部 agent」。尚未实施。
 - 论证图：[属于 Work，出处只作参考](../adr/0009-argument-graph-work-owned.md)。数据与读写接口、画布、视图（发布页面上下文）、手动编辑、Work 合并跟随、CLI、Copilot 工具与确认卡、整理 skill 均已实施并经工程核查；用户终验是独立的一步，CLI 新命令的冻结面（[contracts](../contracts.md)「CLI 论证图命令冻结契约」）在其通过后生效。
 - 桌面应用：[Tauri 壳加 Node sidecar，页面经本地 HTTP 加载](../adr/0010-desktop-app-tauri-node-sidecar.md)。尚未实施。
 - 应用内教程：[在独立的教程 Project 里运行](../adr/0012-in-app-tutorial-in-its-own-project.md)（含示例冻结与回归守护、示例数据的许可边界、撤回的随包离线探索缓存）。2026-10-21 由 in-app-tutorial 票 15–27 实施；用户终验另行记录。
