@@ -208,6 +208,8 @@ export const CopilotRunSchema = z
       "interrupted",
     ]),
     error: z.string().nullable(),
+    /** With `error: "capacity"`: the run ended because the automatic compaction of its context did not finish. */
+    compactionFailed: z.boolean().optional(),
   })
   .strict();
 export type CopilotRun = z.infer<typeof CopilotRunSchema>;
@@ -744,10 +746,52 @@ export const CopilotLiveSchema = z
   .strict();
 export type CopilotLive = z.infer<typeof CopilotLiveSchema>;
 
+/**
+ * What the host records in a `CompactionEntry`'s `details` (release-0.2 ticket 11): who asked for it and which model wrote the
+ * summary. The history stays readable without it; a compaction that has none is shown as an automatic one by an unknown model.
+ */
+export const CompactionDetailsSchema = z
+  .object({
+    version: z.literal(1),
+    origin: z.enum(["manual", "auto"]),
+    provider: z.string(),
+    model: z.string(),
+  })
+  .strict();
+export type CompactionDetails = z.infer<typeof CompactionDetailsSchema>;
+/** One compaction marker of the shown history: the model sees the summary instead of everything before `beforeMessageId`. */
+export interface CopilotCompaction {
+  /** The compaction entry's id. */
+  id: string;
+  /** The first shown message the model still sees as written; null when no shown message follows the cut. */
+  beforeMessageId: string | null;
+  /** How many shown messages come before the marker (the model no longer sees them as written). */
+  count: number;
+  origin: "manual" | "auto";
+  /** The model that wrote the summary, when the entry says so. */
+  model: string | null;
+  at: string;
+  /** The summary also carries what an earlier summary said. */
+  includesPrevious: boolean;
+  /** The read-only summary text. */
+  summary: string;
+}
+/** A compaction under way (the panel disables sending and shows the running state). */
+export interface CopilotCompactionState {
+  origin: "manual" | "auto";
+  startedAt: string;
+}
+
 export interface ConversationSnapshot {
   version: 1;
   conversation: Conversation;
   messages: CopilotMessage[];
+  /** The compaction markers, oldest first (absent in a snapshot of a service that predates compaction). */
+  compactions?: CopilotCompaction[];
+  /** The compaction under way, if any. */
+  compaction?: CopilotCompactionState | null;
+  /** Whether a manual compaction has anything to compact now (a conversation that is still short has not). */
+  canCompact?: boolean;
   /** The running run's current status; null/absent when no run works. A reconnecting client gets it here. */
   live?: CopilotLive | null;
   /** Confirmations the user can act on now (this service instance only; a restart revives none). */

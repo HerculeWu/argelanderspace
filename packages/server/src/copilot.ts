@@ -6,12 +6,14 @@ import {
   type ArgumentPage,
   argumentKey,
   buildPdfReading,
+  CompactionDetailsSchema,
   type ContextCoverage,
   ContextCoverageSchema,
   type Conversation,
   type ConversationModel,
   ConversationSchema,
   type ConversationSnapshot,
+  type CopilotCompaction,
   type CopilotConfirmation,
   type CopilotConfirmationDecision,
   type CopilotContextReference,
@@ -73,6 +75,7 @@ import {
 } from "@earendil-works/pi-ai";
 import {
   type AgentSession,
+  compact,
   formatSkillsForPrompt,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
@@ -82,6 +85,16 @@ import {
   type ArgumentOpDeps,
 } from "./copilot-argument-tool.js";
 import { type FittedEnvelope, fitEnvelope, historyCost } from "./copilot-batching.js";
+import {
+  activeEntries,
+  type CompactionPlan,
+  canCompact,
+  compactionDetails,
+  compactionFocus,
+  compactionSettings,
+  planCompaction,
+  withReferences,
+} from "./copilot-compaction.js";
 import {
   type ConfirmationKind,
   type ConfirmationKinds,
@@ -170,6 +183,12 @@ export class CopilotError extends Error {
       | "unavailable"
       /** A system error at click time (data unreadable): not a change, and never reported as one. */
       | "unreadable"
+      /** A manual compaction whose summary could not be made: the conversation and its history are unchanged. */
+      | "compaction_failed"
+      /** A manual compaction of a conversation that has nothing to summarize yet. */
+      | "too_short",
+    /** With `capacity`: the request did not fit, and the compaction that was tried to make room did not finish. */
+    readonly compactionFailed = false
   ) {
     super(code);
   }
@@ -219,6 +238,8 @@ interface Loaded {
   live?: LiveState;
   lock: AsyncLock;
   pending?: Promise<void>;
+  /** A compaction under way (manual, or automatic in the middle of a run); Stop aborts it. */
+  compaction?: { origin: "manual" | "auto"; startedAt: number; abort: AbortController };
   /**
    * "Allow for this session" of the file and command tools (copilot ticket 57), per class. Set only by the real view's
    * click on a card (`decide`), never by a tool; in memory only, so a restart asks again.
@@ -237,6 +258,13 @@ interface LiveState {
   thinking: string;
   startedAt: number;
 }
+/** What a summary takes of the window when a message is admitted on the assumption that the history will be compacted. */
+const COMPACTION_RESERVE_BYTES = 12_000;
+/** How much conversation text one summary request can take: the window less what pi reserves for the summary itself. */
+const summaryBudget = (
+  window: { contextWindow: number },
+  settings: { reserveTokens: number }
+): number => Math.max(20_000, (window.contextWindow - settings.reserveTokens - 4096) * 3);
 /** The reasoning text the live panel keeps: the newest part of a long one (the full text is in the saved reply). */
 const LIVE_THINKING_MAX = 6000;
 /** The most reasoning text one saved reply puts in a snapshot (the history keeps all of it). */
@@ -487,6 +515,10 @@ export class CopilotHost {
   /** Task deletes that can still be undone (8-second window): one registry for the tool, the panel and the Plan page. */
   readonly taskUndo = new TaskUndoRegistry();
   private closed = false;
+  /** The language the interface speaks (config.toml): the language a compaction summary is written in. */
+  private language: () => "zh-CN" | "en" = () => "zh-CN";
+  /** A message being admitted on the assumption that the history will be compacted for it (see `admitMessage`). */
+  private readonly assumed = new WeakMap<Loaded, { firstKeptEntryId: string; reserve: number }>();
   private readonly root: string;
   private readonly cwd: string;
   private readonly sessionsDir: string;
@@ -537,6 +569,9 @@ export class CopilotHost {
   }
   /** The clock the system prompt's date sentence reads; tests inject a fixed one. */
   private now: () => Date = () => new Date();
+  useLanguage(read: () => "zh-CN" | "en"): void {
+    this.language = read;
+  }
   useClock(now: () => Date): void {
     this.now = now;
   }
@@ -925,7 +960,13 @@ export class CopilotHost {
     };
   }
   private messages(loaded: Loaded): CopilotMessage[] {
+    return this.shown(loaded).messages;
+  }
+  /** The shown history (every message, whatever the model still sees of it) and the compaction markers standing in it. */
+  private shown(loaded: Loaded): { messages: CopilotMessage[]; compactions: CopilotCompaction[] } {
     const messages: CopilotMessage[] = [];
+    /** Where in the entries each shown message came from, to place the compaction markers. */
+    const places: { id: string; index: number }[] = [];
     const outcomes = new Map<string, unknown>();
     const entries = loaded.manager.getEntries();
     // What the ledger says of each delivery (evicted, withdrawn): shown beside the original record, which is never touched.
@@ -933,7 +974,7 @@ export class CopilotHost {
     for (const entry of entries)
       if (entry.type === "message" && entry.message.role === "toolResult")
         outcomes.set(entry.message.toolCallId, entry.message.details ?? null);
-    for (const entry of entries) {
+    for (const [entryIndex, entry] of entries.entries()) {
       if (entry.type !== "message" || !["user", "assistant"].includes(entry.message.role)) continue;
       const message = entry.message;
       if (message.role !== "user" && message.role !== "assistant") continue;
@@ -964,6 +1005,7 @@ export class CopilotHost {
             data.context.coverage = annotateCoverage(covered, goneHeld ? "evict" : action);
           }
           messages.push(this.userMessage(input, data));
+          places.push({ id: input.messageId, index: entryIndex });
         } catch {
           throw new CopilotError("storage");
         }
@@ -1062,7 +1104,29 @@ export class CopilotHost {
           ...(shownThinking ? { thinking: shownThinking } : {}),
           ...(operations.length ? { operations } : {}),
         });
+        places.push({ id: entry.id, index: entryIndex });
       }
+    }
+    // A compaction marker stands where the model's view begins to be the written messages again: before the first shown
+    // message at or after the entry the compaction kept (the history above it is unchanged and still shown).
+    const compactions: CopilotCompaction[] = [];
+    for (const [entryIndex, entry] of entries.entries()) {
+      if (entry.type !== "compaction") continue;
+      const kept = entries.findIndex((candidate) => candidate.id === entry.firstKeptEntryId);
+      const cut = kept >= 0 && kept <= entryIndex ? kept : entryIndex;
+      const details = CompactionDetailsSchema.safeParse(entry.details);
+      compactions.push({
+        id: entry.id,
+        beforeMessageId: places.find((place) => place.index >= cut)?.id ?? null,
+        count: places.filter((place) => place.index < cut).length,
+        origin: details.success ? details.data.origin : "auto",
+        model: details.success ? details.data.model : null,
+        at: entry.timestamp,
+        includesPrevious: entries
+          .slice(0, entryIndex)
+          .some((earlier) => earlier.type === "compaction"),
+        summary: entry.summary,
+      });
     }
     // Steering accepted (saved) but not yet read by the model is shown as the user's own queued message.
     for (const steer of this.queuedSteers(loaded)) {
@@ -1078,7 +1142,7 @@ export class CopilotHost {
         throw new CopilotError("storage");
       }
     }
-    return messages;
+    return { messages, compactions };
   }
   /**
    * A `pending` acquisition (the run ended, or Stop released it, while its job was still going) shows what the Job
@@ -1114,10 +1178,24 @@ export class CopilotHost {
   }
   async snapshot(id: string): Promise<ConversationSnapshot> {
     const loaded = await this.get(id);
+    const { messages, compactions } = this.shown(loaded);
     return {
       version: 1,
       conversation: loaded.record,
-      messages: this.messages(loaded),
+      messages,
+      compactions,
+      compaction: loaded.compaction
+        ? {
+            origin: loaded.compaction.origin,
+            startedAt: new Date(loaded.compaction.startedAt).toISOString(),
+          }
+        : null,
+      canCompact:
+        !loaded.compaction &&
+        !loaded.run &&
+        !isLive(loaded.record.run?.status) &&
+        loaded.record.run?.status !== "stopping" &&
+        canCompact(loaded.manager.getBranch(), compactionSettings(Number.POSITIVE_INFINITY)),
       confirmations: [...this.confirmations.values()]
         .filter((pending) => pending.loaded === loaded)
         .map((pending) => pending.confirmation),
@@ -1275,6 +1353,8 @@ export class CopilotHost {
         if (duplicate) return duplicate;
         if (this.closed) throw new CopilotError("busy");
         const status = loaded.record.run?.status;
+        // While the context is compacted by hand nothing is sent: the summary is made from the history as it is now.
+        if (loaded.compaction && !loaded.run) throw new CopilotError("busy");
         // A message sent while the run is working steers it; it carries its own context.
         if (isLive(status)) return this.steer(loaded, request);
         if (status === "stopping") throw new CopilotError("busy");
@@ -1297,6 +1377,7 @@ export class CopilotHost {
         const status = loaded.record.run?.status;
         if (this.closed || !status || !(RESUMABLE as readonly string[]).includes(status))
           throw new CopilotError("busy");
+        if (loaded.compaction) throw new CopilotError("busy");
         return this.start(loaded, request, this.resumeText(loaded), "resume");
       })
       .catch((error: unknown) => {
@@ -1307,8 +1388,15 @@ export class CopilotHost {
   async stop(id: string): Promise<ConversationSnapshot> {
     const loaded = await this.get(id);
     const state = loaded.run;
+    // A manual compaction has no run: Stop gives it up and the history stays as it was.
+    if (loaded.compaction && !state) {
+      loaded.compaction.abort.abort();
+      return this.snapshot(id);
+    }
     if (!isLive(loaded.record.run?.status) || !state?.session) return this.snapshot(id);
     state.stopRequested = true;
+    // An automatic compaction in the middle of the run is part of what Stop ends.
+    loaded.compaction?.abort.abort();
     loaded.record = {
       ...loaded.record,
       run: { id: state.runId, status: "stopping", error: null },
@@ -1925,17 +2013,15 @@ export class CopilotHost {
       pdf,
       coverage,
       argument: sentArgument,
-      evictions,
-    } = await this.buildEnvelope(
+      shed,
+    } = await this.admitMessage(
+      loaded,
       { messageId, text: request.text },
       context,
       state.model,
-      loaded,
       selected.model,
       state.mailMount === "on"
     );
-    const shed = this.admit(loaded, envelope, selected.model, evictions);
-    if (!shed) throw new CopilotError("capacity");
     // The run may have ended while the settings were read.
     if (loaded.run !== state || state.stopRequested || !isLive(loaded.record.run?.status))
       throw new CopilotError("busy");
@@ -2180,7 +2266,9 @@ export class CopilotHost {
   private view(loaded: Loaded, pending: ReadonlySet<string> = new Set()) {
     const state = this.ledgerState(loaded, pending);
     const projected = projectEntries(state.raw, state.gone, state.deliveries, state.ledger);
-    return { ...state, stats: measureForWindow([loaded.manager.getHeader(), ...projected]) };
+    // After a compaction the window holds its summary and what it kept; the entries before the cut are history only.
+    const active = activeEntries(projected, this.assumed.get(loaded));
+    return { ...state, stats: measureForWindow([loaded.manager.getHeader(), ...active]) };
   }
   /** `size` as the window budget counts it, `imageBytes` the decoded bytes of every image in the history. */
   private historyStats(loaded: Loaded): { size: number; imageBytes: number } {
@@ -2391,6 +2479,184 @@ export class CopilotHost {
     for (const delivery of shedCandidates(view.deliveries, view.gone)) all.add(delivery.key);
     return this.fits(loaded, text, model, all) ? all : null;
   }
+  /**
+   * The envelope a message is sent as, and the deliveries it takes out of the conversation, or capacity. A conversation
+   * whose history alone leaves no room is admitted when a compaction could make it: the message is measured against the
+   * history as that compaction would leave it, and the run compacts when its first request is made (a message the
+   * compaction then cannot make room for is refused there, as capacity, with nothing written).
+   */
+  private async admitMessage(
+    loaded: Loaded,
+    fields: { kind?: "resume"; messageId: string; text: string },
+    context: PageContext,
+    model: { input: readonly string[] },
+    window: { maxTokens: number; contextWindow: number },
+    mailOn: boolean
+  ) {
+    const attempt = async (assumed?: { firstKeptEntryId: string; reserve: number }) => {
+      if (assumed) this.assumed.set(loaded, assumed);
+      try {
+        const built = await this.buildEnvelope(fields, context, model, loaded, window, mailOn);
+        const shed = this.admit(loaded, built.text, window, built.evictions);
+        if (!shed) throw new CopilotError("capacity");
+        return { ...built, shed };
+      } finally {
+        this.assumed.delete(loaded);
+      }
+    };
+    try {
+      return await attempt();
+    } catch (error) {
+      if (!(error instanceof CopilotError) || error.code !== "capacity") throw error;
+      const plan = this.compactionPlan(loaded, window);
+      if (!plan) throw error;
+      return attempt({
+        firstKeptEntryId: plan.firstKeptEntryId,
+        reserve: COMPACTION_RESERVE_BYTES,
+      });
+    }
+  }
+  /**
+   * Compacts the history: the summary is made by the model the conversation is on, with pi's cut rules and prompts, and
+   * written as a `CompactionEntry` in the same history file together with the ledger record that takes the reading
+   * deliveries before the cut out (the summary never replaces them). False: nothing to compact. Throws when the summary
+   * cannot be made or written; the history on disk is then as it was (a failed write reloads it).
+   */
+  private async compactHistory(
+    loaded: Loaded,
+    origin: "manual" | "auto",
+    current: Awaited<ReturnType<ProviderSettings["captureConversation"]>>,
+    signal: AbortSignal
+  ): Promise<boolean> {
+    const auth = current.auth;
+    if (!auth) throw new CopilotError("credentials");
+    const model = auth.auth.baseUrl
+      ? { ...current.model, baseUrl: auth.auth.baseUrl }
+      : current.model;
+    const plan = this.compactionPlan(loaded, model);
+    if (!plan) return false;
+    const result = await compact(
+      plan.preparation,
+      model,
+      auth.auth.apiKey,
+      // the headers go on in the stream function below (a header may be null there: dropped)
+      undefined,
+      compactionFocus(this.language()),
+      signal,
+      "off",
+      (_model, context, options) =>
+        current.provider.streamSimple(model, context, {
+          ...options,
+          apiKey: auth.auth.apiKey,
+          headers: auth.auth.headers,
+          env: auth.env,
+        }),
+      auth.env
+    );
+    signal.throwIfAborted();
+    const summary = withReferences(result.summary, plan.references);
+    if (!summary.trim()) throw new CopilotError("compaction_failed");
+    this.guard();
+    loaded.manager.appendCompaction(
+      summary,
+      plan.firstKeptEntryId,
+      result.tokensBefore,
+      compactionDetails(origin, model),
+      false,
+      result.usage
+    );
+    try {
+      const records = plan.evict.map((key) => ({ action: "evict" as const, key }));
+      if (records.length) this.persistLedger(loaded, records);
+      else this.flush(loaded);
+    } catch {
+      try {
+        loaded.manager = SessionManager.inMemory(
+          this.cwd,
+          { id: loaded.record.sessionId },
+          readCopilotHistory(this.history(loaded.record), loaded.record.sessionId)
+        );
+      } catch {
+        /* the next read of the conversation reports it */
+      }
+      throw new CopilotError("storage");
+    }
+    return true;
+  }
+  /** The user's "compact context": no run is working, the model sees summary + kept part afterwards. Stop gives it up. */
+  async compact(
+    id: string
+  ): Promise<{ status: "compacted" | "stopped"; snapshot: ConversationSnapshot }> {
+    const loaded = await this.get(id);
+    const abort = new AbortController();
+    const current = await loaded.lock
+      .run(async () => {
+        const status = loaded.record.run?.status;
+        if (
+          this.closed ||
+          loaded.compaction ||
+          loaded.run ||
+          isLive(status) ||
+          status === "stopping"
+        )
+          throw new CopilotError("busy");
+        if (!loaded.record.model) throw new CopilotError("capabilities");
+        const captured = await this.settingsHost().captureConversation(loaded.record.model, true);
+        if (!captured.auth) throw new CopilotError("credentials");
+        if (
+          !canCompact(loaded.manager.getBranch(), compactionSettings(captured.model.contextWindow))
+        )
+          throw new CopilotError("too_short");
+        loaded.compaction = { origin: "manual", startedAt: Date.now(), abort };
+        return captured;
+      })
+      .catch((error: unknown) => {
+        throw this.failure(error);
+      });
+    this.emit(loaded);
+    let status: "compacted" | "stopped" = "compacted";
+    try {
+      if (!(await this.compactHistory(loaded, "manual", current, abort.signal)))
+        throw new CopilotError("too_short");
+    } catch (error) {
+      if (abort.signal.aborted) status = "stopped";
+      else if (error instanceof CopilotError) throw error;
+      else throw new CopilotError("compaction_failed");
+    } finally {
+      loaded.compaction = undefined;
+      this.emit(loaded);
+    }
+    return { status, snapshot: await this.snapshot(id) };
+  }
+  /** The automatic compaction in the middle of a run; its failure is the request's `capacity`, marked as such. */
+  private async compactInRun(
+    loaded: Loaded,
+    state: RunState,
+    current: Awaited<ReturnType<ProviderSettings["captureConversation"]>>
+  ): Promise<boolean> {
+    const abort = new AbortController();
+    loaded.compaction = { origin: "auto", startedAt: Date.now(), abort };
+    this.emit(loaded);
+    try {
+      return await this.compactHistory(loaded, "auto", current, abort.signal);
+    } catch (error) {
+      if (state.stopRequested || this.closed || abort.signal.aborted)
+        throw new CopilotError("busy");
+      if (error instanceof CopilotError && error.code !== "compaction_failed") throw error;
+      throw new CopilotError("capacity", true);
+    } finally {
+      loaded.compaction = undefined;
+      this.emit(loaded);
+    }
+  }
+  /** What compacting this conversation for a model with this window would do, if anything. */
+  private compactionPlan(
+    loaded: Loaded,
+    window: { contextWindow: number }
+  ): CompactionPlan | undefined {
+    const settings = compactionSettings(window.contextWindow);
+    return planCompaction(loaded.manager.getBranch(), settings, summaryBudget(window, settings));
+  }
   /** Append the ledger record for `keys` (atomic: a failed write changes nothing) and forget what is no longer present. */
   private persistLedger(
     loaded: Loaded,
@@ -2523,8 +2789,9 @@ export class CopilotHost {
       pdf,
       coverage,
       argument: sentArgument,
-      evictions,
-    } = await this.buildEnvelope(
+      shed,
+    } = await this.admitMessage(
+      loaded,
       {
         ...(kind ? { kind } : {}),
         messageId,
@@ -2532,7 +2799,6 @@ export class CopilotHost {
       },
       context,
       frozenModel,
-      loaded,
       frozenModel,
       mailMount === "on"
     );
@@ -2540,8 +2806,6 @@ export class CopilotHost {
     if (!header) throw new CopilotError("storage");
     const previousEntries = [header, ...loaded.manager.getEntries()];
     const previousRecord = loaded.record;
-    const shed = this.admit(loaded, text, frozenModel, evictions);
-    if (!shed) throw new CopilotError("capacity");
     // Accepted: only now what it shed is written down (a refused message leaves no ledger record behind).
     this.persistLedger(
       loaded,
@@ -2625,6 +2889,9 @@ export class CopilotHost {
       sessionManager: loaded.manager,
       settingsManager: pi.SettingsManager.inMemory({
         retry: { enabled: true, maxRetries: 1, baseDelayMs: 500 },
+        // Pi's own trigger stays off: it measures the raw history before the delivery ledger has projected it, and its
+        // summary requests would run through the per-run stream function below. The host compacts when the ledger is
+        // spent and the request still does not fit (`compactInRun`), with pi's cut rules, prompts and defaults.
         compaction: { enabled: false },
         cacheWarming: "off",
       }),
@@ -2743,10 +3010,12 @@ export class CopilotHost {
         if (shown && !shown.partial && shown.phase === "ready" && shown.graph)
           state.readings.add(argumentKey(shown.work.id, shown.graph.rev));
         const windowLimit = Math.max(0, frozenModel.contextWindow - maxTokens - 2048) * 2;
+        // The messages a request is made from: the SDK's own, until a compaction replaces them with its projection.
+        let base = transcript.messages;
         const build = async (shrinkLastRead: boolean) => {
           const ledger = this.ledgerState(loaded);
           let messages = projectMessages(
-            transcript.messages,
+            base,
             ledger.raw,
             ledger.gone,
             ledger.deliveries,
@@ -2786,6 +3055,18 @@ export class CopilotHost {
           // Make room first (older deliveries leave the conversation), then, if even that is not enough, tell the model.
           this.shedAll(loaded);
           nextTranscript = await build(false);
+          // Still too big with every reading delivery out: the history itself is compacted (a summary and what the cut
+          // keeps), and the request is made again from that. Only then is the model told a reading cannot fit.
+          if (
+            measureForWindow(nextTranscript.messages).size > windowLimit &&
+            (await this.compactInRun(loaded, state, current))
+          ) {
+            if (state.stopRequested || this.closed) throw new CopilotError("busy");
+            base = await session.agent.convertToLlm(
+              loaded.manager.buildSessionProjection().messages
+            );
+            nextTranscript = await build(false);
+          }
           if (measureForWindow(nextTranscript.messages).size > windowLimit)
             nextTranscript = await build(true);
         }
@@ -3092,7 +3373,17 @@ export class CopilotHost {
         // A message the host refused to admit leaves no run and no title behind: the HTTP error is the
         // visible failure. Once the model accepted it, the failure is a visible run state.
         loaded.record = accepted
-          ? { ...loaded.record, run: { id: runId, status: "failed", error: code } }
+          ? {
+              ...loaded.record,
+              run: {
+                id: runId,
+                status: "failed",
+                error: code,
+                ...(error instanceof CopilotError && error.compactionFailed
+                  ? { compactionFailed: true }
+                  : {}),
+              },
+            }
           : previousRecord;
         try {
           this.save(loaded.record);
@@ -3147,6 +3438,7 @@ export class CopilotHost {
     this.expireConfirmations(() => true, "closed");
     for (const loaded of this.loaded.values()) {
       if (loaded.run) loaded.run.stopRequested = true;
+      loaded.compaction?.abort.abort();
       if (loaded.session && !loaded.session.isIdle) await loaded.session.abort();
     }
     await Promise.all([...this.loaded.values()].map((loaded) => loaded.pending));
@@ -3213,6 +3505,8 @@ const COPILOT_RUN_ERROR_CODES = allOf<CopilotRunErrorCode>()([
   "invalid_input",
   "unavailable",
   "unreadable",
+  "compaction_failed",
+  "too_short",
   "provider_capacity",
   "rate_limit",
   "transient",

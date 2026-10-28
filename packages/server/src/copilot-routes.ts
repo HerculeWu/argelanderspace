@@ -39,7 +39,7 @@ export function mountCopilotRoutes(host: ProtectedRoutes, copilot: CopilotHost):
     const status =
       code === "not_found"
         ? 404
-        : ["busy", "stale"].includes(code)
+        : ["busy", "stale", "too_short"].includes(code)
           ? 409
           : ["capabilities", "capacity", "invalid_input"].includes(code)
             ? 400
@@ -47,7 +47,15 @@ export function mountCopilotRoutes(host: ProtectedRoutes, copilot: CopilotHost):
               ? 500
               : 503;
     return c.json(
-      { code, detail: `copilot: ${code}`, retryable: !["not_found", "capacity"].includes(code) },
+      {
+        code,
+        detail: `copilot: ${code}`,
+        retryable: !["not_found", "capacity", "too_short"].includes(code),
+        // A request refused as too big after the compaction that was tried to make room did not finish.
+        ...(error instanceof CopilotError && error.compactionFailed
+          ? { compaction: "failed" }
+          : {}),
+      },
       status
     );
   });
@@ -96,6 +104,10 @@ export function mountCopilotRoutes(host: ProtectedRoutes, copilot: CopilotHost):
     return c.json(await copilot.send(c.req.param("id"), input.data), 202);
   });
   app.post("/conversations/:id/stop", async (c) => c.json(await copilot.stop(c.req.param("id"))));
+  // The user's "compact context": the answer is `{ status: "compacted" | "stopped", snapshot }`.
+  app.post("/conversations/:id/compact", async (c) =>
+    c.json(await copilot.compact(c.req.param("id")))
+  );
   app.post("/conversations/:id/resume", async (c) => {
     const input = CopilotResumeRequestSchema.safeParse(await c.req.json().catch(() => null));
     if (!input.success) return c.json({ code: "invalid_input" }, 400);

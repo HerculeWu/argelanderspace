@@ -22,6 +22,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DEFAULT_PORT,
+  DEFAULT_UI_LANGUAGE,
   jobTarget,
   type RunningFlagKey,
   type SettingsValues,
@@ -270,6 +271,11 @@ export function createServer(opts: ServerOptions): RunningServer {
   const copilot = new CopilotHost(opts.dataDir, providerSettings, (event) => hub.broadcast(event));
   copilot.useLog(log);
   copilot.useSkillsDir(opts.skillsDir);
+  // The language a compaction summary is written in is the interface's, read when it is made.
+  copilot.useLanguage(
+    () =>
+      readConfigLeniently(opts.configPath ?? configFilePath()).ui?.language ?? DEFAULT_UI_LANGUAGE
+  );
   if (opts.mailWatch) {
     mailWatcher = createDefaultMailWatcher(
       (msg) => hub.broadcast(msg),

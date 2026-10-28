@@ -604,6 +604,48 @@
         "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
       ]
     },
+    "copilot-session-menu-button": {
+      "set": "lucide",
+      "file": "Ellipsis",
+      "originalHash": "f461794d4776efdc943645da3eb32f0d6ff3f04a6395fba92f5e1fbd36466597",
+      "normalizedHash": "f461794d4776efdc943645da3eb32f0d6ff3f04a6395fba92f5e1fbd36466597",
+      "modifications": [
+        "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+      ]
+    },
+    "copilot-compact": {
+      "set": "lucide",
+      "file": "FoldVertical",
+      "originalHash": "10b65dd26793ef0c6f8832582a700f932d6ce728d05273b23a10939e13a7cfde",
+      "normalizedHash": "10b65dd26793ef0c6f8832582a700f932d6ce728d05273b23a10939e13a7cfde",
+      "modifications": [
+        "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+      ]
+    },
+    "copilot-compaction-toggle": {
+      "set": "lucide",
+      "file": "ChevronRight",
+      "originalHash": "02ce874dacd54895805a340fdd80486292254cfdc2cf347291f53c94ed91d762",
+      "normalizedHash": "02ce874dacd54895805a340fdd80486292254cfdc2cf347291f53c94ed91d762",
+      "modifications": [
+        "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+      ]
+    },
+    "copilot-compaction-dismiss": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
     "copilot-context": {
       "file-text": {
         "set": "lucide",

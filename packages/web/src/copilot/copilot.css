@@ -127,3 +127,39 @@
 .copilot-confirmation .copilot-tool-sum+.copilot-mail-body{margin-top:0}
 .copilot-tool .ui-inline-message{margin:6px 0}
 .copilot-tool-ctl{background:color-mix(in oklch,var(--warn) 25%,transparent);color:var(--warn);border-radius:3px;padding:0 2px;font-weight:600;font-style:normal}
+
+/* Context compaction (release-0.2 ticket 11; approved prototype 10-compaction): the marker, its read-only summary, the running state and the header's session menu. */
+.copilot-header{position:relative}
+.copilot-session-wrap{display:inline-flex}
+.copilot-session-menu{top:44px;right:40px;left:auto;min-width:200px}
+.copilot-session-menu .pane-tool-opt{align-items:flex-start}
+.copilot-session-menu .pane-tool-opt[aria-disabled="true"]{opacity:.6;cursor:default}
+.copilot-session-menu .pane-tool-opt[aria-disabled="true"]:hover{background:none;color:var(--text-dim)}
+.copilot-session-icon{display:flex;flex:none;color:var(--accent);margin-top:2px}
+.copilot-session-icon svg{width:14px;height:14px}
+.copilot-session-menu small{display:block;color:var(--text-faint);font-size:11px;margin-top:1px;line-height:1.4}
+.cmp-marker{margin:10px 0 22px}
+.cmp-rule{display:flex;align-items:center;gap:10px}
+.cmp-rule::before,.cmp-rule::after{content:"";flex:1;height:1px;background:var(--border)}
+.cmp-chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;min-height:24px;padding:2px 10px;border:1px solid var(--border-soft);border-radius:20px;background:var(--surface);color:var(--text-dim);font-size:12px;line-height:1.5;height:auto;text-align:left}
+button.cmp-chip:hover{background:var(--hover);color:var(--text)}
+.cmp-chevron{display:flex;flex:none}
+.cmp-chevron svg{width:12px;height:12px;transition:transform .12s}
+.cmp-chip[aria-expanded="true"] .cmp-chevron svg{transform:rotate(90deg)}
+.cmp-lead{color:var(--accent)}
+.cmp-summary{margin:10px 0 0;padding:12px 14px;background:var(--surface-2);border:1px solid var(--border-soft);border-radius:9px;font-size:12px;line-height:1.75;color:var(--text-dim);max-height:340px;overflow:auto}
+.cmp-summary .copilot-markdown{font-size:12px;line-height:1.75}
+.cmp-summary h1,.cmp-summary h2,.cmp-summary h3,.cmp-summary h4{font-size:12px;font-weight:600;color:var(--text);margin:10px 0 3px}
+.cmp-summary h1:first-child,.cmp-summary h2:first-child,.cmp-summary h3:first-child{margin-top:0}
+.cmp-summary ul,.cmp-summary ol{padding-left:17px}
+.cmp-summary li{margin:2px 0;overflow-wrap:anywhere}
+.cmp-meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;color:var(--text-faint);font-size:11px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border-soft)}
+.cmp-note{margin:10px 0 0;color:var(--text-faint);font-size:11px}
+.cmp-working{margin:10px 0 22px}
+.cmp-working .cmp-rule::before,.cmp-working .cmp-rule::after{background:none;border-top:1px dashed var(--border)}
+.cmp-working .cmp-chip{background:transparent;color:var(--text)}
+.cmp-sub{text-align:center;margin:8px 0 0;font-size:12px;color:var(--text-faint);line-height:1.5}
+.copilot-notice strong{font-weight:600}
+.cmp-lead{white-space:nowrap}
+.cmp-chip{flex:0 1 auto;justify-content:center}
+.cmp-rule::before,.cmp-rule::after{min-width:0}

@@ -121,6 +121,8 @@ export const CopilotHistoryEntrySchema = z.discriminatedUnion("type", [
     systemMessage: message.options[0].optional(),
     usage: usage.optional(),
     fromHook: z.boolean().optional(),
+    // What the host records beside the summary (see CompactionDetailsSchema); the history is loaded without reading it.
+    details: z.unknown().optional(),
   }),
   z.object({
     ...base,

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import type { ContextCoverage, Conversation, CopilotFileToolsSetting, ConversationModel, CopilotConfirmation, ConversationSnapshot, CopilotOperation, CopilotProvider, CopilotViewAction, CopilotViewActionResult, PageContext, ThinkingLevel, WsCopilotEvent } from "@argelanderspace/contracts";
@@ -6,7 +6,7 @@ import { type ArgumentContextSummary, type PdfContextSummary, summarizeArgumentP
 import { FileToolCard } from "./FileToolCard";
 import { MailSendUndo, MailSummary } from "./MailConfirmation";
 import { type ConfirmationGuards, type ConfirmationProblemScope, kindOf } from "./confirmations";
-import { CopilotApiError, createConversation, decideConfirmation, fetchConversation, listConversations, postViewActionResult, publishPageContext, resumeConversation, selectConversationModel, sendCopilotMessage, stopConversation, undoOperation } from "../api/copilot";
+import { CopilotApiError, createConversation, decideConfirmation, fetchConversation, listConversations, postViewActionResult, publishPageContext, resumeConversation, selectConversationModel, sendCopilotMessage, compactConversation, stopConversation, undoOperation } from "../api/copilot";
 import { fmtDate } from "../plan/model";
 import { fetchProviders } from "../api/providers";
 import { onPlanChanged, subscribeCopilot } from "../api/ws";
@@ -16,6 +16,7 @@ import { ProviderSettingsDialog } from "./ProviderSettings";
 import type { ConversationRequest, IntakeKind, IntakeRequest } from "./intake";
 import { chosenTooSmall, defaultModel, fitsWindow, intakeModel as pickIntakeModel, modelKey, windowBlocksIntake } from "./model-pick";
 import { LiveRunStatus, ThinkingBlock } from "./LiveStatus";
+import { CompactionMarker, CompactionRunning, SessionMenu } from "./Compaction";
 import { Icon } from "../lib/icons";
 import { copilotMarkdown } from "./markdown";
 import "./copilot.css";
@@ -222,6 +223,11 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, set
   const [list, setList] = useState(false);
   const [detail, setDetail] = useState(false);
   const [newContent, setNewContent] = useState(false);
+  /** Context compaction (release-0.2 ticket 11): the markers whose summary is open, the manual compaction this panel started (its start time), what its end left to say, and a send refused because the automatic one failed. */
+  const [openMarkers, setOpenMarkers] = useState<Set<string>>(() => new Set());
+  const [manualStartedAt, setManualStartedAt] = useState<number | null>(null);
+  const [compactionNotice, setCompactionNotice] = useState<"stopped" | "failed" | null>(null);
+  const [autoFailed, setAutoFailed] = useState(false);
   const scroll = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -371,6 +377,12 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, set
   const running = runStatus === "running" || waiting;
   const stopping = runStatus === "stopping";
   const failed = runStatus === "failed";
+  // A compaction under way (the service says so, or this panel's manual request is still out): nothing can be sent, Stop gives it up.
+  const compactionRun = snapshot?.compaction ?? null;
+  const compacting = !!compactionRun || manualStartedAt !== null;
+  const compactionOrigin = compactionRun?.origin ?? "manual";
+  const compactionSince = compactionRun ? Date.parse(compactionRun.startedAt) : manualStartedAt ?? Date.now();
+  const menuBlocked = compacting ? "busy" as const : running || stopping ? "running" as const : !id || !snapshot?.canCompact ? "short" as const : null;
   // A run the user stopped, or the service interrupted, is resumed from the composer's one action button; a failed run keeps its notice and Retry.
   const resumable = !running && !stopping && (runStatus === "stopped" || runStatus === "interrupted");
   // The button resumes only while the composer is empty; with text typed it is Send (Enter sends in both cases).
@@ -434,7 +446,7 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, set
   const usableModel = intakeModel(providers) !== null;
   const windowBlocked = !usableModel && windowBlocksIntake(providers, snapshot?.conversation.model ?? draftRef.current, autoModel.current);
   const chosenSmall = windowBlocked && chosenTooSmall(providers, snapshot?.conversation.model ?? draftRef.current, autoModel.current);
-  const begin = () => { if (busyRef.current) return false; busyRef.current = true; setBusy(true); setError(null); return true; };
+  const begin = () => { if (busyRef.current) return false; busyRef.current = true; setBusy(true); setError(null); setAutoFailed(false); setCompactionNotice(null); return true; };
   const end = () => { busyRef.current = false; setBusy(false); };
   const newConversation = async () => {
     if (!begin()) return;
@@ -475,8 +487,22 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, set
       await enqueue(async () => { const sent = await publishLatest(); await sendCopilotMessage(target, { clientMessageId: attempt.clientMessageId, text, viewId: sent.viewId, contextRevision: sent.revision }); });
       setText(""); retry.current = null; following.current = true; textarea.current?.focus();
       await refreshList();
-    } catch (reason) { if (reason instanceof CopilotApiError && reason.code === "stale") published.current = null; setError(reason instanceof CopilotApiError ? reason.code : "unavailable"); }
+    } catch (reason) { if (reason instanceof CopilotApiError && reason.code === "stale") published.current = null; setAutoFailed(reason instanceof CopilotApiError && reason.code === "capacity" && (reason.body as { compaction?: unknown } | null)?.compaction === "failed"); setError(reason instanceof CopilotApiError ? reason.code : "unavailable"); }
     finally { end(); }
+  };
+  /** The header menu's "compact context": the service summarizes the older part with the conversation's own model; Stop gives it up and nothing changes. */
+  const compactNow = async () => {
+    if (!id || compacting || running || stopping) return;
+    setCompactionNotice(null); setError(null); setAutoFailed(false);
+    setManualStartedAt(Date.now());
+    try {
+      const result = await compactConversation(id);
+      if (result.status === "stopped") setCompactionNotice("stopped");
+    } catch (reason) {
+      const code = reason instanceof CopilotApiError ? reason.code : "unavailable";
+      if (code === "compaction_failed") setCompactionNotice("failed");
+      else if (code !== "too_short") setError(code);
+    } finally { setManualStartedAt(null); void refreshCurrent.current?.(); }
   };
   /** Move in an existing project (project-intake ticket 06): always a new conversation, then one fixed message in the user's name, visible like any other. The caller holds `begin()`. */
   const sendIntake = async (kind: IntakeKind, wanted: ConversationModel) => {
@@ -554,6 +580,7 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, set
       <ActionButton unstyled mode="text" label={t("copilot.conversations")} tooltip={t("copilot.conversations")} data-ui="copilot-conversations" className="copilot-title" onClick={() => { setList(true); void refreshList(); }}>{t("copilot.title")}<span aria-hidden="true" className="copilot-chevron">{getConfiguredIcon("chevron-down", "copilot-conversations")}</span></ActionButton>
       <span className="copilot-spacer" />
       <ActionButton unstyled mode="icon" iconName="square-pen" label={t("copilot.new")} data-ui="copilot-new-conversation" className="btn icon ghost" disabled={busy} onClick={() => void newConversation()} />
+      <SessionMenu blocked={menuBlocked} onCompact={() => void compactNow()} />
       <ActionButton unstyled mode="icon" iconName="settings-2" label={t("providers.title")} data-ui="copilot-settings" className="btn icon ghost" onClick={() => setSettings(true)} />
       <ActionButton unstyled mode="icon" iconName="panel-right-close" label={t("copilot.close")} data-ui="copilot-close" className="btn icon ghost" onClick={() => { onClose(); document.querySelector<HTMLElement>('[data-ui="copilot-toggle"]')?.focus(); }} />
     </header>
@@ -563,14 +590,15 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, set
       if (following.current) setNewContent(false);
     }}>
       {!snapshot?.messages.length && <div className="copilot-empty"><Icon name="sparkles" /><h2>{t("copilot.emptyTitle")}</h2><p>{t("copilot.empty")}</p></div>}
-      {snapshot?.messages.map((message, index) => { const continued = message.role === "assistant" && snapshot.messages[index - 1]?.role === "assistant"; return <article key={message.id} className={`copilot-message copilot-message-${message.role}${continued ? " copilot-message-continued" : ""}`} data-ui="copilot-message" data-ui-key={message.id}>
+      {snapshot?.messages.map((message, index) => { const continued = message.role === "assistant" && snapshot.messages[index - 1]?.role === "assistant" && !snapshot.compactions?.some((mark) => mark.beforeMessageId === message.id); return <Fragment key={message.id}>{snapshot.compactions?.filter((mark) => mark.beforeMessageId === message.id).map((mark) => <CompactionMarker key={mark.id} compaction={mark} open={openMarkers.has(mark.id)} onToggle={() => setOpenMarkers((previous) => { const next = new Set(previous); if (!next.delete(mark.id)) next.add(mark.id); return next; })} />)}<article className={`copilot-message copilot-message-${message.role}${continued ? " copilot-message-continued" : ""}`} data-ui="copilot-message" data-ui-key={message.id}>
         {message.role === "user" ? <><div className={message.kind === "resume" ? "copilot-user copilot-user-resume" : "copilot-user"} data-ui={message.kind === "resume" ? "copilot-resume-marker" : undefined}>{message.kind === "resume" ? t("copilot.resumed") : message.text}</div>{!!message.attachments?.length && <div className="copilot-attachments sent" data-ui="copilot-message-attachments">{message.attachments.map((item, at) => <span key={at} className="copilot-attachment" data-ui="copilot-message-attachment" title={item.filename}><Icon name="paperclip" /><span className="copilot-attachment-name">{item.filename}</span></span>)}</div>}{message.pending && <div className="copilot-queued" data-ui="copilot-queued" role="status">{t("copilot.queued")}</div>}</> : <>{!continued && <div className="copilot-assistant-label">{t("copilot.title")}</div>}{message.thinking && <ThinkingBlock text={message.thinking} />}{message.operations && message.operations.length > 0 && <MessageOperations operations={message.operations} confirmations={snapshot.confirmations ?? []} renderConfirmation={(confirmation) => <ConfirmationCard key={confirmation.id} confirmation={confirmation} viewId={context.viewId} connected={connected} guards={cardGuards} onProblem={setDecisionProblem} onSettled={() => void refreshCurrent.current?.()} />} />}{message.text && <><div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(message.text) }} /><ActionButton unstyled mode="icon" iconName="copy" label={t("copilot.copy")} data-ui="copilot-copy" className="btn icon ghost" onClick={() => void failCopy(message.text)} /></>}</>}
         {message.context && <details className="copilot-message-context" data-ui="copilot-message-context"><summary>{message.context.objects[0]?.name ?? viewName(message.context?.view ?? "")}</summary><p>{t(`copilot.${messageContextStatus(message.context)}`)}</p>{message.context.library && <LibrarySummary summary={message.context.library} />}{message.context.discovery && <DiscoverySummary summary={message.context.discovery} />}{message.context.argument && <ArgumentSummary summary={message.context.argument} />}{message.context.coverage && <CoverageSummary coverage={message.context.coverage} />}{message.context.reader && <ReaderSummary summary={message.context.reader} title={message.context.objects[0]?.name} sent={!message.context.coverage || message.context.coverage.status === "complete"} />}{message.context.pdf && <PdfSummary summary={message.context.pdf} title={message.context.objects[0]?.name} />}{message.context.writer && <WriterSummary summary={message.context.writer} title={message.context.objects[0]?.name} />}{message.context.mail && <MailSummary summary={message.context.mail} />}{message.context.view !== "mail" && message.context.objects.map((object) => <p key={object.id}>{message.context?.view === "library" || message.context?.view === "doc" ? (object.name ?? object.id) : t("copilot.objectVersion", { name: object.name ?? viewName(message.context?.view ?? ""), rev: object.rev })}</p>)}</details>}
-      </article>; })}
+      </article></Fragment>; })}
+      {snapshot?.compactions?.filter((mark) => mark.beforeMessageId === null).map((mark) => <CompactionMarker key={mark.id} compaction={mark} open={openMarkers.has(mark.id)} onToggle={() => setOpenMarkers((previous) => { const next = new Set(previous); if (!next.delete(mark.id)) next.add(mark.id); return next; })} />)}
       {(snapshot?.stream || snapshot?.live?.thinking) && <article className="copilot-message" data-ui="copilot-stream"><div className="copilot-assistant-label">{t("copilot.title")}</div>{snapshot.live?.thinking && <ThinkingBlock text={snapshot.live.thinking} live={snapshot.live.phase === "thinking"} />}{snapshot.stream && <div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(snapshot.stream) }} />}</article>}
       {snapshot?.confirmations?.filter((confirmation) => !inlineConfirmation(snapshot, confirmation)).map((confirmation) => <ConfirmationCard key={confirmation.id} confirmation={confirmation} viewId={context.viewId} connected={connected} guards={cardGuards} onProblem={setDecisionProblem} onSettled={() => void refreshCurrent.current?.()} />)}
       {decisionProblem && <div ref={problemRef} className="copilot-notice error" data-ui="copilot-confirmation-problem" role="alert"><span>{decisionProblem.kind === "unreadable" ? t(UNREADABLE_COPY[decisionProblem.scope]) : t(`copilot.confirmation.${decisionProblem.kind}${decisionProblem.scope === "plan" ? "" : decisionProblem.scope === "deleteDoc" ? "DeleteDoc" : decisionProblem.scope === "manuscript" ? "Manuscript" : decisionProblem.scope === "mail" ? "Mail" : decisionProblem.scope === "argument" ? "Argument" : decisionProblem.scope === "file" ? "File" : decisionProblem.scope === "shelf" ? "Shelf" : "Doc"}`)}</span><ActionButton unstyled mode="icon" iconSize="small" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-confirmation-problem-dismiss" className="btn icon ghost" onClick={() => setDecisionProblem(null)} /></div>}
-      <div className="copilot-run-live" role="status" aria-atomic="false" data-ui="copilot-run-live">{((running && !waiting) || stopping) && <div className="copilot-run-card" data-ui="copilot-running"><span className="copilot-pulse" aria-hidden="true" /><LiveRunStatus live={stopping ? null : snapshot?.live ?? null} stopping={stopping} actionLabel={(operation) => operation.action && operation.action in OPERATION_ACTION_KEYS ? operationActionLabel(t, operation.tool, operation.action) : null} />{elsewhere && <small data-ui="copilot-work-continues">{workObject?.name ? t("copilot.workContinues", { name: workObject.name }) : t("copilot.workContinuesOriginal")}</small>}</div>}</div>
+      <div className="copilot-run-live" role="status" aria-atomic="false" data-ui="copilot-run-live">{compacting && <CompactionRunning origin={compactionOrigin} startedAt={compactionSince} />}{!compacting && ((running && !waiting) || stopping) && <div className="copilot-run-card" data-ui="copilot-running"><span className="copilot-pulse" aria-hidden="true" /><LiveRunStatus live={stopping ? null : snapshot?.live ?? null} stopping={stopping} actionLabel={(operation) => operation.action && operation.action in OPERATION_ACTION_KEYS ? operationActionLabel(t, operation.tool, operation.action) : null} />{elsewhere && <small data-ui="copilot-work-continues">{workObject?.name ? t("copilot.workContinues", { name: workObject.name }) : t("copilot.workContinuesOriginal")}</small>}</div>}</div>
       <MailSendUndo operations={(snapshot?.messages ?? []).flatMap((message) => message.operations ?? [])} />
       {undoable && <div className="copilot-notice" data-ui="copilot-undo" role="status"><span>{t("plan.undo.deleted", { title: undoable.label ?? "" })}</span><Button data-ui="copilot-undo-delete" onClick={() => void undo()}>{t("plan.undo.action")}</Button><ActionButton unstyled mode="icon" iconSize="small" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-undo-dismiss" className="btn icon ghost" onClick={() => setUndone((previous) => new Set(previous).add(undoable.id))} /></div>}
       {undoResult && <div className={undoResult.kind === "failed" ? "copilot-notice error" : "copilot-notice"} data-ui="copilot-undo-result" data-status={undoResult.kind} role={undoResult.kind === "failed" ? "alert" : "status"}><span>{t(undoResult.kind === "restored" ? "copilot.undo.restored" : "copilot.undo.failed", { title: undoResult.label })}</span><ActionButton unstyled mode="icon" iconSize="small" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-undo-result-dismiss" className="btn icon ghost" onClick={() => setUndoResult(null)} /></div>}
@@ -588,8 +616,11 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, set
           ? <><span><strong>{t("copilot.intake.fileToolsOffTitle")}</strong><br />{t("copilot.intake.fileToolsOffBody")}</span><Button appearance="primary" data-ui="open-file-tools-settings" disabled={!onOpenFileToolsSettings} onClick={() => onOpenFileToolsSettings?.()}>{t("copilot.intake.openFileToolsSettings")}</Button></>
           : <><span>{t(fileTools === undefined ? "copilot.intake.readyModel" : "copilot.intake.ready")}</span><Button appearance="primary" data-ui="start-intake-after-provider" disabled={busy} onClick={() => void startFromCard(intake.kind)}>{t("copilot.intake.go")}</Button></>}
       </div>}
+      {compactionNotice === "stopped" && <div className="copilot-notice" data-ui="copilot-compaction-stopped" role="status"><span>{t("copilot.compaction.stopped")}</span><ActionButton unstyled mode="icon" iconSize="small" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-compaction-dismiss" className="btn icon ghost" onClick={() => setCompactionNotice(null)} /></div>}
+      {compactionNotice === "failed" && <div className="copilot-notice error" data-ui="copilot-compaction-failed" role="alert"><span><strong>{t("copilot.compaction.failedTitle")}</strong><br />{t("copilot.compaction.failedBody")}</span><Button data-ui="copilot-compaction-retry" disabled={busy || compacting || (!!id && !connected)} onClick={() => void compactNow()}>{t("common.retry")}</Button></div>}
+      {autoFailed && error === "capacity" && <div className="copilot-notice error" data-ui="copilot-compaction-auto-failed" role="alert"><span><strong>{t("copilot.compaction.autoFailedTitle")}</strong><br />{errorCopy("capacity")}</span><Button data-ui="copilot-compaction-auto-retry" disabled={busy || (!!id && !connected)} onClick={() => void send()}>{t("common.retry")}</Button></div>}
       {failed && <div className="copilot-notice error" data-ui="copilot-run-result" role="alert" data-status="failed">
-        <span data-ui="copilot-run-error">{errorCopy(snapshot?.conversation.run?.error ?? null)}</span>
+        <span data-ui="copilot-run-error">{snapshot?.conversation.run?.compactionFailed && <><strong>{t("copilot.compaction.autoFailedTitle")}</strong><br /></>}{errorCopy(snapshot?.conversation.run?.error ?? null)}</span>
         <Button data-ui="copilot-retry" disabled={busy || (!!id && !connected)} onClick={() => void resume()}>{t("common.retry")}</Button>
       </div>}
     </div>
@@ -597,20 +628,20 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, set
     <div className="copilot-composer" data-ui="copilot-composer">
       <Button className="copilot-context" data-ui="copilot-context" onClick={() => setDetail(true)}><span className="copilot-context-icon" aria-hidden="true">{getConfiguredIcon(context.view === "plan" ? "list-checks" : context.view === "doc" ? "file-text" : "layers", "copilot-context")}</span><span className="copilot-context-name">{context.plan?.plans[0]?.name || context.reader?.reading?.title || context.writer?.editor?.saved?.title || viewName(context.view)}</span><Badge>{t(context.status === "complete" ? "copilot.complete" : "copilot.unavailable")}</Badge><span className="copilot-context-icon" aria-hidden="true">{getConfiguredIcon("chevron-down", "copilot-context")}</span></Button>
       {id && !connected && <p role="status" data-ui="copilot-disconnected">{t("copilot.disconnected")}</p>}
-      {error && <p role="alert" data-ui="copilot-error">{errorCopy(error)} <Button onClick={() => { void refreshCatalog(); void refreshList(); void refreshCurrent.current?.(); }}>{t("common.retry")}</Button></p>}
+      {error && !(autoFailed && error === "capacity") && <p role="alert" data-ui="copilot-error">{errorCopy(error)} <Button onClick={() => { void refreshCatalog(); void refreshList(); void refreshCurrent.current?.(); }}>{t("common.retry")}</Button></p>}
       <div className="copilot-composer-box">
-        <textarea ref={textarea} data-ui="copilot-input" aria-label={t("copilot.input")} placeholder={t(running ? "copilot.steerHint" : "copilot.input")} value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => {
+        <textarea ref={textarea} data-ui="copilot-input" aria-label={t("copilot.input")} placeholder={t(compacting ? "copilot.compaction.lockedPlaceholder" : running ? "copilot.steerHint" : "copilot.input")} disabled={compacting} value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); void send(); }
         }} />
         <div className="copilot-composer-actions">
-          <Select variant="inline" data-ui="copilot-model" aria-label={t("copilot.model")} value={choice ? `${choice.provider}\n${choice.model}` : ""} disabled={busy}
+          <Select variant="inline" data-ui="copilot-model" aria-label={t("copilot.model")} value={choice ? `${choice.provider}\n${choice.model}` : ""} disabled={busy || compacting}
             onChange={(next) => { const [providerId, modelId] = next.split("\n"); void choose({ provider: providerId, model: modelId, thinking: null }); }}
             options={[{ value: "", label: t("copilot.model"), disabled: true }, ...providers.flatMap((item) => item.models.filter((model) => model.tools).map((model) => ({ value: `${item.id}\n${model.id}`, label: fitsWindow(model) ? model.name : t("copilot.windowSmallTag", { name: model.name }), group: item.name })))]} />
           <span className="copilot-spacer" />
-          <ComposerAction kind={stopping || running ? "stop" : resumeAction ? "resume" : "send"} stopping={stopping} disabled={stopping ? true : running ? !connected : resumeAction ? busy || (!!id && !connected) : busy || !text.trim() || !thinkingValid || (!!id && !connected)} onSend={() => void send()} onStop={() => void stop()} onResume={() => void resume()} />
+          <ComposerAction kind={stopping || running || compacting ? "stop" : resumeAction ? "resume" : "send"} stopping={stopping} disabled={stopping ? true : running || compacting ? !connected : resumeAction ? busy || (!!id && !connected) : busy || !text.trim() || !thinkingValid || (!!id && !connected)} onSend={() => void send()} onStop={() => void stop()} onResume={() => void resume()} />
         </div>
       </div>
-      <div className="copilot-composer-foot"><Select variant="inline" data-ui="copilot-thinking" aria-label={t("copilot.thinking")} value={choice?.thinking ?? "default"} disabled={busy || !model || (levels.length <= 1 && thinkingValid)}
+      <div className="copilot-composer-foot"><Select variant="inline" data-ui="copilot-thinking" aria-label={t("copilot.thinking")} value={choice?.thinking ?? "default"} disabled={busy || compacting || !model || (levels.length <= 1 && thinkingValid)}
         onChange={(next) => { if (choice) void choose({ ...choice, thinking: next === "default" ? null : next as ThinkingLevel }); }}
         options={[
           { value: "default", label: `${t("copilot.defaultChoice")}${model?.defaultThinking ? ` · ${thinkingLabel(model.defaultThinking)}` : ""}` },
