@@ -106,6 +106,7 @@ import {
   WorkbenchConflictError,
   type WorkbenchRegistration,
 } from "./workbench-instance.js";
+import { WorkbenchWindows } from "./workbench-windows.js";
 import { WsHub } from "./ws.js";
 
 export interface ServerOptions {
@@ -275,6 +276,8 @@ export function createServer(opts: ServerOptions): RunningServer {
   // hub is referenced by the broadcast closure before construction below;
   // it is only ever *called* after `new WsHub(...)` runs (request time).
   let hub: WsHub;
+  // The windows of this workbench: the hub feeds it, navigation operations (CLI) go through it.
+  const windows = new WorkbenchWindows();
   const providerSettings = opts.providerSettings ?? new ProviderSettings();
   const copilot = new CopilotHost(opts.dataDir, providerSettings, (event) => hub.broadcast(event));
   copilot.useLog(log);
@@ -346,6 +349,7 @@ export function createServer(opts: ServerOptions): RunningServer {
     ...(opts.version === undefined ? {} : { version: opts.version }),
     ...(opts.host === undefined ? {} : { host: opts.host }),
     ...(opts.operationToken === undefined ? {} : { operations: { token: opts.operationToken } }),
+    navigation: windows,
     // The tutorial progress lives in the global directories this server pins.
     tutorial: {
       file: join(opts.globalDirs.dataDir, TUTORIAL_PROGRESS_FILE),
@@ -366,6 +370,7 @@ export function createServer(opts: ServerOptions): RunningServer {
     heartbeatMs: opts.heartbeatMs,
     snapshot: () => runner.list(),
     onViewSubscribed: (viewId) => copilot.viewConnected(viewId),
+    windows,
   });
   copilot.useViewDelivery((viewId, message) => hub.sendToView(viewId, message));
   // The global directories are fixed for this server's life (released at close): a change of config.toml takes effect

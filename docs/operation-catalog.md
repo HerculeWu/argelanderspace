@@ -77,7 +77,7 @@ server 端用自己的运行时（`createApp` 里 Copilot 工具共用的那份 
 
 **给后续票的预留**（协议不需改动）：
 - 票 04（确认卡）：已实现，见下节「确认卡」。
-- 票 05（导航）：导航操作同样 `POST`，由路由处理器把它发给最近活动的窗口；工作台未运行时 CLI 拒绝。
+- 票 05（导航）：已实现，见下节「导航」。
 
 ## 确认卡（票 04）
 
@@ -91,6 +91,41 @@ server 端用自己的运行时（`createApp` 里 Copilot 工具共用的那份 
 
 **给后续确认卡操作（06/07/08）。** 目录条目写 `confirm: "card"`；处理器里仿 `runDeleteDocOperation`：先做无写入的预读与拒绝，再 `runtime.confirm.ask({ card, client, signal })`（`card` 是 Copilot 该 action 的卡字段，不含 id），按 `answer`（`withdrawn`/`denied`/`approved`）返回，批准后核对并执行，最后 `settle(result)`；Copilot 一侧继续用自己的会话卡，预读/核对函数抽成共用以保持措辞一份。web 一侧该 action 若已有卡种则自动可显示；队列和折叠栏里的一行摘要在 `summaryOf`（`ExternalRequests.tsx`）按 action 补，撤回与结果文案按需补 `externalRequests.*`。
 
+## 导航（票 05）
+
+`navigates: true` 的操作是「让运行中的工作台打开某处」，只有「打开」：Doc（可带锚点）、Work、Work 的论证图。切面板、翻页、缩放等界面动作仍只在 Copilot 工具里。它们不写任何数据（`effect: read`），但**只有运行中的工作台能执行**：没有工作台时命令答 `{ ok: false, status: "workbench_required" }`（退出 1），不在本进程做事，也**不会启动工作台**（Q23）。
+
+**CLI 命名：选用 `argelanderspace open …`，不用派生名。** 条目的可选字段 `cli: { group, name }` 覆盖 `<domain> <name>` 的派生（只影响 CLI；Copilot 一侧不变）。三个动词分属 Copilot 的三个工具（`workspace`、`library`、`argument`），派生出来是 `workspace open-doc`、`library open-work`、`argument open`，对人和 agent 都不如一组 `open` 好找；票据明文允许。
+
+| 命令 | 条目 id | 参数 | Copilot 对应 |
+|---|---|---|---|
+| `open doc` | `workspace.open_doc` | `--doc-id`，`--anchor`（可选，仅 CLI） | `workspace` 工具的 `open_doc`；定位用 `reader` 的 `navigate` |
+| `open work` | `library.open_work` | `--ref-id` | 无同名动作；Copilot 用界面动作 `select_work`（不进目录） |
+| `open argument-graph` | `argument.open` | `--work-id` | `argument` 工具的 `open` |
+
+`workspace.open_doc` 与 `argument.open` 的参数来自 Copilot 原有 schema（`WorkspaceOpenDocSchema`、`ArgumentOpenGraphSchema`），两个工具分发改用 `parseCatalogCall` 取参数，向浏览器要的仍是各自原来的 view action，工具 schema 与说明字节不变。`anchor` 是目录条目唯一的 CLI 专有参数，Copilot 的 `open_doc` 没有（带了会被拒）。`open work` 在 Copilot 一侧没有新增动作（会改工具 schema 与窗口常量）。
+
+**窗口与「最近活动」。** 窗口 = 一个页面（浏览器标签页或桌面应用的 webview）的一条 `/ws`。页面自己生成窗口 id，经 WS 上报（`contracts/src/workbench-windows.ts`）：`window.active`（获得焦点、变为可见、连接时可见、被使用——点击或按键，最多每秒一次）与 `window.hidden`（不可见）；每次（重）连接都重报，因为服务端随 socket 忘掉窗口。server（`workbench-windows.ts`）只记上报的先后（计数器，不是时钟）：
+1. 已报过 id 且不是 hidden 的窗口里，最后一次 `window.active` 最晚的那个；
+2. 全部 hidden 时，hidden 前最后活动的那个；
+3. 没有任何窗口报过 id（没人打开工作台）：`{ ok: false, status: "no_window" }`。
+失焦不是上报：用户点到别处但窗口仍可见（另一块屏幕）不改变排序。不会聚焦、弹出或新开任何窗口，页面在后台时用户未必看到跳转。
+
+**流程。** CLI 与确认操作一样 `POST /api/operations/run`；server 处理器先对 Work 类目标查 Library（`readLibrary`），没有这个 Work 直接答 `not_found`，不惊动窗口；然后向选中的那个窗口发 `workbench.navigate` 帧（`{windowId, navId, target}`，只发给这一个 socket），页面经 Shell 与 Copilot 同一套动作执行（`open_doc` → Shell 的 `openDocAction`；带锚点再用 Reader 的 `navigate`；`select_work`；`open_argument_graph`），把**真实结果**用 `window.navigated` 报回，等待 15 秒。Doc 不存在、锚点不存在由页面自己的答案决定。未保存的草稿以 `agent` 来源询问规则处理：被保留即 `leave_blocked`，不弹询问。
+
+**结果**（`NavigationResultSchema`，退出码 0 仅 `ok`）：
+
+| status | 含义 |
+|---|---|
+| `ok` | 窗口报告已显示 |
+| `not_found` | 没有这个 Doc 或 Work；或 Doc 已打开但没有该锚点（detail 说明，Doc 留在无定位处） |
+| `not_displayed` | 窗口没能显示：有未保存工作被保留、当时的页面无法执行（如论证图打开时 `open work`）、15 秒未确认、窗口中途关闭 |
+| `no_window` | 工作台在运行，但没有任何窗口 |
+| `workbench_required` | 没有运行中的工作台（本进程路径与处理器自己都这样答，同一字节） |
+| `unsupported` | 参数无效（路由 400，CLI 退出 2，未执行） |
+
+CLI 不对导航操作设 Ctrl-C 撤回；命令被中断时连接断开，server 的请求 `signal` 中止，等待结束，不影响已显示的页面。
+
 ## 现有目录条目
 
 | id | effect | confirm | 说明 |
@@ -98,3 +133,6 @@ server 端用自己的运行时（`createApp` 里 Copilot 工具共用的那份 
 | `library.read` | read | none | 页面自己的列表/搜索/详情数据 |
 | `library.set_main_doc` | write | none | Files 标签的「设为主 Doc」，带 `expectedMainDocId` 做冲突检查 |
 | `library.delete_doc` | write | card | Files 标签的「删除文档」：全局物理删除，经确认卡（票 04） |
+| `workspace.open_doc` | read | none | 导航：`open doc`（见「导航」） |
+| `library.open_work` | read | none | 导航：`open work` |
+| `argument.open` | read | none | 导航：`open argument-graph` |

@@ -50,6 +50,8 @@ export interface WsBus {
   subscribeCopilot(subscription: CopilotSubscription): () => void;
   /** Open the connection if it is not open yet; every subscription above calls it. */
   start(): void;
+  /** Send one client frame when the socket is open; dropped otherwise (the window reports again on every reconnect). */
+  send(frame: object): void;
 }
 
 type Handlers = { [K in WsType]: (msg: WsMessageOf<K>) => void };
@@ -122,6 +124,8 @@ function createRouter(send: (frame: object) => void) {
     "host.tutorial-result": emit,
     // The external requests queue changed (release-0.2 ticket 04): only an explicit `on` (the dock reads it again).
     "external-requests.changed": emit,
+    // The server asks this window to open somewhere (release-0.2 ticket 05): only an explicit `on` (navigation/).
+    "workbench.navigate": emit,
     // Position notifications never navigate another tab; its reader remains
     // user-controlled. No built-in routing: only an explicit `on` sees it.
     "pdf-reading-position.changed": emit,
@@ -168,6 +172,7 @@ function createRouter(send: (frame: object) => void) {
         };
       },
       start,
+      send,
     };
   }
 
@@ -228,10 +233,16 @@ export function createWsBus(socketFactory: () => WebSocket): WsBus {
 }
 
 /** A socket-free bus for tests: `emit` runs the same table the live bus runs; Copilot subscribe frames go nowhere. */
-export function createFakeBus(): WsBus & { emit<T extends WsType>(type: T, msg: Omit<WsMessageOf<T>, "type">): void } {
-  const router = createRouter(() => {});
+export function createFakeBus(): WsBus & {
+  emit<T extends WsType>(type: T, msg: Omit<WsMessageOf<T>, "type">): void;
+  /** The client frames `send` was given, oldest first. */
+  sent: object[];
+} {
+  const sent: object[] = [];
+  const router = createRouter((frame) => sent.push(frame));
   return {
     ...router.bus(() => {}),
+    sent,
     emit(type, msg) {
       router.dispatch({ ...msg, type } as unknown as WsServerMessage);
     },

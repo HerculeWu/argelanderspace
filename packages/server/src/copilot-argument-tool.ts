@@ -37,6 +37,7 @@ import {
   clearArgumentGraph,
   createArgument,
   deleteArgument,
+  parseCatalogCall,
   type RemovedArgument,
   removeEdge,
   restoreArgument,
@@ -978,8 +979,18 @@ async function navigate(
     });
   let view: ArgumentViewAction;
   if (action === "exit") view = { action: "exit_argument_graph" };
-  else if (action === "open") view = { action: "open_argument_graph", workId };
-  else
+  else if (action === "open") {
+    // `open` is cataloged (argument.open, release-0.2 ticket 05): its parameters come from the catalog entry, the one
+    // `argelanderspace open argument-graph` is derived from. What the browser is asked stays this tool's own view action.
+    const catalogued = parseCatalogCall(ARGUMENT_TOOL_NAME, { action, workId });
+    if (!catalogued.match || !catalogued.success)
+      return done(record(toolCallId, action, { status: "unsupported" }), {
+        ok: false,
+        status: "unsupported",
+        detail: `${action} needs workId`,
+      });
+    view = { action: "open_argument_graph", workId: catalogued.params.workId as string };
+  } else
     view = {
       action: "select_argument",
       workId,

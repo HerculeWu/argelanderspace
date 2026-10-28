@@ -35,6 +35,11 @@ export interface OperationDef<
   /** True only for "ask the workbench to open somewhere" (ticket 05); it needs a running workbench. */
   readonly navigates: boolean;
   /**
+   * Overrides the derived CLI placement `<domain> <name>` (navigation entries, ticket 05: `open doc` for
+   * `workspace.open_doc`). The Copilot side is unaffected. Absent for every other operation.
+   */
+  readonly cli?: { readonly group: string; readonly name: string };
+  /**
    * The parameters WITHOUT the `action` discriminator, strict. Built from the `*-ops.ts` action schema with
    * `.omit({ action: true })`; an action schema that is refined (cannot be omitted) gets an explicit params schema.
    */

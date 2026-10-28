@@ -8,6 +8,7 @@ import {
   DISCOVERY_VIEW_ACTIONS,
   type PageContext,
   PLATFORM_BOUNDARIES,
+  parseCatalogCall,
   WORKSPACE_OPERATION_ACTIONS,
   WORKSPACE_THINKING_CHOICES,
   WORKSPACE_VIEWS,
@@ -220,6 +221,36 @@ export function createWorkspaceTool(context: WorkspaceToolContext) {
                 "that model or thinking level is not available (read provider_status); the choice is unchanged",
             });
           }
+        }
+        // open_doc is cataloged (workspace.open_doc, release-0.2 ticket 05): its parameters come from the catalog entry,
+        // the same one `argelanderspace open doc` is derived from; what the browser is asked stays this tool's own view
+        // action. The tool's schema has no `anchor`, so a call with one never gets here; if it did, it is refused.
+        if (params.action === "open_doc") {
+          const catalogued = parseCatalogCall(WORKSPACE_TOOL_NAME, params);
+          if (!catalogued.match || !catalogued.success || catalogued.params.anchor !== undefined)
+            return done(record(toolCallId, action, { status: "unsupported" }), {
+              ok: false,
+              status: "unsupported",
+              detail: "unknown action or invalid parameters",
+              issues:
+                catalogued.match && !catalogued.success
+                  ? catalogued.issues.slice(0, 5)
+                  : [
+                      {
+                        path: "anchor",
+                        message:
+                          "open_doc takes docId only; use the reader's navigate for a position",
+                      },
+                    ],
+            });
+          const outcome = viewOutcomeResult(
+            await context.viewAction({
+              action: "open_doc",
+              docId: catalogued.params.docId as string,
+            }),
+            "open_doc"
+          );
+          return done(record(toolCallId, action, { status: outcome.status }), outcome.payload);
         }
         const parsed = WorkspaceViewActionSchema.safeParse(params);
         if (!parsed.success)

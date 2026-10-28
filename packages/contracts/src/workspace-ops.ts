@@ -36,6 +36,15 @@ export const APPEARANCE_LANGUAGES = SETTINGS_UI_LANGUAGES;
 
 const PaneId = z.number().int().positive();
 
+/**
+ * Show a library Doc in the Reader through the Shell's own openDoc: the pane that already shows a Doc,
+ * else the active pane. Only a Doc the library has can be opened. (Cataloged as `workspace.open_doc`, release-0.2
+ * ticket 05; the catalog entry adds an optional `anchor` for the CLI only, which this Copilot action does not take.)
+ */
+export const WorkspaceOpenDocSchema = z
+  .object({ action: z.literal("open_doc"), docId: z.string().min(1).max(200) })
+  .strict();
+
 export const WorkspaceViewActionSchema = z.discriminatedUnion("action", [
   /** Without `paneId` this is the activity-bar button for the active pane; with it, the pane header menu. */
   z
@@ -91,11 +100,7 @@ export const WorkspaceViewActionSchema = z.discriminatedUnion("action", [
     })
     .strict(),
   z.object({ action: z.literal("close_copilot") }).strict(),
-  /**
-   * Show a library Doc in the Reader through the Shell's own openDoc: the pane that already shows a Doc,
-   * else the active pane. Only a Doc the library has can be opened.
-   */
-  z.object({ action: z.literal("open_doc"), docId: z.string().min(1).max(200) }).strict(),
+  WorkspaceOpenDocSchema,
 ]);
 export type WorkspaceViewAction = z.infer<typeof WorkspaceViewActionSchema>;
 

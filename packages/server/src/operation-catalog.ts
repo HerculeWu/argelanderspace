@@ -14,6 +14,8 @@ import {
 import { runDeleteDocOperation } from "./doc-delete-operation.js";
 import type { ExternalAsk, ExternalCardFields } from "./external-requests.js";
 import { applyLibraryOperation, type LibraryOpDeps, readLibrary } from "./library-actions.js";
+import { runNavigationOperation } from "./navigation-operation.js";
+import type { NavigationPort } from "./workbench-windows.js";
 
 /**
  * Where an operation with `confirm: "card"` puts its card for the real user (release-0.2 ticket 04). Only the running
@@ -34,6 +36,8 @@ export interface OperationRuntime {
   library: LibraryOpDeps;
   /** Present in the running workbench only. */
   confirm?: OperationConfirmPort;
+  /** Present in the running workbench only: opens somewhere in its most recently active window (ticket 05). */
+  navigate?: NavigationPort;
 }
 
 /** Who asked and whether they are still there; given by the operation route, absent for a Copilot tool call. */
@@ -58,6 +62,12 @@ export const OPERATION_HANDLERS: OperationHandlers = {
   "library.set_main_doc": (runtime, params) =>
     applyLibraryOperation(runtime.library, { action: "set_main_doc", ...params }),
   "library.delete_doc": (runtime, params, call) => runDeleteDocOperation(runtime, params, call),
+  "workspace.open_doc": (runtime, params, call) =>
+    runNavigationOperation(runtime, { op: "workspace.open_doc", params }, call),
+  "library.open_work": (runtime, params, call) =>
+    runNavigationOperation(runtime, { op: "library.open_work", params }, call),
+  "argument.open": (runtime, params, call) =>
+    runNavigationOperation(runtime, { op: "argument.open", params }, call),
 };
 
 /** Run a cataloged operation with params already parsed by its catalog entry. */

@@ -31,6 +31,7 @@ import { WsPlanChangedSchema } from "./plans.js";
 import { WsSettingsChangedSchema } from "./settings-api.js";
 import { WsShelfChangedSchema } from "./shelf-write.js";
 import { WsTextDocPublishedSchema, WsTextSourceChangedSchema } from "./text-doc.js";
+import { WsWorkbenchNavigateSchema } from "./workbench-windows.js";
 import { WsWriterChangedSchema } from "./writer.js";
 
 // ---- jobs ------------------------------------------------------------------ //
@@ -129,6 +130,7 @@ export const WsServerMessageSchema = z.discriminatedUnion("type", [
   WsHostSwitchConfirmationSchema,
   WsHostTutorialResultSchema,
   WsExternalRequestsChangedSchema,
+  WsWorkbenchNavigateSchema,
 ]);
 
 // ---- async upload (202) ------------------------------------------------------ //

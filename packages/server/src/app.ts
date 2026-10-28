@@ -191,6 +191,7 @@ import {
   TextDocService,
 } from "./text-docs.js";
 import { mountTutorialRoutes } from "./tutorial-routes.js";
+import type { NavigationPort } from "./workbench-windows.js";
 import {
   createManuscriptOp,
   deleteManuscriptOp,
@@ -275,6 +276,8 @@ export interface AppDeps {
    * in apps that nobody routes CLI operations to.
    */
   operations?: { token: string };
+  /** Where a navigation operation sends its target: the window registry of the hub (workbench-windows.ts). */
+  navigation?: NavigationPort;
   /** Test seam of the text Doc generator (runs between building a candidate and publishing it). */
   textDocHooks?: Pick<TextDocDeps, "beforePublish">;
   /** Longest the Copilot `library` tool waits for an acquisition job before answering `pending` (default ten minutes). */
@@ -866,7 +869,11 @@ export function createApp(deps: AppDeps): Hono {
   if (deps.operations) {
     mountOperationRoutes(app, {
       token: deps.operations.token,
-      runtime: { library: libraryOps, confirm: externalRequests },
+      runtime: {
+        library: libraryOps,
+        confirm: externalRequests,
+        ...(deps.navigation ? { navigate: deps.navigation } : {}),
+      },
     });
   }
   const readerOps: ReaderOpDeps = {

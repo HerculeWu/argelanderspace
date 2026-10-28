@@ -10,8 +10,8 @@
  * `ok: false` or failed, 2 the parameters were not valid (nothing was run), 3 the user denied the confirmation card
  * (`status: "denied"`), 4 an operation waiting for a confirmation card was interrupted (the workbench exited or
  * stopped answering), 130 this command was interrupted (Ctrl-C) and withdrew its card. An operation with
- * `confirm: "card"` needs a running workbench: without one the command answers `workbench_required` (exit 1) and
- * runs nothing in this process. Exit codes are listed in `docs/operation-catalog.md`.
+ * `confirm: "card"` and every navigation operation (`argelanderspace open doc|work|argument-graph`, ticket 05) need
+ * a running workbench: without one the command answers `workbench_required` (exit 1) and runs nothing in this process. Exit codes are listed in `docs/operation-catalog.md`.
  *
  * Only the catalog's operations are registered here; the older commands (`ingest`, `library build`, `annot`, ...) are
  * not in the catalog and are not touched. A command first looks for a workbench running for the data directory and, if
@@ -23,10 +23,10 @@ import {
   type OperationDef,
   type OperationId,
   type OperationOption,
+  operationCliGroups,
   operationCliName,
-  operationDomains,
   operationOptions,
-  operationsOfDomain,
+  operationsOfCliGroup,
 } from "@argelanderspace/contracts";
 import { libraryPaths } from "@argelanderspace/core";
 import {
@@ -221,7 +221,9 @@ async function runViaWorkbench(
 }
 
 function registerOperation(group: Command, op: OperationDef): void {
-  const command = withDataDir(group.command(operationCliName(op.name))).description(op.summary);
+  const command = withDataDir(group.command(op.cli?.name ?? operationCliName(op.name))).description(
+    op.summary
+  );
   for (const option of operationOptions(op)) {
     const value =
       option.kind === "boolean"
@@ -239,12 +241,20 @@ function registerOperation(group: Command, op: OperationDef): void {
   });
 }
 
-/** Add the catalog's subcommands. A domain whose group already exists (`library`) gains them next to its old ones. */
+/** What `--help` says of a group whose name is not a domain (navigation, ticket 05). */
+const GROUP_DESCRIPTIONS: Record<string, string> = {
+  open: "ask the running workbench to show a place in its most recently active window",
+};
+
+/**
+ * Add the catalog's subcommands. A group that already exists (`library`) gains them next to its old ones. The group of an
+ * entry is its `cli.group` when it has one (`open`), else its domain.
+ */
 export function registerOperationCommands(program: Command): void {
-  for (const domain of operationDomains()) {
+  for (const name of operationCliGroups()) {
     const group =
-      program.commands.find((c) => c.name() === domain) ??
-      program.command(domain).description(`${domain} operations`);
-    for (const op of operationsOfDomain(domain)) registerOperation(group, op);
+      program.commands.find((c) => c.name() === name) ??
+      program.command(name).description(GROUP_DESCRIPTIONS[name] ?? `${name} operations`);
+    for (const op of operationsOfCliGroup(name)) registerOperation(group, op);
   }
 }

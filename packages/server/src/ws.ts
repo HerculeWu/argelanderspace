@@ -20,6 +20,7 @@ import {
 } from "@argelanderspace/contracts";
 import { WebSocket, WebSocketServer } from "ws";
 import { listeningPort, originRule } from "./protected-app.js";
+import type { WorkbenchWindows } from "./workbench-windows.js";
 
 export interface WsHubOptions {
   /** Upgrade path (default `/ws`); any other upgrade request is refused. */
@@ -30,6 +31,8 @@ export interface WsHubOptions {
   snapshot?: () => Job[];
   /** A socket registered a Copilot view id: lets the host deliver view actions that waited for it. */
   onViewSubscribed?: (viewId: string) => void;
+  /** The window registry navigation goes through (release-0.2 ticket 05); absent in hosts without operations. */
+  windows?: WorkbenchWindows;
 }
 
 export class WsHub {
@@ -64,6 +67,12 @@ export class WsHub {
       subscriptions.set(ws, new Set());
       viewIds.set(ws, new Map());
       alive.set(ws, true);
+      const link = opts.windows?.attach((frame) => {
+        if (ws.readyState !== WebSocket.OPEN) return false;
+        ws.send(JSON.stringify(frame));
+        return true;
+      });
+      ws.on("close", () => link?.close());
       ws.on("pong", () => alive.set(ws, true));
       if (opts.snapshot) {
         ws.send(JSON.stringify({ type: "hello", jobs: opts.snapshot() }));
@@ -81,6 +90,8 @@ export class WsHub {
         } catch {
           return;
         }
+        // A window's attention and navigation answers (workbench-windows.ts); a frame of that kind is nothing else.
+        if (link?.receive(raw)) return;
         const parsed = CopilotSubscriptionSchema.safeParse(raw);
         if (!parsed.success) return;
         const message = parsed.data;

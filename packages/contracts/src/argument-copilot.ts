@@ -167,9 +167,15 @@ export const ArgumentToolWriteSchema = z.discriminatedUnion("action", [
 export type ArgumentToolWrite = z.infer<typeof ArgumentToolWriteSchema>;
 export type ArgumentToolRead = z.infer<typeof ArgumentToolReadSchema>;
 
+/** Show a Work's argument graph (cataloged as `argument.open_argument_graph`, release-0.2 ticket 05). */
+export const ArgumentOpenGraphSchema = z.strictObject({
+  action: z.literal("open_argument_graph"),
+  workId: WorkId,
+});
+
 /** What the browser does for the model (ADR 0005: opening, selecting and leaving the view are visible navigation). */
 export const ArgumentViewActionSchema = z.discriminatedUnion("action", [
-  z.strictObject({ action: z.literal("open_argument_graph"), workId: WorkId }),
+  ArgumentOpenGraphSchema,
   z.strictObject({
     action: z.literal("select_argument"),
     workId: WorkId,

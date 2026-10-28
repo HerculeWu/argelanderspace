@@ -1,3 +1,4 @@
+import { useWorkbenchWindow } from "../navigation/workbench-window";
 import { DiscoverySavedViewActionSchema, DEFAULT_COPILOT_FILE_TOOLS, SETTINGS_COPILOT_FILE_TOOLS, type CopilotFileToolsSetting, type SettingsGroup, APPEARANCE_DENSITIES, APPEARANCE_LANGUAGES, APPEARANCE_THEMES, type CopilotViewAction, MAX_PANES, type PageContext, SETTINGS_VIEW, WorkspaceViewActionSchema } from "@argelanderspace/contracts";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
@@ -169,6 +170,9 @@ export function Shell() {
     // Every page action (Plan, Library and Discovery, Reader and PDF, Writer) goes to the adapter that handles it.
     return store.runViewAction(action);
   }, [store]);
+
+  // This window as the target of the CLI's "open somewhere" (navigation/workbench-window.ts).
+  useWorkbenchWindow(runViewAction);
 
   // divider drag-resize
   const onDividerDown = (i: number, e: React.MouseEvent) => {

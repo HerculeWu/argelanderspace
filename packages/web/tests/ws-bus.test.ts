@@ -72,6 +72,7 @@ const FRAMES: Record<WsServerMessage["type"], WsServerMessage> = {
   "host.switch-confirmation": { type: "host.switch-confirmation", id: "s1" } as unknown as WsServerMessage,
   "host.tutorial-result": { type: "host.tutorial-result", reason: "copy_failed", path: { path: "/t", display: "/t" } },
   "external-requests.changed": { type: "external-requests.changed", at: "2026-10-28T00:00:00Z" },
+  "workbench.navigate": { type: "workbench.navigate", windowId: "w1", navId: "n1", target: { op: "library.open_work", params: { refId: "r1" } } },
 };
 const TYPES = Object.keys(FRAMES) as WsServerMessage["type"][];
 
