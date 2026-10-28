@@ -614,9 +614,11 @@ test("only dialog text is accepted: paths, files and unknown modes are refused w
   ];
   const { snapshot } = await run(page());
   expect(answers).toHaveLength(bad.length);
-  // the first three never reach the handler (the SDK's closed schema); the last two fail the shared zod schema
-  for (const answer of answers.slice(0, 3)) expect(answer).toContain("Validation failed");
-  for (const answer of answers.slice(3))
+  // `mode: "file"` never reaches the handler (the SDK's closed schema). `path` is a parameter of attach_local_pdf
+  // (project intake ticket 01), so with import_works it passes the SDK's check and, like the empty text and the missing
+  // mode, fails the shared zod schema: unsupported, nothing runs.
+  expect(answers[2]).toContain("Validation failed");
+  for (const answer of answers.filter((_, index) => index !== 2))
     expect(JSON.parse(answer)).toMatchObject({ ok: false, status: "unsupported" });
   expect(ops(snapshot).filter((o) => o.status === "ok")).toEqual([]);
   expect(bytes()).toBe(before);
@@ -673,6 +675,195 @@ test("the default arXiv PDF job follows the page's rule: identifier yes, BibTeX 
   // through the shared `broadcasts`): let them finish here, or a later test counts this test's notification
   // (shelf-followups 08, where starting the worker made each probe about 80 ms longer).
   await Promise.all(pdfJobs().map((job) => runner.waitFor(job.id)));
+});
+
+test("an identifier import with batch:true keeps its single result shape and queues no arXiv PDF job; without it the job is queued; bib mode refuses batch", async () => {
+  autoPdf = true;
+  const pdfJobs = () =>
+    runner
+      .list()
+      .filter((j) => (j.payload as { format?: unknown } | undefined)?.format === "arxiv-pdf");
+  const results: Record<string, unknown>[] = [];
+  script = [
+    () => toolImport("identifier", "arXiv:2603.44444", { batch: true }),
+    (ctx) => {
+      results.push(lastResult(ctx));
+      expect(pdfJobs()).toHaveLength(0);
+      return toolImport("identifier", "arXiv:2603.33333");
+    },
+    (ctx) => {
+      results.push(lastResult(ctx));
+      return toolImport("bib", "@article{bk,\n title={T},\n year={2022}\n}", { batch: true });
+    },
+    (ctx) => {
+      results.push(lastResult(ctx));
+      return { text: "done" };
+    },
+  ];
+  await run(page());
+  expect(results[0]).toMatchObject({ ok: true, status: "ok", mode: "identifier", created: 1 });
+  expect(results[0]).toHaveProperty("results");
+  expect(results[0]).not.toHaveProperty("entries");
+  expect(pdfJobs()).toHaveLength(1);
+  expect(results[2]).toMatchObject({ ok: false, status: "unsupported" });
+  await Promise.all(pdfJobs().map((job) => runner.waitFor(job.id)));
+});
+
+test("a bibcode text with several bibcodes is a batch: per-entry compact entries, a refused merge alone, no arXiv PDF job; more than 200 is rejected whole", async () => {
+  autoPdf = true;
+  const rec = (code: string, title: string, extra = "") =>
+    `@ARTICLE{${code},\n  author = {{Doe}, J.},\n  title = {${title}},\n  year = {2021},\n  journal = {\\mnras}${extra}\n}`;
+  const known: Record<string, string> = {
+    "2021A&A...1..1N": rec(
+      "2021A&A...1..1N",
+      "Batch paper one",
+      ",\n  eprint = {2105.00001},\n  archivePrefix = {arXiv}"
+    ),
+    "2021A&A...2..2N": rec("2021A&A...2..2N", "Batch paper two", ",\n  doi = {10.7777/two}"),
+    // the DOI of stored work 1 and the DOI of stored work 2 in one record: it would merge them
+    "2021A&A...3..3N": rec("2021A&A...3..3N", "Bridging paper", ",\n  doi = {10.1000/w1}"),
+  };
+  sources = {
+    ...stubSources(),
+    ads: {
+      status: "ok",
+      resolve: async () => null,
+      exportBibtex: async (codes: string[]) =>
+        codes
+          .map((c) => known[c])
+          .filter(Boolean)
+          .join("\n\n") || null,
+    },
+  };
+  // make the third record bridge two stored works: give stored work 2 the arXiv id the record carries
+  const lib = seedFile();
+  (lib.works[1] as Record<string, unknown>).arxiv_id = "2105.99999";
+  known["2021A&A...3..3N"] = rec(
+    "2021A&A...3..3N",
+    "Bridging paper",
+    ",\n  doi = {10.1000/w1},\n  eprint = {2105.99999},\n  archivePrefix = {arXiv}"
+  );
+  writeLibrary(lib);
+  const results: Record<string, unknown>[] = [];
+  script = [
+    () => ({
+      call: {
+        action: "import_works",
+        mode: "bibcode",
+        text: "2021A&A...1..1N, 2021A&A...2..2N\n2021A&A...3..3N 2099X.....1.....Z 2021A&A...1..1N",
+      },
+    }),
+    (ctx) => {
+      results.push(lastResult(ctx));
+      const many = Array.from({ length: 201 }, (_, i) => `2021X.....${i}.....Z`).join(" ");
+      return { call: { action: "import_works", mode: "bibcode", text: many } };
+    },
+    (ctx) => {
+      results.push(lastResult(ctx));
+      return { text: "done" };
+    },
+  ];
+  const before = disk().works.length;
+  const { snapshot } = await run(page());
+  const batch = results[0] as { entries: Record<string, unknown>[] } & Record<string, unknown>;
+  expect(batch).toMatchObject({
+    ok: true,
+    status: "ok",
+    batch: true,
+    requested: 5,
+    created: 2,
+    existing: 1,
+    refused: 1,
+    failed: 1,
+    warnings: ["import_partial"],
+  });
+  expect(batch.entries.map((e) => [e.bibcode, e.status, e.reason ?? null])).toEqual([
+    ["2021A&A...1..1N", "created", null],
+    ["2021A&A...2..2N", "created", null],
+    ["2021A&A...3..3N", "error", "merge_refused"],
+    ["2099X.....1.....Z", "error", "not_found"],
+    ["2021A&A...1..1N", "exists", "repeated"],
+  ]);
+  // compact: a Work is named by id and title, not carried in full
+  expect(batch).not.toHaveProperty("results");
+  expect(JSON.stringify(batch)).not.toContain("authors");
+  expect(disk().works).toHaveLength(before + 2);
+  // the stored works the refused record would have merged are both still there
+  expect(
+    disk()
+      .works.slice(0, 2)
+      .map((w: { id: string }) => w.id)
+  ).toEqual(["doi:10.1000/w1", "doi:10.1000/w2"]);
+  // the default PDF rule (autoPdf is on) queues nothing for a batch, though entry one has an arXiv id
+  expect(
+    runner
+      .list()
+      .filter((j) => (j.payload as { format?: unknown } | undefined)?.format === "arxiv-pdf")
+  ).toHaveLength(0);
+  expect(results[1]).toMatchObject({ ok: false, status: "rejected", requested: 201 });
+  expect(String((results[1] as { detail: string }).detail)).toContain("200");
+  expect(ops(snapshot).map((o) => o.status)).toEqual(["ok", "rejected"]);
+  expect(disk().works).toHaveLength(before + 2);
+});
+
+test("batch:true makes one bibcode a batch (per-entry shape, no arXiv PDF job); a trailing comma is not part of the bibcode; no token is unsupported and ADS is not asked", async () => {
+  autoPdf = true;
+  const asked: string[][] = [];
+  const rec = (code: string) =>
+    `@ARTICLE{${code},\n  author = {{Doe}, J.},\n  title = {Lone batch paper},\n  year = {2021},\n  journal = {\\mnras},\n  eprint = {2105.00007},\n  archivePrefix = {arXiv}\n}`;
+  sources = {
+    ...stubSources(),
+    ads: {
+      status: "ok",
+      resolve: async () => null,
+      exportBibtex: async (codes: string[]) => {
+        asked.push(codes);
+        return codes.map(rec).join("\n\n");
+      },
+    },
+  };
+  const results: Record<string, unknown>[] = [];
+  script = [
+    () => ({
+      call: { action: "import_works", mode: "bibcode", text: "2021A&A...7..7L,", batch: true },
+    }),
+    (ctx) => {
+      results.push(lastResult(ctx));
+      return { call: { action: "import_works", mode: "bibcode", text: " , ; ", batch: true } };
+    },
+    (ctx) => {
+      results.push(lastResult(ctx));
+      return {
+        call: { action: "import_works", mode: "bib", text: "@article{k,}", batch: true },
+      };
+    },
+    (ctx) => {
+      results.push(lastResult(ctx));
+      return { text: "done" };
+    },
+  ];
+  await run(page());
+  expect(results[0]).toMatchObject({
+    ok: true,
+    status: "ok",
+    batch: true,
+    requested: 1,
+    created: 1,
+    entries: [{ bibcode: "2021A&A...7..7L", status: "created" }],
+  });
+  expect(results[0]).not.toHaveProperty("results");
+  expect(asked).toEqual([["2021A&A...7..7L"]]);
+  // the lone bibcode has an arXiv id and the default PDF rule is on, yet nothing was queued
+  expect(
+    runner
+      .list()
+      .filter((j) => (j.payload as { format?: unknown } | undefined)?.format === "arxiv-pdf")
+  ).toHaveLength(0);
+  expect(JSON.stringify(results[0])).not.toContain("error");
+  // no bibcode in the text, and batch with BibTeX: unsupported, nothing asked
+  expect(results[1]).toMatchObject({ status: "unsupported" });
+  expect(results[2]).toMatchObject({ status: "unsupported" });
+  expect(asked).toHaveLength(1);
 });
 
 test("importing is a background edit: nothing is selected or opened, and the new work can then be opened in the sidebar", async () => {
@@ -789,9 +980,55 @@ test("a record that would merge two stored works is rejected by the tool: nothin
   expect(payload).toMatchObject({ ok: false, status: "rejected" });
   expect(JSON.stringify(payload.results)).toContain("doi:10.1000/w3");
   expect(JSON.stringify(payload.results)).toContain("doi:10.1000/w1");
+  expect(payload.results).toMatchObject([{ reason: "merge_refused" }]);
   expect(bytes()).toBe(before);
   expect(changed()).toHaveLength(0);
   expect(ops(snapshot)[0]).toMatchObject({ action: "import_works", status: "rejected" });
+});
+
+test("a mixed bib batch: the merging entry says merge_refused with its Works, the others batch_refused; without it the rest imports", async () => {
+  const fresh = (key: string, n: number) =>
+    `@article{${key},\n author={Fresh${n}},\n title={Fresh paper ${n}},\n year={2010},\n doi={10.7777/f${n}}\n}\n`;
+  const mixed = fresh("fresh1", 1) + BRIDGE + fresh("fresh2", 2);
+  const before = bytes();
+  let refused: { status?: string; results?: Record<string, unknown>[] } = {};
+  let afterRefused = "";
+  let second: { status?: string; created?: number; results?: Record<string, unknown>[] } = {};
+  script = [
+    () => toolImport("bib", mixed),
+    (ctx) => {
+      refused = lastResult(ctx);
+      afterRefused = bytes();
+      return toolImport("bib", fresh("fresh1", 1) + fresh("fresh2", 2));
+    },
+    (ctx) => {
+      second = lastResult(ctx);
+      return { text: "done" };
+    },
+  ];
+  await run(page());
+  expect(refused.status).toBe("rejected");
+  const rows = refused.results ?? [];
+  expect(rows.map((r) => [r.key, r.status, r.reason])).toEqual([
+    ["fresh1", "error", "batch_refused"],
+    ["bridge1", "error", "merge_refused"],
+    ["fresh2", "error", "batch_refused"],
+  ]);
+  expect([...((rows[1]?.works as string[]) ?? [])].sort()).toEqual([
+    "doi:10.1000/w1",
+    "doi:10.1000/w3",
+  ]);
+  expect(rows[0]?.works).toBeUndefined();
+  expect(afterRefused).toBe(before);
+  expect(second.status).toBe("ok");
+  expect(second.created).toBe(2);
+  expect((second.results ?? []).map((r) => [r.key, r.status])).toEqual([
+    ["fresh1", "created"],
+    ["fresh2", "created"],
+  ]);
+  expect(disk().works.map((w: { id: string }) => w.id)).toEqual(
+    expect.arrayContaining(["doi:10.7777/f1", "doi:10.7777/f2"])
+  );
 });
 
 test("the page still merges such a record (known behaviour, not changed by this ticket)", async () => {

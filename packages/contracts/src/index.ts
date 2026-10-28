@@ -19,6 +19,7 @@ export * from "./doc-ir.js";
 export * from "./document-busy.js";
 export * from "./environment-api.js";
 export * from "./host-api.js";
+export * from "./intake.js";
 export * from "./job-payload.js";
 export * from "./jobs.js";
 export * from "./library.js";

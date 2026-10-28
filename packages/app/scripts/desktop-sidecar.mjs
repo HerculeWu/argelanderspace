@@ -38,7 +38,8 @@
 //   skills/                                            the repository's skills/ (desktop-app ticket 24 opens it)
 //   tutorial/                                          the repository's tutorial-sample/, unpacked (in-app-tutorial
 //                                                      ticket 27; infra bundledTutorialDir finds it here); the npm
-//                                                      build's dist/tutorial is left out of sidecar/app/dist
+//                                                      build's dist/tutorial and dist/skills are left out of
+//                                                      sidecar/app/dist
 //   THIRD-PARTY-SHELL-NOTICES.txt                      the shell's Rust crates (shell-notices.mjs; needs cargo)
 //
 // Exit: 0 assembled and checked; 1 an error or a failed check (required file missing, license problem); 3 the
@@ -214,7 +215,8 @@ chmodSync(join(sidecar, "node", dist.binary), 0o755);
 copyFileSync(join(work, dist.base, "LICENSE"), join(sidecar, "node/LICENSE"));
 
 // ---- the app build ------------------------------------------------------------------------------------------------ //
-// Without dist/tutorial: the sample goes to the resource directory's tutorial/ below, once.
+// Without dist/tutorial and dist/skills (the npm build's copies): the sample and the skills go to the resource
+// directory's tutorial/ and skills/ below, once each.
 cpSync(join(appRoot, "dist"), join(sidecar, "app/dist"), {
   recursive: true,
   filter: sidecarAppDistFilter(join(appRoot, "dist")),

@@ -11,11 +11,13 @@ import {
 
 export class PdfResourceError extends Error {
   constructor() {
+    // The "512 MiB" wording is matched by substring in library-actions.ts `localPdfJobReason`; keep them together.
     super("PDF processing requires at least 512 MiB of available memory headroom");
     this.name = "PdfResourceError";
   }
 }
 
+/** The messages thrown as `PdfInputError` below are matched by substring in library-actions.ts `localPdfJobReason`. */
 export class PdfInputError extends Error {
   constructor(message: string) {
     super(message);

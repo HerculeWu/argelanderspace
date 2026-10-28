@@ -1,4 +1,5 @@
 import {
+  type CopilotProvider,
   ProviderCredentialSchema,
   ProviderLoginAnswerSchema,
   ProviderModelConfigSchema,
@@ -10,12 +11,25 @@ import { ProviderSettings, ProviderSettingsError } from "./providers.js";
 
 export function mountProviderRoutes(
   host: ProtectedRoutes,
-  injected: ProviderSettings | undefined
+  injected: ProviderSettings | undefined,
+  /** Called once per request: the judge of whether a new Copilot conversation on a model has room (the Copilot service's measure, its system occupancy read once for the request). Without it models carry no `fits`. */
+  fits?: () => (model: { maxTokens: number; contextWindow: number }) => boolean
 ): void {
   let settings = injected;
   const get = () => (settings ??= new ProviderSettings());
   const app = new Hono();
   const prefix = "";
+  const fitted = (provider: CopilotProvider): CopilotProvider =>
+    fittedAll([provider])[0] ?? provider;
+  const fittedAll = (providers: CopilotProvider[]): CopilotProvider[] => {
+    const judge = fits?.();
+    return judge
+      ? providers.map((provider) => ({
+          ...provider,
+          models: provider.models.map((model) => ({ ...model, fits: judge(model) })),
+        }))
+      : providers;
+  };
   // Every method but GET is guarded where this router is mounted (protected-app.ts), before anything below.
   app.use("*", async (c, next) => {
     c.header("Cache-Control", "no-store");
@@ -41,24 +55,27 @@ export function mountProviderRoutes(
       onError: (c) => c.json({ code: "invalid_input", detail: "provider request too large" }, 413),
     })
   );
-  app.get("/", async (c) => c.json({ version: 1, providers: await get().list() }));
+  app.get("/", async (c) => c.json({ version: 1, providers: fittedAll(await get().list()) }));
   app.put(`${prefix}/:id/credential`, async (c) => {
     const body = ProviderCredentialSchema.safeParse(await c.req.json().catch(() => null));
     if (!body.success)
       return c.json({ code: "invalid_credential", detail: "invalid credential input" }, 400);
     return c.json({
       saved: true,
-      provider: await get().credential(c.req.param("id"), body.data.key),
+      provider: fitted(await get().credential(c.req.param("id"), body.data.key)),
     });
   });
   app.delete(`${prefix}/:id/credential`, async (c) =>
-    c.json({ saved: true, provider: await get().credential(c.req.param("id"), null) })
+    c.json({ saved: true, provider: fitted(await get().credential(c.req.param("id"), null)) })
   );
   app.put(`${prefix}/:id/config`, async (c) => {
     const body = ProviderModelConfigSchema.safeParse(await c.req.json().catch(() => null));
     if (!body.success)
       return c.json({ code: "invalid_config", detail: "invalid model configuration" }, 400);
-    return c.json({ saved: true, provider: await get().configure(c.req.param("id"), body.data) });
+    return c.json({
+      saved: true,
+      provider: fitted(await get().configure(c.req.param("id"), body.data)),
+    });
   });
   app.post(`${prefix}/:id/test`, async (c) => {
     const body = ProviderModelConfigSchema.safeParse(await c.req.json().catch(() => null));
@@ -90,7 +107,7 @@ export function mountProviderRoutes(
     });
   });
   app.post(`${prefix}/:id/logout`, async (c) =>
-    c.json({ saved: true, provider: await get().logout(c.req.param("id")) })
+    c.json({ saved: true, provider: fitted(await get().logout(c.req.param("id"))) })
   );
   host.mount("/api/copilot/providers", app, { guard: "non-GET", noStore: true });
 }

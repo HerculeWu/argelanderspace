@@ -35,7 +35,7 @@ paper to the library stays a separate, explicit step.
 ```bash
 node skills/argelander-find-papers/scripts/ads.mjs search 'author:"Kroupa, P" abs:"tidal tails"' --rows 10
 node skills/argelander-find-papers/scripts/ads.mjs similar 2024ApJ...970...94K
-node --test skills/argelander-find-papers/scripts/ads.test.mjs    # offline tests
+node --test skills/argelander-find-papers/scripts/ads.test.mjs    # offline tests (repository checkout only; not in the npm package)
 ```
 
 ## Organizing a paper's logic: `argelander-argument-graph`
@@ -50,6 +50,19 @@ the paper through `read` / `show` / `ref` (PDF Docs via `pdf-path`), asks the
 user before replacing a non-empty graph, and reports the End arguments, the main
 chains and its own audit findings.
 
+## Moving an existing project in: `argelander-project-intake`
+
+A skill that drives a project intake as an interview: it asks which sources the
+user has (ADS libraries, Zotero export, `.bib` files, loose PDFs, servers, an
+Overleaf or local manuscript, a TODO file), brings the literature in with the
+Copilot's `library` tool (`list_ads_libraries`, `read_ads_library`, batch
+`import_works`, `attach_local_pdf`), turns the plan into Plans and Tasks with the
+`plan` tool, and keeps progress in `argelanderspace-intake.md` in the Project
+folder so any session or agent can resume. It teaches business tools, file tools and
+shell commands only — no command-line write. The Copilot loads it; an external agent
+uses its *preparation mode* (read-only; writes only the checklist and
+`intake-inbox/`) and hands the writing to the Copilot.
+
 ## Install
 
 pi discovers skills in `~/.pi/agent/skills/` (global) or `.pi/skills/`
@@ -58,7 +71,7 @@ pi discovers skills in `~/.pi/agent/skills/` (global) or `.pi/skills/`
 ```bash
 # global, symlinked from this repo
 mkdir -p ~/.pi/agent/skills
-for s in argelander-paper-ingest argelander-read-paper argelander-query-paper-library argelander-find-papers argelander-argument-graph; do
+for s in argelander-paper-ingest argelander-read-paper argelander-query-paper-library argelander-find-papers argelander-argument-graph argelander-project-intake; do
   ln -sfn "$PWD/skills/$s" ~/.pi/agent/skills/$s
 done
 
@@ -82,6 +95,13 @@ runs from a mount that is gone once the app closes, so a launcher pointing
 into it would stop working); for an agent's command line use the `.deb` or the
 npm package; and copy the skills out of the AppImage rather than linking to
 them, for the same reason.
+
+### From the npm package
+
+`npm i -g argelanderspace` carries the skills too, in
+`<install>/node_modules/argelanderspace/dist/skills` (for a global install,
+`$(npm root -g)/argelanderspace/dist/skills`). Copy or symlink the ones you want
+as above. The package leaves out the repository's test files.
 
 ## Prerequisites
 

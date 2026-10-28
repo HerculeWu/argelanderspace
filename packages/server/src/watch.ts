@@ -36,6 +36,7 @@
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { argumentGraphPath, listArgumentGraphWorkIds, plansPath } from "@argelanderspace/core";
+import { intakeChecklistState } from "./intake-state.js";
 
 export interface WatcherOptions {
   dataDir: string;
@@ -60,6 +61,11 @@ export interface WatcherOptions {
    *  (created/rewritten/deleted), with those Work ids (decoded, sorted).
    *  Optional: pre-argument-graph callers don't observe the domain. */
   onArgumentGraphChange?: (workIds: string[]) => void;
+  /** The Project root whose intake checklist (`argelanderspace-intake.md`) is watched for appearing, disappearing or
+   *  becoming unreadable (project-intake ticket 06): existence only, never the content. Needs `onIntakeChange`. */
+  projectRoot?: string;
+  /** Called once per poll in which the checklist's state (`present` / `absent` / `unknown`) changed. */
+  onIntakeChange?: () => void;
 }
 
 export interface Watcher {
@@ -73,6 +79,8 @@ export function startWatcher(opts: WatcherOptions): Watcher {
   let lastAnnotations = annotationsFingerprint(opts.dataDir);
   let lastWriter = writerFingerprint(opts.dataDir);
   let lastGraphs = argumentGraphFingerprint(opts.dataDir);
+  const intakeRoot = opts.onIntakeChange ? opts.projectRoot : undefined;
+  let lastIntake = intakeRoot === undefined ? "" : intakeChecklistState(intakeRoot);
   const timer = setInterval(() => {
     const nextLibrary = libraryFingerprint(opts.dataDir);
     if (nextLibrary !== lastLibrary) {
@@ -101,6 +109,13 @@ export function startWatcher(opts: WatcherOptions): Watcher {
     if (changedGraphs.length > 0) {
       lastGraphs = nextGraphs;
       opts.onArgumentGraphChange?.(changedGraphs);
+    }
+    if (intakeRoot !== undefined) {
+      const nextIntake = intakeChecklistState(intakeRoot);
+      if (nextIntake !== lastIntake) {
+        lastIntake = nextIntake;
+        opts.onIntakeChange?.();
+      }
     }
   }, opts.intervalMs ?? 1500);
   timer.unref(); // never keep the process alive just for watching

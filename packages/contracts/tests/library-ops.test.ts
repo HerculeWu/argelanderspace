@@ -7,16 +7,23 @@ import {
   LIBRARY_OPERATION_ACTIONS,
   LibraryAcquireArxivPdfSchema,
   LibraryAttachArxivSchema,
+  LibraryAttachLocalPdfSchema,
   LibraryDeleteDocSchema,
   LibraryImportWorksSchema,
+  LibraryListAdsLibrariesSchema,
+  LibraryReadAdsLibrarySchema,
   LibraryReadJobsSchema,
   LibraryReadOperationSchema,
   LibrarySetMainDocSchema,
   LibraryViewActionSchema,
+  libraryBibcodeTokens,
   libraryImportRequest,
   libraryRefBibtex,
   libraryRefIdentityMatches,
   libraryRefMatches,
+  libraryToolImportRequest,
+  MANUAL_BIBCODES_MAX,
+  ManualWorkRequestSchema,
   OperationConfirmationSchema,
   PageContextSchema,
   summarizeLibraryRef,
@@ -165,6 +172,61 @@ describe("import_works operation", () => {
   });
 });
 
+describe("import_works bibcode batch", () => {
+  const op = (text: string) =>
+    LibraryImportWorksSchema.parse({ action: "import_works", mode: "bibcode", text });
+  it("splits a bibcode text on whitespace, commas and semicolons; one token stays the single import", () => {
+    expect(libraryBibcodeTokens(" a,b;\n c\td ")).toEqual(["a", "b", "c", "d"]);
+    expect(libraryToolImportRequest(op(" 2020A&A...641A...6P "))).toEqual({
+      mode: "bibcode",
+      bibcode: "2020A&A...641A...6P",
+    });
+    expect(libraryToolImportRequest(op("a b\nc"))).toEqual({
+      mode: "bibcodes",
+      bibcodes: ["a", "b", "c"],
+    });
+  });
+  it("the import dialog's request never batches; the request schema caps a batch at the limit", () => {
+    expect(libraryImportRequest(op("a b"))).toEqual({ mode: "bibcode", bibcode: "a b" });
+    const many = (n: number) => Array.from({ length: n }, (_, i) => `b${i}`);
+    expect(
+      ManualWorkRequestSchema.safeParse({ mode: "bibcodes", bibcodes: many(MANUAL_BIBCODES_MAX) })
+        .success
+    ).toBe(true);
+    expect(
+      ManualWorkRequestSchema.safeParse({
+        mode: "bibcodes",
+        bibcodes: many(MANUAL_BIBCODES_MAX + 1),
+      }).success
+    ).toBe(false);
+    expect(ManualWorkRequestSchema.safeParse({ mode: "bibcodes", bibcodes: [] }).success).toBe(
+      false
+    );
+  });
+  it("batch is accepted for bibcode and identifier, never for bib", () => {
+    const parse = (mode: string, text: string) =>
+      LibraryImportWorksSchema.safeParse({ action: "import_works", mode, text, batch: true })
+        .success;
+    expect(parse("bibcode", "2020A&A...641A...6P")).toBe(true);
+    expect(parse("identifier", "arXiv:2105.00001")).toBe(true);
+    expect(parse("bib", "@article{k,}")).toBe(false);
+  });
+  it("the tool's schema lets a text over the limit through (the call answers it as rejected) but not an over-long token", () => {
+    const over = Array.from({ length: MANUAL_BIBCODES_MAX + 50 }, (_, i) => `b${i}`).join(" ");
+    expect(
+      LibraryImportWorksSchema.safeParse({ action: "import_works", mode: "bibcode", text: over })
+        .success
+    ).toBe(true);
+    expect(
+      LibraryImportWorksSchema.safeParse({
+        action: "import_works",
+        mode: "bibcode",
+        text: `${"x".repeat(65)} b1`,
+      }).success
+    ).toBe(false);
+  });
+});
+
 describe("identity query for read", () => {
   const stub = { id: "arxiv:2603.99999", arxiv_id: "2603.99999" };
   const full = {
@@ -234,6 +296,55 @@ describe("identity query for read", () => {
     );
     expect(LibraryReadJobsSchema.safeParse({ action: "read_jobs", limit: 51 }).success).toBe(false);
     for (const action of ["acquire_arxiv_pdf", "attach_arxiv", "read_jobs"])
+      expect(LIBRARY_OPERATION_ACTIONS).toContain(action);
+  });
+
+  it("attach_local_pdf takes a work id and an absolute-path string and nothing else", () => {
+    const ok = { action: "attach_local_pdf", refId: "doi:10.1/a", path: "/home/u/a.pdf" };
+    expect(LibraryAttachLocalPdfSchema.safeParse(ok).success).toBe(true);
+    for (const bad of [
+      { action: "attach_local_pdf", refId: "w" },
+      { action: "attach_local_pdf", path: "/a.pdf" },
+      { ...ok, path: "" },
+      { ...ok, path: "x".repeat(4097) },
+      { ...ok, url: "https://x.example/a.pdf" },
+      { ...ok, bytes: "AAAA" },
+      { ...ok, docId: "pdf-1" },
+    ])
+      expect(LibraryAttachLocalPdfSchema.safeParse(bad).success).toBe(false);
+    expect(LIBRARY_OPERATION_ACTIONS).toContain("attach_local_pdf");
+    // The page's import menu still takes no path: only this action does.
+    expect(
+      LibraryImportWorksSchema.safeParse({
+        action: "import_works",
+        mode: "bib",
+        text: "x",
+        path: "/a",
+      }).success
+    ).toBe(false);
+  });
+
+  it("list_ads_libraries takes nothing; read_ads_library takes a slug id and a page, never a token or URL", () => {
+    expect(LibraryListAdsLibrariesSchema.safeParse({ action: "list_ads_libraries" }).success).toBe(
+      true
+    );
+    expect(
+      LibraryListAdsLibrariesSchema.safeParse({ action: "list_ads_libraries", token: "x" }).success
+    ).toBe(false);
+    const ok = { action: "read_ads_library", libraryId: "abc_-9Z", offset: 200, limit: 200 };
+    expect(LibraryReadAdsLibrarySchema.safeParse(ok).success).toBe(true);
+    for (const bad of [
+      { action: "read_ads_library" },
+      { ...ok, libraryId: "../x" },
+      { ...ok, libraryId: "a b" },
+      { ...ok, libraryId: "" },
+      { ...ok, limit: 201 },
+      { ...ok, offset: -1 },
+      { ...ok, url: "https://api.adsabs.harvard.edu/v1/biblib/libraries" },
+      { ...ok, token: "x" },
+    ])
+      expect(LibraryReadAdsLibrarySchema.safeParse(bad).success).toBe(false);
+    for (const action of ["list_ads_libraries", "read_ads_library"])
       expect(LIBRARY_OPERATION_ACTIONS).toContain(action);
   });
 

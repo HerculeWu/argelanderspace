@@ -683,6 +683,14 @@
       "exists": "Already in library",
       "failed": "Failed",
       "unreachable": "Cannot reach the server — make sure serve is running"
+    },
+    "intake": {
+      "emptyTitle": "The library is empty",
+      "emptyDesc": "Have a project half done? The Copilot asks where your material is and brings the literature and plans in.",
+      "emptyDescResume": "The last move-in stopped halfway; its progress is in the intake checklist in the Project root.",
+      "start": "Move in an existing project",
+      "resume": "Continue the move-in",
+      "resumeDesc": "Pick up the intake checklist; the Copilot carries on"
     }
   },
   "plan": {
@@ -1495,6 +1503,9 @@
         "import_works": "Import works",
         "acquire_arxiv_pdf": "Fetch PDF from arXiv",
         "attach_arxiv": "Get LaTeX source from arXiv",
+        "attach_local_pdf": "Attach local PDF",
+        "list_ads_libraries": "List ADS libraries",
+        "read_ads_library": "Read an ADS library",
         "read_jobs": "Read acquisition jobs",
         "delete_doc": "Delete document",
         "read_discovery": "Read exploration",
@@ -1989,7 +2000,28 @@
         "bib_fields": "Other BibTeX fields",
         "resolution": "Metadata source"
       }
-    }
+    },
+    "intake": {
+      "startMessage": "Start the intake: import my existing project",
+      "resumeMessage": "Continue the intake of my existing project",
+      "noProviderTitle": "No model is available yet",
+      "noProviderBody": "The Copilot does the move-in. Set up a provider in the model settings first, then start.",
+      "openSettings": "Open model settings",
+      "catalogFailedTitle": "Cannot read the model settings",
+      "catalogFailedBody": "The Copilot needs them before the move-in can start. Retry; once they are read, follow what the panel then asks for, and start the move-in yourself.",
+      "fileToolsOffTitle": "File and command permission is off",
+      "fileToolsOffBody": "The move-in reads files on this computer (.bib files, PDFs, the intake checklist). Set the File and command permission to Ask each time or Automatic, then start.",
+      "openFileToolsSettings": "Open settings",
+      "ready": "Ready: a model and the file permission are set up.",
+      "readyModel": "Ready: a model is set up.",
+      "go": "Start the move-in",
+      "windowSmallTitle": "No model has a large enough context window",
+      "windowSmallBody": "None of the models you set up can hold the Copilot’s instructions and tools. Add a model with a larger context window in the model settings, then start.",
+      "chosenSmallTitle": "The chosen model’s context window is too small",
+      "chosenSmallBody": "The chosen model cannot hold the Copilot’s instructions and tools. Switch to a model with a larger context window in the panel’s model picker, then start."
+    },
+    "windowSmall": "The models set up here all have a context window too small for the Copilot. Add a model with a larger one in the model settings.",
+    "windowSmallTag": "{{name}} (window too small)"
   },
   "mail": {
     "live": {
@@ -3012,6 +3044,9 @@
       "copilot": {
         "title": "Copilot"
       },
+      "intake": {
+        "title": "Move in a project"
+      },
       "finish": {
         "title": "Finish"
       }
@@ -3034,10 +3069,10 @@
         },
         "agent": {
           "title": "Give your agent the skills",
-          "intro": "Under “Command line & agents”, install the command-line tool, open the skills folder, and copy the five skills to your agent.",
+          "intro": "Under “Command line & agents”, install the command-line tool, open the skills folder, and copy the six skills to your agent. With the intake skill the agent only helps you prepare the checklist; the Copilot in the workbench does the writing.",
           "prompt": "Read through the ArgelanderSpace skills folder and tell me what each skill can do",
-          "skill": "argelander-paper-ingest · argelander-read-paper · argelander-find-papers · argelander-query-paper-library · argelander-argument-graph",
-          "introBrowser": "You already use the command-line tool: `argelanderspace tutorial` is it. The skills are in the repository; clone or download it, then copy them into your agent's skills folder.",
+          "skill": "argelander-paper-ingest · argelander-read-paper · argelander-find-papers · argelander-query-paper-library · argelander-argument-graph · argelander-project-intake",
+          "introBrowser": "You already use the command-line tool: `argelanderspace tutorial` is it. The skills are in the repository; clone or download it, then copy them into your agent's skills folder. With the intake skill the agent only prepares; the Copilot in the workbench does the writing.",
           "promptBrowser": "https://github.com/HerculeWu/argelanderspace/tree/main/skills"
         }
       },
@@ -3269,17 +3304,35 @@
         },
         "agent": {
           "title": "The Copilot and external agents",
-          "intro": "The Copilot has two read-only skills built in: reading one paper and searching across the library. Adding literature, curating argument graphs and finding papers go to an external agent with the bundled skills. “File and command permission” in the “Copilot” group of Settings decides whether the Copilot may read and write files and run commands.",
+          "intro": "The Copilot has three skills built in: reading one paper, searching across the library, and moving an existing project in; it writes the moved-in literature and plans into the Project. Ingesting single papers, finding papers and curating argument graphs go to an external agent with the bundled skills (through the command line); in a move-in it only prepares. “File and command permission” in the “Copilot” group of Settings decides whether the Copilot may read and write files and run commands.",
           "prompt": "Read the current paper and summarize its End arguments",
-          "skill": "argelander-read-paper · argelander-query-paper-library"
+          "skill": "argelander-read-paper · argelander-query-paper-library · argelander-project-intake"
+        }
+      },
+      "intake": {
+        "interview": {
+          "title": "Moving in is an interview",
+          "body": "In the replay the Copilot first asks about your Project folder, then asks once what material you have: ADS libraries, Zotero, PDF folders, servers, manuscripts, plans. After each step it records progress in the intake checklist in the Project root; you can stop any time and pick it up in another conversation or with another agent. It only reads or copies your files, and never moves, edits or deletes them.",
+          "bodyNoReplay": "When you move a project in, the Copilot first asks about your Project folder, then asks once what material you have: ADS libraries, Zotero, PDF folders, servers, manuscripts, plans. After each step it records progress in the intake checklist in the Project root; you can stop any time and pick it up in another conversation or with another agent. It only reads or copies your files, and never moves, edits or deletes them."
+        },
+        "summary": {
+          "title": "One summary table per batch",
+          "body": "After each batch of literature the Copilot gives a summary table: created, merged into existing, rejected, failed, pending. An entry that would merge two existing Works is rejected on its own, for you to compare on the Library page; only an exact DOI or arXiv match makes it call two records the same paper, and it lists candidates for the rest."
+        },
+        "agent": {
+          "title": "An external agent can prepare",
+          "intro": "The Copilot does the writing of a move-in. An external agent with the bundled skills can prepare first: look through material on this machine and your servers, and put .bib files, PDF paths and a plan draft into the intake checklist. When it is ready, come back to the workbench and let the Copilot continue.",
+          "prompt": "Help me prepare a move-in: follow the preparation mode of argelander-project-intake, ask where my project material is, write what you find into argelanderspace-intake.md in the project root, and do not change my original files",
+          "skill": "argelander-project-intake"
         }
       },
       "finish": {
         "page": {
           "title": "You have finished the tutorial",
-          "body": "You have been through the workbench in the tutorial project: adding, reading, exploring, arguments, planning, writing, and the Copilot. This project stays, and you can come back to it any time.",
-          "openOwn": "Open your own project",
-          "openOwnBrowser": "Run `argelanderspace serve` in a terminal to open your own project",
+          "body": "You have been through the workbench in the tutorial project: adding, reading, exploring, arguments, planning, writing, and the Copilot and the move-in. This project stays, and you can come back to it any time.",
+          "openOwn": "Move in a half-done project",
+          "openOwnHint": "Pick a folder as your Project: choose it if most of your material is in one place, or start a new empty folder if it is spread out. Once picked, click “Move in an existing project” in the empty library.",
+          "openOwnBrowser": "In a terminal, go into your project folder and run `argelanderspace serve`; once it is running, click “Move in an existing project” in the empty library.",
           "openOwnShelf": "Once it opens, click “Import literature” → “From Shelf” in your own project to take Jerabkova in.",
           "openOwnShelfBrowser": "Once it is running, click “Import literature” → “From Shelf” in your own project to take Jerabkova in.",
           "review": "Review any chapter",

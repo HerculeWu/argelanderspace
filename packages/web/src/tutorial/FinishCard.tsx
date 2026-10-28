@@ -32,9 +32,10 @@ export interface FinishCardProps {
 
 /**
  * The finish page (appendix A, spec addendum 5): docked at the bottom right like a card without anchor, with the three
- * ways out — open your own project (the desktop app's folder picker, the same request as Settings' "Open another
- * folder…"; in the browser form, the command to run), review any chapter, close — and two notes on where settings and
- * diagnostics are. Nothing here switches the project by itself.
+ * ways out — move in a half-done project of your own (the desktop app's folder picker, the same request as Settings'
+ * "Open another folder…", with a line on what to pick and where the move-in starts; in the browser form, the command to
+ * run), review any chapter, close — and two notes on where settings and diagnostics are. Picking only switches to the new
+ * Project: the move-in is never started from here (project-intake ticket 05 ruling 9).
  */
 export function FinishCard({ desktop, yielded = false, onReview, onClose, onLeave }: FinishCardProps) {
   const { t } = useTranslation();
@@ -97,6 +98,7 @@ export function FinishCard({ desktop, yielded = false, onReview, onClose, onLeav
                 <Icon name="folder-open" cls="ico-sm" />
                 {tk(t, `${KEY}.openOwn`)}
               </Button>
+              <p className="tut-text" data-ui="tutorial-finish-open-own-hint">{tk(t, `${KEY}.openOwnHint`)}</p>
               <p className="tut-text" data-ui="tutorial-finish-open-own-shelf">{tk(t, `${KEY}.openOwnShelf`)}</p>
             </>
           ) : (

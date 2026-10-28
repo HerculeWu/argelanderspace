@@ -47,6 +47,12 @@ export const REQUIRED_FILES = [
   // the papers' licenses.
   "dist/tutorial/argelanderspace-tutorial.json",
   "dist/tutorial/NOTICE.md",
+  // The bundled skills (project-intake ticket 12): the README marker makes infra's bundledSkillsDir find them; the
+  // three SKILL.md are the Copilot's allow-list (copilot-resources.ts COPILOT_SKILL_NAMES).
+  "dist/skills/README.md",
+  "dist/skills/argelander-read-paper/SKILL.md",
+  "dist/skills/argelander-query-paper-library/SKILL.md",
+  "dist/skills/argelander-project-intake/SKILL.md",
   ...VENDORED_LICENSE_FILES,
 ];
 
@@ -59,7 +65,7 @@ const ALLOWED_ROOT = /^(?:package\.json|README\.md|LICENSE|dist\/.+|licenses\/[^
  */
 const TUTORIAL_SAMPLE = /^dist\/tutorial\//;
 /**
- * The sample's one preset Copilot conversation (in-app-tutorial ticket 17): its record and its Pi session file, at
+ * The sample's preset Copilot conversations (in-app-tutorial ticket 17; the move-in one is project-intake ticket 10): each a record and a Pi session file, at
  * exactly the places the server reads them. Only these two shapes are exempt from the Copilot and `.jsonl` rules.
  */
 const TUTORIAL_CONVERSATION =

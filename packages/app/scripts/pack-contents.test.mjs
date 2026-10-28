@@ -66,6 +66,26 @@ for (const forbidden of [
   });
 }
 
+test("the bundled skills ship in dist/skills: the marker and the Copilot's three allow-listed SKILL.md (project-intake ticket 12)", () => {
+  for (const f of [
+    "dist/skills/README.md",
+    "dist/skills/argelander-read-paper/SKILL.md",
+    "dist/skills/argelander-query-paper-library/SKILL.md",
+    "dist/skills/argelander-project-intake/SKILL.md",
+  ])
+    assert.ok(REQUIRED_FILES.includes(f), f);
+  // The other skills may ship too (scripts included), but a skill's own test file may not.
+  assert.deepEqual(
+    checkPackContents([...good, "dist/skills/argelander-find-papers/scripts/ads.mjs"]),
+    []
+  );
+  assert.ok(
+    checkPackContents([...good, "dist/skills/argelander-find-papers/scripts/ads.test.mjs"]).some(
+      (p) => p.includes("a test file")
+    )
+  );
+});
+
 test("the vendored license texts ship with the npm package (desktop-app ticket 26)", () => {
   const manifest = JSON.parse(
     readFileSync(new URL("../licenses/runtime-licenses.json", import.meta.url), "utf8")

@@ -1,4 +1,6 @@
 import { createContext, useContext } from "react";
+import type { SettingsGroup } from "@argelanderspace/contracts";
+import type { IntakeKind } from "../copilot/intake";
 import type { Tweaks } from "./theme";
 
 // Shared workspace state, provided by the Shell so any pane (e.g. the Library's
@@ -27,6 +29,18 @@ export interface Workspace {
    */
   openCopilotSettings?: () => void;
   openMailAccounts?: () => void;
+  /**
+   * The Library's intake entries (project-intake ticket 06): open the Copilot panel and move in an existing project
+   * there — a new conversation and one fixed, visible message in the user's name (`resume` when a checklist exists).
+   */
+  startIntake?: (kind: IntakeKind) => void;
+  /**
+   * Show the settings page on one group (the intake card's "Open settings" for the Copilot's file permission). The page
+   * takes the group once it is shown and clears the request.
+   */
+  openSettingsGroup?: (group: SettingsGroup) => void;
+  pendingSettingsGroup?: SettingsGroup | null;
+  clearPendingSettingsGroup?: () => void;
   /**
    * What each Library page had selected (a library graph node id, not a Work id), by pane id, for the length of the session
    * (an entry goes when its pane closes). A Doc pane replaces the page (and

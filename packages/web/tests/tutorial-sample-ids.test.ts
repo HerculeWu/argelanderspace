@@ -10,6 +10,7 @@ import {
   SAMPLE_COPILOT_CELL_ID,
   SAMPLE_COPILOT_TASK_ID,
   SAMPLE_DOC_ID,
+  SAMPLE_INTAKE_CONVERSATION,
   SAMPLE_JERABKOVA_ARXIV,
   SAMPLE_LAST_CELL_ID,
   SAMPLE_MANUSCRIPT_ID,
@@ -138,5 +139,36 @@ describe("the tutorial sample ids", () => {
     // No other reply carries a tool call: the chapter's operation anchors name every operation card there is.
     const withTools = messages.filter((e) => e.message?.role === "assistant" && toolCalls(e).length > 0).map((e) => e.id);
     expect(withTools).toEqual([plan, writer]);
+  });
+
+  // Chapter 9's preset move-in conversation (project-intake ticket 10 records it): `null` until then; once set, it is
+  // in the sample as a saved conversation whose session holds the two named replies as assistant messages. The recording runs with file permission on "ask",
+  // so decided file-write confirmation cards may appear around them (the server's sample guard judges those).
+  it("names the preset move-in conversation and its two replies, when the sample holds one", () => {
+    if (SAMPLE_INTAKE_CONVERSATION === null) return;
+    const record = json(join(LIT, "copilot", "conversations", `${SAMPLE_INTAKE_CONVERSATION.id}.json`));
+    expect(record.id).toBe(SAMPLE_INTAKE_CONVERSATION.id);
+    const session = join(LIT, "copilot", "sessions", `${record.sessionId}.jsonl`);
+    const entries = readFileSync(session, "utf8").split("\n").filter((line) => line.trim()).map((line) => JSON.parse(line));
+    for (const key of Object.values(SAMPLE_INTAKE_CONVERSATION.replies)) {
+      const entry = entries.find((e) => e.type === "message" && e.id === key);
+      expect(entry?.message.role, key).toBe("assistant");
+    }
+    // By content, not only by role: the two ids are not interchangeable.
+    const textOf = (e: { message?: { content?: { type: string; text?: string }[] } } | undefined) =>
+      (e?.message?.content ?? []).filter((part) => part.type === "text").map((part) => part.text ?? "").join("");
+    const messages = entries.filter((e) => e.type === "message");
+    const firstUser = messages.findIndex((e) => e.message?.role === "user");
+    const interview = messages.slice(firstUser + 1).find((e) => e.message?.role === "assistant" && textOf(e).trim() !== "");
+    expect(SAMPLE_INTAKE_CONVERSATION.replies.interview).toBe(interview?.id);
+    expect(textOf(interview)).toContain("项目文件夹");
+    const summaryId = SAMPLE_INTAKE_CONVERSATION.replies.summary;
+    const summary = messages.find((e) => e.id === summaryId);
+    expect(summary?.message.role).toBe("assistant");
+    expect(textOf(summary)).toMatch(/\|\s*新建\s*\|\s*5\s*\|/);
+    expect(textOf(summary)).not.toContain("项目文件夹");
+    // It is not the conversation the panel shows first: chapter 8 relies on its own being the most recently updated one.
+    const chapter8 = json(join(LIT, "copilot", "conversations", `${SAMPLE_CONVERSATION.id}.json`));
+    expect(Date.parse(chapter8.updatedAt)).toBeGreaterThan(Date.parse(record.updatedAt));
   });
 });

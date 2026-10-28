@@ -542,19 +542,24 @@ function folderWith(dir: string, marker: string): string | null {
 }
 
 /**
- * The skills that ship with the app, found from the CLI entry the host runs: three levels up, a `skills` folder with
- * its README. That is `<resources>/skills` next to `<resources>/sidecar/app/dist/bin.js` in the desktop package, and
- * the repository's `skills/` next to `packages/app/dist/bin.js` (or `packages/cli/dist/bin.js`) in the development
- * form. Null elsewhere (an npm install has none).
+ * The skills that ship with the app, found from the CLI entry the host runs, in the three forms of the app:
+ * - `packaged`: `<resources>/skills` next to `<resources>/sidecar/app/dist/bin.js` in the desktop package;
+ * - `development`: the repository's `skills/` next to `packages/app/dist/bin.js` (or `packages/cli/dist/bin.js`);
+ * - `other`, an npm install: `dist/skills` beside the entry (`…/node_modules/argelanderspace/dist/skills`), which the
+ *   npm build's copy-assets step puts there (project-intake ticket 12), as it does `dist/tutorial`.
+ * A folder counts only when it holds `README.md`. Null when there is none.
  *
- * The entry must sit in one of those two layouts (`sidecar/app/dist` or `packages/{app,cli}/dist`), not merely have a
- * `skills/README.md` three levels up: a local install `<project>/node_modules/argelanderspace/dist/bin.js` reaches
- * the project's own `skills/` that way, and a project's folder is not the application's (the Copilot reads its
- * skills from here, copilot ticket 58).
+ * The entry must sit in one of those layouts, not merely have a `skills/README.md` three levels up: a local install
+ * `<project>/node_modules/argelanderspace/dist/bin.js` reaches the project's own `skills/` that way, and a project's
+ * folder is not the application's (the Copilot reads its skills from here, copilot ticket 58). In the npm form only
+ * the folder right beside an entry that itself sits in a `dist` folder counts, never anything further up.
  */
 export function bundledSkillsDir(cliEntry: string): string | null {
   const layout = cliEntryLayout(cliEntry);
-  if (layout.form === "other") return null;
+  if (layout.form === "other") {
+    const bin = dirname(cliEntry);
+    return basename(bin) === "dist" ? folderWith(join(bin, "skills"), "README.md") : null;
+  }
   return folderWith(join(layout.root, "skills"), "README.md");
 }
 

@@ -59,7 +59,13 @@ import { type AppDeps, createApp } from "./app.js";
 import { appendArxivFetchLog } from "./arxiv-fetch-log.js";
 import { ingestFailureLog, sweepIngestPartials } from "./compile-failure-log.js";
 import { CopilotHost } from "./copilot.js";
-import { realDiscoverySource, realPipelines, realSources, statusDirFor } from "./deps.js";
+import {
+  realAdsLibraries,
+  realDiscoverySource,
+  realPipelines,
+  realSources,
+  statusDirFor,
+} from "./deps.js";
 import type { HostBridge } from "./host-routes.js";
 import { closeHttpServer } from "./http-close.js";
 import { JobRunner } from "./jobs.js";
@@ -97,6 +103,8 @@ import { WsHub } from "./ws.js";
 
 export interface ServerOptions {
   dataDir: string;
+  /** The Project folder, bound once for the app (its commands, relative paths, the intake route) and the watcher (the intake checklist); default the working directory. */
+  projectRoot?: string;
   /** Global cache directory whose stale mail attachment staging is swept at start; unset = no sweep. */
   sweepMailStagingIn?: string;
   /** Default `DEFAULT_PORT`; `0` picks an ephemeral port (tests). */
@@ -107,7 +115,10 @@ export interface ServerOptions {
   webDist?: string | null;
   /** Composition seam: stub the infra wiring (offline tests). */
   deps?: Partial<
-    Pick<AppDeps, "makeSources" | "makeDiscoverySource" | "fetchArxivPdf" | "pipelines">
+    Pick<
+      AppDeps,
+      "makeSources" | "makeDiscoverySource" | "makeAdsLibraries" | "fetchArxivPdf" | "pipelines"
+    >
   >;
   /**
    * The HTTP implementation under the real sources, the arXiv e-print fetcher and the arXiv PDF download (offline
@@ -266,12 +277,15 @@ export function createServer(opts: ServerOptions): RunningServer {
       log
     );
   }
+  const projectRoot = opts.projectRoot ?? process.cwd();
   const app = createApp({
+    projectRoot,
     paths,
     statusDir,
     makeSources: opts.deps?.makeSources ?? ((offline) => realSources(paths, offline, wiring)),
     makeDiscoverySource:
       opts.deps?.makeDiscoverySource ?? (() => realDiscoverySource(paths, wiring)),
+    makeAdsLibraries: opts.deps?.makeAdsLibraries ?? (() => realAdsLibraries(wiring)),
     pipelines: opts.deps?.pipelines ?? realPipelines(paths, wiring),
     // The real pipelines keep a failed compile's complete latexmk log beside the job's record.
     ...(opts.deps?.pipelines === undefined
@@ -358,6 +372,9 @@ export function createServer(opts: ServerOptions): RunningServer {
     dataDir: opts.dataDir,
     statusDir,
     intervalMs: opts.watchIntervalMs,
+    // The one Project root the app also binds: its intake checklist appearing or going.
+    projectRoot,
+    onIntakeChange: () => hub.broadcast({ type: "intake.changed", at: new Date().toISOString() }),
     onLibraryChange: () =>
       hub.broadcast({ type: "library.changed", cause: "external", at: new Date().toISOString() }),
     onPlansChange: () => {

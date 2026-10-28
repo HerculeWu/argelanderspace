@@ -122,17 +122,48 @@ export const GraphDataSchema = z.object({
   links: z.array(GraphLinkSchema),
 });
 
+/** At most this many bibcodes in one batch bibcode import (project intake ticket 03). */
+export const MANUAL_BIBCODES_MAX = 200;
+
 /**
  * Request of `POST /api/library/works` (Stage 13 manual work creation).
  * - `identifier`: a DOI / doi.org URL / arXiv id / arXiv URL (server detects).
  * - `bibcode`: one ADS bibcode — fail-fast when ADS is unreachable / has no
  *   such record (the user's semantic is "pick from ADS").
+ * - `bibcodes`: a batch of ADS bibcodes (project intake ticket 03; at most {@link MANUAL_BIBCODES_MAX}). Each is
+ *   handled on its own and reported on its own; the import dialog never sends it (only the Copilot `library` tool
+ *   and a direct request do).
  * - `bib`: raw BibTeX text, one or many entries; per-entry results.
  */
 export const ManualWorkRequestSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("identifier"), value: z.string().trim().min(1).max(500) }),
   z.object({ mode: z.literal("bibcode"), bibcode: z.string().trim().min(1).max(64) }),
+  z.object({
+    mode: z.literal("bibcodes"),
+    bibcodes: z.array(z.string().trim().min(1).max(64)).min(1).max(MANUAL_BIBCODES_MAX),
+  }),
   z.object({ mode: z.literal("bib"), bib: z.string().min(1).max(1_000_000) }),
+]);
+
+/**
+ * Why a batch bibcode entry did not simply create a Work (`bibcodes` results, and bib results of a refused batch on the agent path, carry these):
+ * `merge_refused` (it would have merged stored Works into one; nothing of it was written, `works` names them),
+ * `not_found` (ADS answered but has no such record), `ads_unavailable` (ADS could not be asked or answered:
+ * offline, no or rejected token, rate limit, timeout; no stub is kept), `id_collision` (a new Work's derived id is
+ * held by a different paper), `repeated` (the same bibcode earlier in the batch; the result mirrors that entry),
+ * `same_paper_as_earlier` (a different bibcode that is the same paper as an earlier entry of this batch; it
+ * resolved to that Work). `batch_refused` (bib mode of the Copilot `library` tool only: another entry of the text
+ * would have merged stored Works, so the whole text was refused and this entry, fine on its own, was not imported;
+ * the entry that would merge carries `merge_refused` and `works`).
+ */
+export const ManualBibcodeReasonSchema = z.enum([
+  "merge_refused",
+  "not_found",
+  "ads_unavailable",
+  "id_collision",
+  "repeated",
+  "same_paper_as_earlier",
+  "batch_refused",
 ]);
 
 /** One entry's outcome. `key` echoes the attempted/assigned cite key. */
@@ -141,6 +172,15 @@ export const ManualWorkResultSchema = z.object({
   ref: LibraryRefSchema.optional(),
   key: z.string().optional(),
   error: z.string().optional(),
+  /** `bibcodes` mode only: the bibcode this entry was for. */
+  bibcode: z.string().optional(),
+  /**
+   * `bibcodes` mode: see {@link ManualBibcodeReasonSchema}. `bib` mode: only when the Copilot tool refused the text
+   * (`merge_refused` / `batch_refused`); the page's own import never carries it.
+   */
+  reason: ManualBibcodeReasonSchema.optional(),
+  /** `merge_refused` only (`bibcodes` and `bib` modes): the stored Works the entry would have merged. */
+  works: z.array(z.string()).optional(),
 });
 
 /** Response of `POST /api/library/works` (always 200 for well-formed bodies). */
@@ -167,6 +207,7 @@ export type LibraryRef = z.infer<typeof LibraryRefSchema>;
 export type GraphNode = z.infer<typeof GraphNodeSchema>;
 export type GraphLink = z.infer<typeof GraphLinkSchema>;
 export type GraphData = z.infer<typeof GraphDataSchema>;
+export type ManualBibcodeReason = z.infer<typeof ManualBibcodeReasonSchema>;
 export type ManualWorkRequest = z.infer<typeof ManualWorkRequestSchema>;
 export type ManualWorkResult = z.infer<typeof ManualWorkResultSchema>;
 export type ManualWorkResponse = z.infer<typeof ManualWorkResponseSchema>;

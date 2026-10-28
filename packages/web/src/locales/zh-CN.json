@@ -683,6 +683,14 @@
       "exists": "库中已存在",
       "failed": "失败",
       "unreachable": "无法连接服务器，请确认 serve 正在运行"
+    },
+    "intake": {
+      "emptyTitle": "文献库还是空的",
+      "emptyDesc": "有做到一半的项目？Copilot 会逐步问你材料在哪里，把文献和计划带进来。",
+      "emptyDescResume": "上次迁入到一半，进度记在项目根目录的迁入清单里。",
+      "start": "迁入已有项目",
+      "resume": "继续迁入",
+      "resumeDesc": "接着迁入清单里的进度，由 Copilot 继续"
     }
   },
   "plan": {
@@ -1495,6 +1503,9 @@
         "import_works": "导入文献",
         "acquire_arxiv_pdf": "从 arXiv 获取 PDF",
         "attach_arxiv": "从 arXiv 获取 LaTeX 源码",
+        "attach_local_pdf": "挂载本地 PDF",
+        "list_ads_libraries": "列出 ADS libraries",
+        "read_ads_library": "读取 ADS library",
         "read_jobs": "读取获取任务",
         "delete_doc": "删除文档",
         "read_discovery": "读取探索",
@@ -1989,7 +2000,28 @@
         "bib_fields": "其他 BibTeX 字段",
         "resolution": "元数据来源"
       }
-    }
+    },
+    "intake": {
+      "startMessage": "开始迁入已有项目",
+      "resumeMessage": "继续迁入已有项目",
+      "noProviderTitle": "还没有可用的模型",
+      "noProviderBody": "迁入由 Copilot 完成。先在模型设置里配置一个 provider，再开始。",
+      "openSettings": "打开模型设置",
+      "catalogFailedTitle": "读不到模型设置",
+      "catalogFailedBody": "迁入需要先读到模型设置。点「重试」；读到后按面板接下来的提示处理，最后由你自己点「开始迁入」。",
+      "fileToolsOffTitle": "文件与命令权限是关闭的",
+      "fileToolsOffBody": "迁入要读本机文件（.bib、PDF、迁入清单）。请把「文件与命令权限」设为「逐次确认」或「自动」，再开始。",
+      "openFileToolsSettings": "打开设置",
+      "ready": "已就绪：模型和文件权限都可用。",
+      "readyModel": "已就绪：模型可用。",
+      "go": "开始迁入",
+      "windowSmallTitle": "没有模型的上下文窗口够用",
+      "windowSmallBody": "已设置的模型都放不下 Copilot 的系统指令和工具。请在模型设置里添加上下文窗口更大的模型，然后再开始。",
+      "chosenSmallTitle": "所选模型的上下文窗口不够用",
+      "chosenSmallBody": "所选模型放不下 Copilot 的系统指令和工具。请在面板的模型选择器里换一个窗口更大的模型，然后再开始。"
+    },
+    "windowSmall": "已设置的模型上下文窗口都太小，放不下 Copilot。请在模型设置里添加窗口更大的模型。",
+    "windowSmallTag": "{{name}}（窗口太小）"
   },
   "mail": {
     "live": {
@@ -3012,6 +3044,9 @@
       "copilot": {
         "title": "Copilot"
       },
+      "intake": {
+        "title": "迁入已有项目"
+      },
       "finish": {
         "title": "结束"
       }
@@ -3034,10 +3069,10 @@
         },
         "agent": {
           "title": "给你的 agent 装上 skills",
-          "intro": "在「命令行与 agent」里装命令行工具、打开 skills 文件夹，把五个 skill 复制给你的 agent。",
+          "intro": "在「命令行与 agent」里装命令行工具、打开 skills 文件夹，把六个 skill 复制给你的 agent。迁入那个 skill 里，agent 只帮你准备迁入清单，写入由工作台里的 Copilot 完成。",
           "prompt": "读一遍 ArgelanderSpace 的 skills 目录，告诉我每个 skill 能做什么",
-          "skill": "argelander-paper-ingest · argelander-read-paper · argelander-find-papers · argelander-query-paper-library · argelander-argument-graph",
-          "introBrowser": "命令行工具你已经在用：`argelanderspace tutorial` 就是它。skills 在仓库里，克隆或下载后复制到你的 agent 的 skills 目录。",
+          "skill": "argelander-paper-ingest · argelander-read-paper · argelander-find-papers · argelander-query-paper-library · argelander-argument-graph · argelander-project-intake",
+          "introBrowser": "命令行工具你已经在用：`argelanderspace tutorial` 就是它。skills 在仓库里，克隆或下载后复制到你的 agent 的 skills 目录。迁入那个 skill 里，agent 只做准备，写入交给工作台里的 Copilot。",
           "promptBrowser": "https://github.com/HerculeWu/argelanderspace/tree/main/skills"
         }
       },
@@ -3269,17 +3304,35 @@
         },
         "agent": {
           "title": "Copilot 与外部 agent",
-          "intro": "Copilot 内置两个只读 skill：读一篇、跨库检索。添加文献、整理论证图、找论文交给装了随包 skills 的外部 agent。设置页「Copilot」组的「文件与命令权限」决定 Copilot 能否读写文件、跑命令。",
+          "intro": "Copilot 内置三个 skill：读一篇论文、跨库检索、迁入已有项目；迁入的文献和计划由它写进 Project。摄入单篇论文、找论文、整理论证图交给装了随包 skills 的外部 agent（用命令行），它在迁入里只做准备。设置页「Copilot」组的「文件与命令权限」决定 Copilot 能否读写文件、跑命令。",
           "prompt": "读一下当前这篇，总结它的 End 论证",
-          "skill": "argelander-read-paper · argelander-query-paper-library"
+          "skill": "argelander-read-paper · argelander-query-paper-library · argelander-project-intake"
+        }
+      },
+      "intake": {
+        "interview": {
+          "title": "迁入是一场访谈",
+          "body": "回放里的 Copilot 先问你的 Project 文件夹，再一次问清有哪些材料：ADS libraries、Zotero、PDF 文件夹、服务器、稿件、计划。每做完一步，它把进度记进项目根目录的迁入清单；你可以随时停下，换会话或换 agent 接着做。它只读取或复制你的文件，从不移动、改写或删除。",
+          "bodyNoReplay": "迁入时，Copilot 先问你的 Project 文件夹，再一次问清有哪些材料：ADS libraries、Zotero、PDF 文件夹、服务器、稿件、计划。每做完一步，它把进度记进项目根目录的迁入清单；你可以随时停下，换会话或换 agent 接着做。它只读取或复制你的文件，从不移动、改写或删除。"
+        },
+        "summary": {
+          "title": "每批一张汇总表",
+          "body": "每带入一批文献，Copilot 给一张汇总表：新建、并入已有、被拒、失败、待定。会合并两个已有 Work 的条目会被单独拒绝，由你在文献页比较处理；只有 DOI 或 arXiv 精确命中，它才自己认定是同一篇，其余列出候选等你确认。"
+        },
+        "agent": {
+          "title": "外部 agent 帮你准备",
+          "intro": "迁入的写入由 Copilot 完成。装了随包 skills 的外部 agent 可以先帮你准备：在本机和服务器上翻找材料，把 .bib、PDF 路径和计划草案整理进迁入清单。准备好后回到工作台，让 Copilot 继续迁入。",
+          "prompt": "帮我准备迁入：按 argelander-project-intake 的准备模式，问我项目材料在哪里，把整理结果写进项目根目录的 argelanderspace-intake.md，不要改动我的原文件",
+          "skill": "argelander-project-intake"
         }
       },
       "finish": {
         "page": {
           "title": "教程走完了",
-          "body": "你已经在教程项目里过了一遍工作台：添加、阅读、探索、论证、计划、写作，还有 Copilot。这个项目会留着，随时能回来。",
-          "openOwn": "打开自己的项目",
-          "openOwnBrowser": "在终端运行 `argelanderspace serve` 打开自己的项目",
+          "body": "你已经在教程项目里过了一遍工作台：添加、阅读、探索、论证、计划、写作，还有 Copilot 和迁入。这个项目会留着，随时能回来。",
+          "openOwn": "迁入一个做到一半的项目",
+          "openOwnHint": "选一个文件夹当你的 Project：材料大多在一处就选它，分散就新建一个空文件夹。选好后，在空的文献库里点「迁入已有项目」。",
+          "openOwnBrowser": "在终端里进入你的项目文件夹，运行 `argelanderspace serve`；启动后，在空的文献库里点「迁入已有项目」。",
           "openOwnShelf": "打开后，在自己的项目里点「导入文献」→「从文献仓」，可以把 Jerabkova 取进去。",
           "openOwnShelfBrowser": "启动后，在自己的项目里点「导入文献」→「从文献仓」，可以把 Jerabkova 取进去。",
           "review": "回看任一章",

@@ -3,26 +3,33 @@ import {
   type ArgumentGraphMergeNote,
   ArgumentGraphMergeNoteSchema,
   type CopilotOperation,
+  DOCUMENT_BUSY,
   type DocReplaceImpact,
   type Job,
   jobTarget,
+  type LibraryAttachLocalPdf,
   type LibraryImportWorks,
   type LibraryPayload,
+  type LibraryReadAdsLibrary,
   type LibraryReadJobs,
   type LibraryReadOperation,
   type LibraryRefSummary,
   type LibrarySetMainDoc,
+  libraryBibcodeTokens,
   libraryImportRequest,
   libraryLinksAmong,
   libraryRefBibtex,
   libraryRefIdentityMatches,
   libraryRefMatches,
+  libraryToolImportRequest,
+  MANUAL_BIBCODES_MAX,
   type ManualWorkRequest,
   type ManualWorkResult,
   summarizeLibraryRef,
 } from "@argelanderspace/contracts";
 import {
   addManualBibcode,
+  addManualBibcodes,
   addManualBibText,
   addManualIdentifier,
   arxivFromDoi,
@@ -37,7 +44,13 @@ import {
   type WorkPatchExpectation,
   type WorkPatchResult,
 } from "@argelanderspace/core";
-import { explicitArxivId, looksLikeArxiv } from "@argelanderspace/infra";
+import {
+  type AdsLibrariesFailure,
+  type AdsLibrariesSource,
+  explicitArxivId,
+  looksLikeArxiv,
+} from "@argelanderspace/infra";
+import { type LocalPdfFailure, readLocalPdf } from "./local-pdf-source.js";
 import type { AsyncLock } from "./lock.js";
 
 /**
@@ -62,8 +75,13 @@ export interface LibraryOpDeps {
    */
   importWorks?: (
     req: ManualWorkRequest,
-    options?: { bridge?: "merge" | "reject" }
+    options?: { bridge?: "merge" | "reject"; autoPdf?: false }
   ) => Promise<ManualImportResult>;
+  /**
+   * The user's ADS libraries (project intake ticket 02), read-only. Called at each use so the token is read from the
+   * credential store then; the source never writes to ADS or to the project. Absent in hosts without it.
+   */
+  adsLibraries?: () => Promise<AdsLibrariesSource> | AdsLibrariesSource;
 }
 
 export type LibraryOpOutcome =
@@ -289,6 +307,7 @@ export async function runManualImport(
     if (req.mode === "bibcode") {
       return [await addManualBibcode(deps.paths, sources, req.bibcode, options)];
     }
+    if (req.mode === "bibcodes") return addManualBibcodes(deps.paths, sources, req.bibcodes);
     return addManualBibText(deps.paths, req.bib, options);
   });
   const results: ManualWorkResult[] = outcomes.map((o) => ({
@@ -296,20 +315,82 @@ export async function runManualImport(
     ...(o.ref !== undefined ? { ref: o.ref } : {}),
     ...(o.key !== undefined ? { key: o.key } : {}),
     ...(o.error !== undefined ? { error: o.error } : {}),
+    ...(o.bibcode !== undefined ? { bibcode: o.bibcode } : {}),
+    ...(o.reason !== undefined ? { reason: o.reason } : {}),
+    ...(o.works !== undefined ? { works: o.works } : {}),
   }));
-  const updated = outcomes
-    .filter((o) => o.status === "exists" && o.changed === true && o.ref)
-    .map((o) => (o.ref as { id: string }).id);
+  // Distinct Works; a batch entry that merely hit a Work created earlier in the same call is not an update.
+  const updated = [
+    ...new Set(
+      outcomes
+        .filter(
+          (o) =>
+            o.status === "exists" &&
+            o.changed === true &&
+            o.ref &&
+            o.reason !== "same_paper_as_earlier"
+        )
+        .map((o) => (o.ref as { id: string }).id)
+    ),
+  ];
   return {
     results,
     changed: outcomes.some((o) => o.status === "created" || o.changed === true),
     updated,
-    rejected: outcomes.some((o) => o.bridged !== undefined),
+    // A batch refuses its merging entries one by one (reason merge_refused); it is never refused as a whole.
+    rejected: req.mode !== "bibcodes" && outcomes.some((o) => o.bridged !== undefined),
     argumentGraphMerges: outcomes.flatMap((o) => o.argumentGraphMerges ?? []),
   };
 }
 
+/** One entry of a batch bibcode import as the tool reports it (compact: the Work is named by id and title). */
+export interface BibcodeBatchEntry {
+  bibcode: string;
+  status: "created" | "exists" | "error";
+  /** The Work the entry is (created, already held, or the same paper as an earlier entry). */
+  id?: string;
+  title?: string;
+  /** The Work's cite key. */
+  key?: string;
+  reason?: NonNullable<ManualWorkResult["reason"]>;
+  /** `merge_refused`: the stored Works the entry would have merged. */
+  works?: string[];
+}
+
 export type LibraryImportOutcome =
+  | {
+      /** A batch bibcode import (several bibcodes in one text): per-entry `entries`, not `results`. */
+      ok: true;
+      status: "ok" | "noop";
+      mode: "bibcode";
+      batch: true;
+      requested: number;
+      created: number;
+      existing: number;
+      updated: string[];
+      /** Entries refused because they would have merged existing Works (nothing of them written). */
+      refused: number;
+      /** Entries that failed for another reason (ADS, not found, id collision). */
+      failed: number;
+      entries: BibcodeBatchEntry[];
+      /** What each `reason` used in `entries` means (given once, not per entry). */
+      reasons?: Record<string, string>;
+      object?: NonNullable<CopilotOperation["object"]>;
+      label?: string;
+      warnings?: string[];
+    }
+  | {
+      ok: false;
+      status: "error" | "rejected";
+      mode: "bibcode";
+      batch: true;
+      detail: string;
+      requested?: number;
+      refused?: number;
+      failed?: number;
+      entries?: BibcodeBatchEntry[];
+      reasons?: Record<string, string>;
+    }
   | {
       ok: true;
       status: "ok" | "noop";
@@ -344,9 +425,50 @@ export async function applyLibraryImport(
 ): Promise<LibraryImportOutcome> {
   if (!deps.importWorks)
     return { ok: false, status: "unsupported", detail: "importing is not available in this host" };
+  if (op.mode === "bibcode") {
+    const requested = libraryBibcodeTokens(op.text).length;
+    if (requested > MANUAL_BIBCODES_MAX)
+      return {
+        ok: false,
+        status: "rejected",
+        mode: "bibcode",
+        batch: true,
+        requested,
+        detail: `refused, nothing was written: ${requested} bibcodes in one call, at most ${MANUAL_BIBCODES_MAX} are accepted; split them into batches of at most ${MANUAL_BIBCODES_MAX} and call again`,
+      };
+  }
+  return applyImportRequest(deps, libraryToolImportRequest(op), op.mode, op.batch === true);
+}
+
+/**
+ * Discovery's `save_candidate`: the Library page's own single-bibcode import of one candidate, exactly as before the
+ * batch import existed. The string is never tokenized, so whitespace or separators in it cannot make it a batch.
+ */
+export function applyLibraryBibcodeImport(
+  deps: LibraryOpDeps,
+  bibcode: string
+): Promise<LibraryImportOutcome> {
+  return applyImportRequest(
+    deps,
+    libraryImportRequest({ mode: "bibcode", text: bibcode }),
+    "bibcode"
+  );
+}
+
+async function applyImportRequest(
+  deps: LibraryOpDeps,
+  request: ManualWorkRequest,
+  mode: LibraryImportWorks["mode"],
+  migration = false
+): Promise<LibraryImportOutcome> {
+  if (!deps.importWorks)
+    return { ok: false, status: "unsupported", detail: "importing is not available in this host" };
   let outcome: ManualImportResult;
   try {
-    outcome = await deps.importWorks(libraryImportRequest(op), { bridge: "reject" });
+    outcome = await deps.importWorks(request, {
+      bridge: "reject",
+      ...(migration ? { autoPdf: false as const } : {}),
+    });
   } catch {
     // The batch may have saved some entries before failing: never claim "nothing changed".
     return {
@@ -357,6 +479,7 @@ export async function applyLibraryImport(
     };
   }
   const { results } = outcome;
+  if (request.mode === "bibcodes") return summarizeBibcodeBatch(request.bibcodes, outcome);
   if (outcome.rejected)
     return {
       ok: false,
@@ -379,7 +502,7 @@ export async function applyLibraryImport(
   return {
     ok: true,
     status: outcome.changed ? "ok" : "noop",
-    mode: op.mode,
+    mode,
     created,
     existing,
     updated: outcome.updated,
@@ -389,6 +512,90 @@ export async function applyLibraryImport(
       ? { object: { kind: "work" as const, id: first.ref.id }, label: first.ref.title }
       : {}),
     ...(failed > 0 ? { warnings: ["import_partial"] } : {}),
+  };
+}
+
+const BATCH_TITLE_MAX = 90;
+
+/** The meaning of each entry `reason`, given once at the top of a batch result instead of per entry. */
+const BATCH_REASON_TEXT: Record<NonNullable<ManualWorkResult["reason"]>, string> = {
+  merge_refused:
+    "the record would merge two or more existing works into one; nothing of it was written, `works` names them: ask the user to resolve them in the Library page",
+  not_found: "ADS answered but has no record for this bibcode; nothing was kept",
+  ads_unavailable:
+    "ADS could not be asked or did not answer (offline, no or rejected token, rate limit, timeout); nothing was kept, may be retried later",
+  id_collision:
+    "a new work's id (derived from title and year) is already used by a different paper; nothing was written, ask the user for a DOI or arXiv id",
+  batch_refused:
+    "bib text only: another entry of the text would merge works, so the whole text was refused; this entry was fine on its own and nothing of it was written. Import it again without the entries that carry merge_refused",
+  repeated: "the same bibcode appeared earlier in this call; the entry mirrors that one",
+  same_paper_as_earlier:
+    "a different bibcode that is the same paper as an earlier entry of this call; it resolved to that work (blank fields filled, its own bibcode not recorded)",
+};
+
+/** The batch's report: counts, and one compact entry per input bibcode in input order. */
+function summarizeBibcodeBatch(
+  bibcodes: readonly string[],
+  outcome: ManualImportResult
+): LibraryImportOutcome {
+  const entries: BibcodeBatchEntry[] = outcome.results.map((r, i) => {
+    const title = r.ref?.title;
+    return {
+      bibcode: r.bibcode ?? (bibcodes[i] as string),
+      status: r.status,
+      ...(r.ref ? { id: r.ref.id } : {}),
+      ...(title
+        ? { title: title.length > BATCH_TITLE_MAX ? `${title.slice(0, BATCH_TITLE_MAX)}…` : title }
+        : {}),
+      ...(r.key !== undefined && r.status !== "error" ? { key: r.key } : {}),
+      ...(r.reason !== undefined ? { reason: r.reason } : {}),
+      ...(r.works !== undefined ? { works: r.works } : {}),
+    };
+  });
+  const reasons: Record<string, string> = {};
+  for (const e of entries)
+    if (e.reason !== undefined) reasons[e.reason] = BATCH_REASON_TEXT[e.reason];
+  const created = entries.filter((e) => e.status === "created").length;
+  const existing = entries.filter((e) => e.status === "exists").length;
+  const refused = entries.filter((e) => e.reason === "merge_refused").length;
+  const failed = entries.filter((e) => e.status === "error").length - refused;
+  const requested = entries.length;
+  if (created + existing === 0)
+    return {
+      ok: false,
+      status: refused > 0 && failed === 0 ? "rejected" : "error",
+      mode: "bibcode",
+      batch: true,
+      requested,
+      refused,
+      failed,
+      entries,
+      reasons,
+      detail:
+        refused > 0 && failed === 0
+          ? "nothing was imported and nothing was written: every entry would have merged existing works (see entries). Ask the user to resolve them in the Library page."
+          : "nothing was imported; the library was not changed (see entries)",
+    };
+  const first =
+    outcome.results.find((r) => r.status === "created" && r.ref) ??
+    outcome.results.find((r) => r.ref);
+  return {
+    ok: true,
+    status: outcome.changed ? "ok" : "noop",
+    mode: "bibcode",
+    batch: true,
+    requested,
+    created,
+    existing,
+    updated: outcome.updated,
+    refused,
+    failed,
+    entries,
+    reasons,
+    ...(first?.ref
+      ? { object: { kind: "work" as const, id: first.ref.id }, label: first.ref.title }
+      : {}),
+    ...(failed + refused > 0 ? { warnings: ["import_partial"] } : {}),
   };
 }
 
@@ -554,7 +761,19 @@ export interface JobTable {
   waitFor(id: string): Promise<Job>;
 }
 
+/** The PDF upload's submit: queued, or why not (busy → 409, failed → 500 at the route). */
+export type PdfUploadStart =
+  | { kind: "queued"; job: Job; resourceWarning?: boolean }
+  | { kind: "busy" }
+  | { kind: "failed"; detail: string };
+
 export interface AcquisitionPort {
+  /**
+   * The user PDF upload's submit once the bytes are in hand (validated Work, size and file name): `POST
+   * /api/library/upload-pdf` and `attach_local_pdf` both call it, so same-Work reuse, the DocMutationRegistry rules,
+   * PDFium's trusted parse, the memory headroom, the page limit and the `library.changed` broadcast are one path.
+   */
+  startPdfUpload(workId: string, bytes: Buffer, filename: string): PdfUploadStart;
   startPdf(workId: string): ArxivStart;
   describeSource(workId: string): ArxivSourcePlan;
   startSource(workId: string): ArxivStart;
@@ -909,4 +1128,334 @@ export async function applyAttachArxiv(
     { id: refId, title },
     context.admitting
   );
+}
+
+/** Why `attach_local_pdf` did not attach, as a category (never the file's content, never a path). */
+export type LocalPdfReason =
+  | LocalPdfFailure
+  | "work_not_found"
+  | "library_unreadable"
+  | "busy"
+  | "queue_failed"
+  | "not_a_pdf"
+  | "encrypted"
+  | "page_limit"
+  | "low_memory"
+  | "job_failed"
+  | "file_tools_off";
+
+export type AttachLocalPdfOutcome =
+  | (Extract<AcquireOutcome, { ok: true }> & {
+      /** The name the Doc records as its original file name, and the bytes copied into the data folder. */
+      source: { filename: string; bytes: number };
+      /** 25 MiB or more: the page shows the same resource warning. */
+      resourceWarning?: boolean;
+    })
+  | (Extract<AcquireOutcome, { ok: false }> & { reason: LocalPdfReason });
+
+/**
+ * The upload job's failure, as a category. The strings are the fixed messages of PDFium's input check
+ * (`pdfium-probe.ts`, matched by substring: change a message there and this must follow) and `DOCUMENT_BUSY`: none of
+ * them carries content of the file or a path.
+ */
+function localPdfJobReason(error: string | null): LocalPdfReason {
+  if (error === null) return "job_failed";
+  if (error.includes("password-protected")) return "encrypted";
+  if (error.includes("not a valid, readable PDF") || error.includes("page geometry"))
+    return "not_a_pdf";
+  if (error.includes("PDF must contain")) return "page_limit";
+  if (error.includes("512 MiB")) return "low_memory";
+  if (error === DOCUMENT_BUSY) return "busy";
+  return "job_failed";
+}
+
+export const LOCAL_PDF_DETAIL: Record<LocalPdfFailure, string> = {
+  path_not_absolute: "the path must be an absolute local path; nothing was read or written",
+  source_not_found: "no file exists at that path; nothing was written",
+  not_regular_file:
+    "that path is not a regular file (a directory, device, pipe or a link to one); nothing was written",
+  unreadable: "the file could not be read (permission or I/O); nothing was written",
+  too_large: "the file is over the 50 MiB PDF limit; nothing was written",
+  changed_while_reading:
+    "the file changed while it was being read (or does not report its real length); nothing was written. Try again once it is stable",
+  empty: "the file is empty; nothing was written",
+  invalid_filename: "the file name is empty or longer than 255 characters; nothing was written",
+};
+
+export const LOCAL_PDF_JOB_DETAIL = {
+  not_a_pdf: "the file is not a valid, readable PDF; nothing was attached",
+  encrypted: "the PDF is password-protected, which is not supported; nothing was attached",
+  page_limit: "the PDF has no pages or more than the 100-page limit; nothing was attached",
+  low_memory:
+    "the machine has less than 512 MiB of available memory headroom, so the PDF was not parsed; nothing was attached. Try again later",
+  busy: "the target document became busy (a task is writing or deleting it); nothing was attached. Try again when it finishes",
+  job_failed:
+    "the upload task failed; nothing was attached. read_jobs for this work shows the job record",
+} as const;
+
+/** Every `reason` an `attach_local_pdf` failure can carry (the intake skill's self-check compares its names with it). */
+export const LOCAL_PDF_REASONS: readonly LocalPdfReason[] = Object.keys({
+  ...LOCAL_PDF_DETAIL,
+  ...LOCAL_PDF_JOB_DETAIL,
+  work_not_found: true,
+  library_unreadable: true,
+  queue_failed: true,
+  file_tools_off: true,
+} satisfies Record<LocalPdfReason, unknown>) as LocalPdfReason[];
+
+/**
+ * Project intake's local PDF attach: read the file once, read-only (`readLocalPdf`), then hand the bytes to the
+ * Files tab upload's own start (`AcquisitionPort.startPdfUpload`) and wait for its job like the other acquisitions.
+ * Nothing is validated twice: the trusted PDFium parse, the memory headroom, the 100-page limit, same-Work reuse, the
+ * DocMutationRegistry rules, the library lock and the `library.changed` broadcast are the upload's. Every refusal
+ * before the job is queued writes nothing; a refusal inside the job leaves only the failed job record the page upload
+ * leaves too.
+ */
+export async function applyAttachLocalPdf(
+  deps: LibraryOpDeps,
+  op: LibraryAttachLocalPdf,
+  context: AcquireContext
+): Promise<AttachLocalPdfOutcome> {
+  const port = deps.acquisition;
+  if (!port)
+    return {
+      ok: false,
+      status: "unsupported",
+      reason: "queue_failed",
+      detail: "acquisition is not available in this host",
+    };
+  let title: string | undefined;
+  try {
+    const work = LibraryStore.load(deps.paths).get(op.refId);
+    if (!work)
+      return {
+        ok: false,
+        status: "not_found",
+        reason: "work_not_found",
+        detail: "no such work; nothing was written",
+      };
+    title = work.title;
+  } catch {
+    return {
+      ok: false,
+      status: "error",
+      reason: "library_unreadable",
+      detail: "the library could not be read; nothing was written",
+    };
+  }
+  const read = readLocalPdf(op.path);
+  if (!read.ok)
+    return {
+      ok: false,
+      status:
+        read.reason === "unreadable"
+          ? "error"
+          : read.reason === "source_not_found"
+            ? "not_found"
+            : "rejected",
+      reason: read.reason,
+      detail: LOCAL_PDF_DETAIL[read.reason],
+    };
+  let started: ReturnType<AcquisitionPort["startPdfUpload"]>;
+  try {
+    started = port.startPdfUpload(op.refId, read.bytes, read.filename);
+  } catch {
+    return {
+      ok: false,
+      status: "unknown",
+      reason: "queue_failed",
+      detail:
+        "the job could not be queued cleanly; read_jobs for this work shows whether one exists",
+    };
+  }
+  if (started.kind === "busy")
+    return {
+      ok: false,
+      status: "rejected",
+      reason: "busy",
+      detail:
+        "the target document is busy (a task is writing or deleting it); nothing was written. Try again when it finishes",
+    };
+  if (started.kind === "failed")
+    return {
+      ok: false,
+      status: "error",
+      reason: "queue_failed",
+      detail: "the PDF could not be queued; read_jobs for this work shows whether a job exists",
+    };
+  context.onSubmitted?.(started.job.id);
+  const settled = await settleAcquisition(
+    port,
+    started.job,
+    false,
+    { id: op.refId, title },
+    context.admitting
+  );
+  if (!settled.ok) {
+    const reason = settled.job ? localPdfJobReason(settled.job.error) : "job_failed";
+    // A job that ended some other way than failing (the Work changed while it waited) keeps its own sentence.
+    const refused =
+      reason === "job_failed" && settled.status !== "error"
+        ? undefined
+        : LOCAL_PDF_JOB_DETAIL[reason as keyof typeof LOCAL_PDF_JOB_DETAIL];
+    return { ...settled, reason, ...(refused ? { detail: refused } : {}) };
+  }
+  return {
+    ...settled,
+    source: { filename: read.filename, bytes: read.bytes.length },
+    ...(started.resourceWarning ? { resourceWarning: true } : {}),
+  };
+}
+
+// --------------------------------------------------------------------------- //
+// ADS libraries (project intake ticket 02): read-only, nothing written to the project
+// --------------------------------------------------------------------------- //
+
+const ADS_LIBRARY_PAGE = 200;
+
+export const ADS_FAILURE_TEXT: Record<AdsLibrariesFailure, string> = {
+  no_token:
+    "no ADS token is saved in the workbench (Settings, ADS token); nothing was read. Ask the user to add one there; never ask for the token in chat",
+  unauthorized:
+    "ADS rejected the saved token (HTTP 401); nothing was read. Tell the user to check it in Settings",
+  forbidden:
+    "ADS refused the read (HTTP 403: the token may not read this); nothing was read. Tell the user",
+  rate_limited:
+    "ADS rate limit reached (HTTP 429); nothing was read. Wait and try again later, do not loop",
+  not_found: "ADS has no such library for this account; list_ads_libraries gives the ids",
+  timeout: "ADS did not answer in time; nothing was read. It may be tried again later",
+  unreachable: "ADS could not be reached; nothing was read. It may be tried again later",
+  invalid_response:
+    "ADS's answer was not understood or contradicted itself (for example the library changed during the read); nothing was read. Read list_ads_libraries again to see whether the count changed, then read the library again from the start",
+};
+
+export type AdsLibrariesFailureOutcome = {
+  ok: false;
+  status: "error" | "not_found" | "unsupported" | "interrupted";
+  reason: AdsLibrariesFailure | "unavailable" | "stopped";
+  detail: string;
+  http?: number;
+  retryAfter?: string;
+};
+
+export type ListAdsLibrariesOutcome =
+  | {
+      ok: true;
+      status: "ok";
+      total: number;
+      libraries: {
+        id: string;
+        name: string;
+        numDocuments: number;
+        description?: string;
+        permission?: string;
+        public?: boolean;
+        owner?: string;
+      }[];
+      truncated?: true;
+    }
+  | AdsLibrariesFailureOutcome;
+
+export type ReadAdsLibraryOutcome =
+  | {
+      ok: true;
+      status: "ok";
+      library: { id: string; name: string; numDocuments: number };
+      /** The library's size as ADS reported it with this window (`num_documents`); not a count of what was read. */
+      total: number;
+      offset: number;
+      /** The window itself: a slice of ADS's stored list, alphabetical, nothing else read. */
+      bibcodes: string[];
+      /** Where the next window starts; absent when this one reached the end of the library. */
+      nextOffset?: number;
+    }
+  | AdsLibrariesFailureOutcome;
+
+function adsFailure(failure: {
+  reason: AdsLibrariesFailure;
+  http?: number;
+  retryAfter?: string;
+}): AdsLibrariesFailureOutcome {
+  return {
+    ok: false,
+    status: failure.reason === "not_found" ? "not_found" : "error",
+    reason: failure.reason,
+    detail: ADS_FAILURE_TEXT[failure.reason],
+    ...(failure.http !== undefined ? { http: failure.http } : {}),
+    ...(failure.retryAfter !== undefined ? { retryAfter: failure.retryAfter } : {}),
+  };
+}
+
+const ADS_STOPPED: AdsLibrariesFailureOutcome = {
+  ok: false,
+  status: "interrupted",
+  reason: "stopped",
+  detail:
+    "the user pressed Stop before ADS answered; nothing was read or changed (this action only reads). Do not retry unless the user asks",
+};
+
+const ADS_UNAVAILABLE: AdsLibrariesFailureOutcome = {
+  ok: false,
+  status: "unsupported",
+  reason: "unavailable",
+  detail: "reading ADS libraries is not available in this host",
+};
+
+/** `list_ads_libraries`: GET only, no project write. */
+export async function listAdsLibraries(
+  deps: LibraryOpDeps,
+  signal?: AbortSignal
+): Promise<ListAdsLibrariesOutcome> {
+  if (!deps.adsLibraries) return ADS_UNAVAILABLE;
+  let got: Awaited<ReturnType<AdsLibrariesSource["list"]>>;
+  try {
+    got = await (await deps.adsLibraries()).list(signal);
+  } catch (e) {
+    if (signal?.aborted) return ADS_STOPPED; // the caller's own cancel, not an ADS failure
+    throw e;
+  }
+  if (!got.ok) return adsFailure(got);
+  return {
+    ok: true,
+    status: "ok",
+    total: got.total,
+    libraries: got.libraries,
+    ...(got.truncated ? { truncated: true as const } : {}),
+  };
+}
+
+/**
+ * `read_ads_library`: asks ADS for just the window `offset…offset+limit` (the request count does not depend on the
+ * library's size, no cache). GET only.
+ */
+export async function readAdsLibrary(
+  deps: LibraryOpDeps,
+  op: LibraryReadAdsLibrary,
+  signal?: AbortSignal
+): Promise<ReadAdsLibraryOutcome> {
+  if (!deps.adsLibraries) return ADS_UNAVAILABLE;
+  const offset = op.offset ?? 0;
+  const limit = op.limit ?? ADS_LIBRARY_PAGE;
+  let got: Awaited<ReturnType<AdsLibrariesSource["readWindow"]>>;
+  try {
+    got = await (await deps.adsLibraries()).readWindow(op.libraryId, offset, limit, signal);
+  } catch (e) {
+    if (signal?.aborted) return ADS_STOPPED;
+    throw e;
+  }
+  if (!got.ok) return adsFailure(got);
+  const next = offset + got.bibcodes.length;
+  return {
+    ok: true,
+    status: "ok",
+    library: {
+      id: got.library.id,
+      name: got.library.name,
+      numDocuments: got.library.numDocuments,
+    },
+    total: got.total,
+    offset,
+    bibcodes: got.bibcodes,
+    ...(next < got.total && got.bibcodes.length > 0 ? { nextOffset: next } : {}),
+  };
 }

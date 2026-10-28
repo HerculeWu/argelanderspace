@@ -1,4 +1,4 @@
-import { DiscoverySavedViewActionSchema, APPEARANCE_DENSITIES, APPEARANCE_LANGUAGES, APPEARANCE_THEMES, type CopilotViewAction, MAX_PANES, type PageContext, SETTINGS_VIEW, WorkspaceViewActionSchema } from "@argelanderspace/contracts";
+import { DiscoverySavedViewActionSchema, DEFAULT_COPILOT_FILE_TOOLS, SETTINGS_COPILOT_FILE_TOOLS, type CopilotFileToolsSetting, type SettingsGroup, APPEARANCE_DENSITIES, APPEARANCE_LANGUAGES, APPEARANCE_THEMES, type CopilotViewAction, MAX_PANES, type PageContext, SETTINGS_VIEW, WorkspaceViewActionSchema } from "@argelanderspace/contracts";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { ActionButton } from "../ui";
@@ -27,6 +27,7 @@ import { manuscriptDeleteGuard } from "../writer/writer-context";
 import { WriterView } from "../writer/WriterView";
 import { createWriterPane } from "../writer/writer-pane";
 import { Copilot } from "../copilot/Copilot";
+import type { ConversationRequest, IntakeKind, IntakeRequest } from "../copilot/intake";
 import type { ConfirmationGuards } from "../copilot/confirmations";
 import { MailNavItem } from "../mail/MailNavItem";
 import { MailView } from "../mail/MailView";
@@ -137,6 +138,7 @@ export function Shell() {
   // ---- Copilot view actions (ticket 12) -------------------------------------------------------- //
   // Workspace actions are the workspace's (panes/workspace-state.ts); a page's own actions go to its pane adapter
   // through the pane manager (panes/).
+  const [conversationAsked, setConversationAsked] = useState<ConversationRequest>({ seq: 0, id: "" });
   const runViewAction = useCallback(async (action: CopilotViewAction): Promise<ViewActionOutcome> => {
     // The service tells the bound view that a Doc was deleted through the Copilot: the same three-state Shell
     // update the Library page makes after its own delete (not model-callable; it is no tool action).
@@ -152,7 +154,14 @@ export function Shell() {
       return { ok: true };
     }
     const workspaceAction = WorkspaceViewActionSchema.safeParse(action);
-    if (workspaceAction.success) return store.runWorkspaceAction(workspaceAction.data);
+    if (workspaceAction.success) {
+      // `open_copilot` with a conversation (the tutorial replay's "take me there"): the panel is asked to show it too.
+      if (workspaceAction.data.action === "open_copilot" && workspaceAction.data.conversationId !== undefined) {
+        const conversationId = workspaceAction.data.conversationId;
+        setConversationAsked((previous) => ({ seq: previous.seq + 1, id: conversationId }));
+      }
+      return store.runWorkspaceAction(workspaceAction.data);
+    }
     if (action.action === "open_task_doc") return store.openDocAction(action.docId);
     // Every page action (Plan, Library and Discovery, Reader and PDF, Writer) goes to the adapter that handles it.
     return store.runViewAction(action);
@@ -207,9 +216,29 @@ export function Shell() {
     setProviderSettingsAsked((n) => n + 1);
   }, [setCopilotOpen]);
   const openMailAccounts = useCallback(() => setActiveView("mail"), [setActiveView]);
+  // The Library's intake entries (project-intake ticket 06): open the panel and ask it for a move-in, counted so that
+  // the same kind asked twice is two requests.
+  const [intakeAsked, setIntakeAsked] = useState<IntakeRequest>({ seq: 0, kind: "start" });
+  const startIntake = useCallback((kind: IntakeKind) => {
+    setCopilotOpen(true);
+    setIntakeAsked((previous) => ({ seq: previous.seq + 1, kind }));
+  }, [setCopilotOpen]);
+  // The settings page shown on a group, for a card in the Copilot panel that sends the user there.
+  const [pendingSettingsGroup, setPendingSettingsGroup] = useState<SettingsGroup | null>(null);
+  const openSettingsGroup = useCallback((group: SettingsGroup) => {
+    // Asked only once the switch has taken effect: a refused (or still pending) leave question leaves no request behind to
+    // bend a later, manual opening of the settings onto this group.
+    if (setActiveView(SETTINGS_VIEW)) setPendingSettingsGroup(group);
+  }, [setActiveView]);
+  const clearPendingSettingsGroup = useCallback(() => setPendingSettingsGroup(null), []);
+  // The Copilot file and command permission as the settings hold it now; unknown until the settings are read.
+  const fileToolsValue = preferences.settings?.values.copilot_file_tools;
+  const fileTools: CopilotFileToolsSetting | undefined = preferences.settings
+    ? (SETTINGS_COPILOT_FILE_TOOLS as readonly unknown[]).includes(fileToolsValue) ? (fileToolsValue as CopilotFileToolsSetting) : DEFAULT_COPILOT_FILE_TOOLS
+    : undefined;
   const workspace: Workspace = useMemo(
-    () => ({ papers, currentDoc, setCurrentDoc: store.setCurrentDoc, openDoc: store.openDoc, pendingAnchor, clearPendingAnchor: store.clearPendingAnchor, docDeleted: store.docDeleted, openArgumentGraph: store.openArgumentGraph, librarySelection: store.librarySelection, openCopilotSettings, openMailAccounts, tweaks }),
-    [papers, currentDoc, store, pendingAnchor, openCopilotSettings, openMailAccounts, tweaks]
+    () => ({ papers, currentDoc, setCurrentDoc: store.setCurrentDoc, openDoc: store.openDoc, pendingAnchor, clearPendingAnchor: store.clearPendingAnchor, docDeleted: store.docDeleted, openArgumentGraph: store.openArgumentGraph, librarySelection: store.librarySelection, openCopilotSettings, openMailAccounts, startIntake, openSettingsGroup, pendingSettingsGroup, clearPendingSettingsGroup, tweaks }),
+    [papers, currentDoc, store, pendingAnchor, openCopilotSettings, openMailAccounts, startIntake, openSettingsGroup, pendingSettingsGroup, clearPendingSettingsGroup, tweaks]
   );
 
   // The page fields and status are the active pane's page adapter's (`pagesVersion` changes with what pages report).
@@ -347,7 +376,7 @@ export function Shell() {
               ))}
             </div>
           </div>
-          <Copilot open={copilotOpen} context={pageContext} onClose={() => setCopilotOpen(false)} onViewAction={runViewAction} guards={confirmationGuards} onOpenPanel={() => setCopilotOpen(true)} settingsAsked={providerSettingsAsked} viewReady={viewClaimed} onAttention={setCopilotWaiting} />
+          <Copilot open={copilotOpen} context={pageContext} onClose={() => setCopilotOpen(false)} onViewAction={runViewAction} guards={confirmationGuards} onOpenPanel={() => setCopilotOpen(true)} settingsAsked={providerSettingsAsked} intakeAsked={intakeAsked} conversationAsked={conversationAsked} fileTools={fileTools} onOpenFileToolsSettings={() => openSettingsGroup("copilot")} viewReady={viewClaimed} onAttention={setCopilotWaiting} />
         </div>
 
         <CommandPalette

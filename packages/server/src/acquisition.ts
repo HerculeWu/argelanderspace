@@ -72,6 +72,7 @@ import {
   type ArxivSourcePlan,
   type ArxivStart,
   type ManualImportResult,
+  type PdfUploadStart,
   runManualImport,
 } from "./library-actions.js";
 import type { AsyncLock } from "./lock.js";
@@ -122,11 +123,7 @@ export interface AcquisitionDeps {
 /** The zip upload's Work query (`?id=|doi=|arxiv=`); it is the zip job's payload as it is. */
 export type ZipQuery = LatexZipPayload;
 
-/** The PDF upload's submit: queued, or why not (busy → 409, failed → 500 at the route). */
-export type PdfUploadStart =
-  | { kind: "queued"; job: Job; resourceWarning?: boolean }
-  | { kind: "busy" }
-  | { kind: "failed"; detail: string };
+export type { PdfUploadStart } from "./library-actions.js";
 
 /** The zip upload's async submit: queued, or busy (a delete of the upload Doc is in flight → 409 at the route). */
 export type ZipJobStart = { kind: "queued"; job: Job } | { kind: "busy" };
@@ -154,13 +151,12 @@ export type RefreshOutcome =
   | { kind: "failed"; detail: string };
 
 export interface Acquisition extends AcquisitionPort {
-  startPdfUpload(workId: string, bytes: Buffer, filename: string): PdfUploadStart;
   startZipJob(query: ZipQuery, data: Uint8Array): ZipJobStart;
   attachZipSync(query: ZipQuery, data: Uint8Array): Promise<ZipSyncOutcome>;
   refreshLibrary(offline: boolean): Promise<RefreshOutcome>;
   importManualWorks(
     req: ManualWorkRequest,
-    options?: { bridge?: "merge" | "reject" }
+    options?: { bridge?: "merge" | "reject"; autoPdf?: false }
   ): Promise<ManualImportResult>;
   submitArxivPdf(workId: string, automatic: boolean): Job | null;
   /** The PDF upload's pin release; the app's one `runner.onEvent` hook calls it before anything else. */
@@ -981,18 +977,19 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
   };
 
   // The one import seam of the Library: the route and the Copilot `library` tool both come here.
-  // Automatic PDF is limited to the existing identifier/bibcode modes; bulk BibTeX never auto-queues.
+  // Automatic PDF is limited to the single identifier/bibcode modes; bulk BibTeX and the bibcode batch never auto-queue,
+  // and neither does a call that says `autoPdf: false` (the tool's migration `batch:true`).
   // Submission failure cannot undo the Work.
   const importManualWorks = async (
     req: ManualWorkRequest,
-    options: { bridge?: "merge" | "reject" } = {}
+    options: { bridge?: "merge" | "reject"; autoPdf?: false } = {}
   ): Promise<ManualImportResult> => {
     let outcome: ManualImportResult;
     try {
       outcome = await runManualImport(
         { paths, libraryLock, makeSources: () => deps.makeSources(false) },
         req,
-        options
+        { ...(options.bridge !== undefined ? { bridge: options.bridge } : {}) }
       );
     } catch (error) {
       // library.json already holds the merge (only a later file failed): the page must hear what the graphs did.
@@ -1007,7 +1004,12 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
       announceMerges(outcome.argumentGraphMerges);
       outcome = { ...outcome, argumentGraphMerges: relNotes(outcome.argumentGraphMerges) };
     }
-    if (req.mode !== "bib" && autoIngestArxiv()) {
+    if (
+      req.mode !== "bib" &&
+      req.mode !== "bibcodes" &&
+      options.autoPdf !== false &&
+      autoIngestArxiv()
+    ) {
       for (const r of outcome.results) {
         if ((r.status === "created" || r.status === "exists") && r.ref !== undefined) {
           try {

@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type ArgumentViewAction, type CopilotViewActionResult, type DiscoveryPage, type DiscoverySavedViewAction, type DiscoveryViewAction, isArgumentViewAction, isDiscoveryViewAction, type LibraryDetailTab, type LibraryPage, type LibraryViewAction, libraryRefMatches } from "@argelanderspace/contracts";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
-import { ActionButton } from "../ui";
+import { ActionButton, Button } from "../ui";
+import type { IntakeKind } from "../copilot/intake";
+import { useIntakeChecklist } from "./intake-entry";
 import { askWorkspaceLeave, useWorkspace, type Workspace, whenWorkspaceMayLeave } from "../argelander/workspace";
 import { fetchLibrary, type LibraryLoad } from "../api/library";
 import { onLibraryChanged } from "../api/ws";
@@ -178,6 +180,7 @@ function LibraryBody({
 }) {
   const { refs, graph } = payload;
   const { t } = useTranslation();
+  const ws = useWorkspace();
   const byId = useMemo(() => Object.fromEntries(graph.nodes.map((n) => [n.id, n])), [graph]);
   const refToNode = useMemo(() => {
     const m: Record<string, string> = {};
@@ -292,6 +295,13 @@ function LibraryBody({
   }, [labelMenu]);
 
   const [importOpen, setImportOpen] = useState(false);
+  // Project intake (ticket 06): the checklist in the Project root decides the label (`present`: continue); `unknown` is
+  // not `absent`, but it offers the same start (the agent reads the checklist itself). null: not answered yet.
+  const intakeChecklist = useIntakeChecklist();
+  const startIntake = (kind: IntakeKind) => {
+    setImportOpen(false);
+    ws.startIntake?.(kind);
+  };
   // Stage 13: which import-menu dialog is open (null = closed). A resolved
   // (created/existing) ref is selected by its work id — the saved graph node
   // carries the same id, and the WS library.changed reload lands right after.
@@ -642,6 +652,25 @@ function LibraryBody({
                     <span className="import-d">{t("library.import.shelf.desc")}</span>
                   </span>
                 </ActionButton>
+                {intakeChecklist === "present" && (
+                  <ActionButton
+                    unstyled
+                    mode="text"
+                    label={t("library.intake.resume")}
+                    tooltip={t("library.intake.resume")}
+                    data-ui="import-option" data-ui-key="intake"
+                    className="import-opt import-opt-intake"
+                    onClick={() => startIntake("resume")}
+                  >
+                    <span className="import-ic">
+                      <Icon name="folder-input" cls="ico-sm" />
+                    </span>
+                    <span className="import-body">
+                      <span className="import-t">{t("library.intake.resume")}</span>
+                      <span className="import-d">{t("library.intake.resumeDesc")}</span>
+                    </span>
+                  </ActionButton>
+                )}
               </div>
             )}
           </div>
@@ -770,7 +799,23 @@ function LibraryBody({
           )}
         </div>
 
-        <LibraryGraph graph={graph} selId={selNode} onSel={setSelNode} query={q} labelsOn={graphLabelsOn} onLabelsOnChange={setGraphLabelsOn} onController={registerGraph} />
+        {live && refs.length === 0 ? (
+          <div className="lib-empty" data-ui="library-empty" data-state={intakeChecklist ?? "loading"}>
+            <Icon name="library" cls="lib-empty-ico" />
+            <h2>{t("library.intake.emptyTitle")}</h2>
+            <p>{t(intakeChecklist === "present" ? "library.intake.emptyDescResume" : "library.intake.emptyDesc")}</p>
+            {/* the action's room is kept while the checklist question is open: the block does not shift when the button comes */}
+            <div className="lib-empty-action">
+              {intakeChecklist !== null && (
+                <Button appearance="primary" data-ui="start-intake" data-ui-key={intakeChecklist === "present" ? "resume" : "start"} onClick={() => startIntake(intakeChecklist === "present" ? "resume" : "start")}>
+                  {t(intakeChecklist === "present" ? "library.intake.resume" : "library.intake.start")}
+                </Button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <LibraryGraph graph={graph} selId={selNode} onSel={setSelNode} query={q} labelsOn={graphLabelsOn} onLabelsOnChange={setGraphLabelsOn} onController={registerGraph} />
+        )}
       </div>
 
       {curRef && (

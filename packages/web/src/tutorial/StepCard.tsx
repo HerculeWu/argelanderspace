@@ -179,7 +179,7 @@ export function StepCard(props: StepCardProps) {
       </InlineMessage>
     );
 
-  const intro = agent ? tk(t, `${key}.${props.browserCopy ? "introBrowser" : "intro"}`) : tk(t, `${key}.body`);
+  const intro = agent ? tk(t, `${key}.${props.browserCopy ? "introBrowser" : "intro"}`) : tk(t, `${key}.${step.bodyKey ?? "body"}`);
   const prepared = agent
     ? { label: t("tutorial.ui.preparedText"), text: tk(t, `${key}.${props.browserCopy ? "promptBrowser" : "prompt"}`) }
     : step.preparedText !== undefined

@@ -717,6 +717,224 @@ test("the edit card shows the diff it would make, and the write card says when i
 });
 
 // ---------------------------------------------------------------------------------------------- //
+// An edit Pi is certain to refuse never asks (project-intake ticket 14)
+// ---------------------------------------------------------------------------------------------- //
+
+type Edit = { oldText: string; newText: string };
+const BOM = "\uFEFF";
+const certainRefusals: [string, string, Edit[], string][] = [
+  [
+    "overlapping regions",
+    "alpha\nbeta\ngamma\ndelta\n",
+    [
+      { oldText: "beta\ngamma", newText: "B" },
+      { oldText: "gamma\ndelta", newText: "G" },
+    ],
+    "edits[0] and edits[1] overlap in f.txt. Merge them into one edit or target disjoint regions.",
+  ],
+  [
+    "overlapping regions in a CRLF file",
+    "alpha\r\nbeta\r\ngamma\r\ndelta\r\n",
+    [
+      { oldText: "beta\ngamma", newText: "B" },
+      { oldText: "gamma\ndelta", newText: "G" },
+    ],
+    "edits[0] and edits[1] overlap in f.txt.",
+  ],
+  [
+    "overlapping regions in a file with a byte-order mark",
+    `${BOM}alpha\nbeta\ngamma\ndelta\n`,
+    [
+      { oldText: "beta\ngamma", newText: "B" },
+      { oldText: "alpha\nbeta", newText: "A" },
+    ],
+    "edits[1] and edits[0] overlap in f.txt.",
+  ],
+  [
+    "a duplicated oldText",
+    "same\nother\nsame\n",
+    [{ oldText: "same", newText: "x" }],
+    "Found 2 occurrences of the text in f.txt. The text must be unique.",
+  ],
+  [
+    "a duplicated oldText among several edits",
+    "same\nother\nsame\n",
+    [
+      { oldText: "other", newText: "y" },
+      { oldText: "same", newText: "x" },
+    ],
+    "Found 2 occurrences of edits[1] in f.txt. Each oldText must be unique.",
+  ],
+  [
+    "an empty oldText",
+    "alpha\n",
+    [{ oldText: "", newText: "x" }],
+    "oldText must not be empty in f.txt.",
+  ],
+  [
+    "overlapping regions whose oldText itself carries CRLF, in a CRLF file",
+    "alpha\r\nbeta\r\ngamma\r\ndelta\r\n",
+    [
+      { oldText: "beta\r\ngamma", newText: "B" },
+      { oldText: "gamma\r\ndelta", newText: "G" },
+    ],
+    "edits[0] and edits[1] overlap in f.txt.",
+  ],
+  [
+    "replacements that change nothing",
+    "alpha\nbeta\n",
+    [{ oldText: "beta", newText: "beta" }],
+    "No changes made to f.txt. The replacement produced identical content.",
+  ],
+];
+
+for (const [label, body, edits, message] of certainRefusals)
+  test(`an edit with ${label} is refused before any card, with Pi's own sentence, and writes nothing`, async () => {
+    writeFileSync(join(project, "f.txt"), body);
+    const before = readFileSync(join(project, "f.txt"));
+    script = [
+      () => ({ calls: [{ name: "edit", args: { path: "f.txt", edits } }] }),
+      (ctx) => ({ text: lastToolText(ctx) }),
+    ];
+    const id = await start();
+    await until(id, ["completed"]);
+    expect((await host.snapshot(id)).confirmations).toEqual([]);
+    expect((await operations(id))[0]).toMatchObject({ tool: "edit", status: "rejected" });
+    expect(lastToolText(seen.at(-1) as TranscriptContext)).toContain(message);
+    expect(readFileSync(join(project, "f.txt")).equals(before)).toBe(true);
+  });
+
+test("an edit whose oldText is not found exactly still asks (Pi may match it loosely), and one that only matches loosely skips the overlap check", async () => {
+  writeFileSync(join(project, "f.txt"), "alpha   \nbeta\ngamma\n");
+  script = [
+    // trailing whitespace differs: only Pi's fuzzy match finds it
+    () => ({
+      calls: [
+        {
+          name: "edit",
+          args: { path: "f.txt", edits: [{ oldText: "alpha\nbeta", newText: "A" }] },
+        },
+      ],
+    }),
+    // not found anywhere: left to Pi
+    () => ({
+      calls: [
+        { name: "edit", args: { path: "f.txt", edits: [{ oldText: "nowhere", newText: "A" }] } },
+      ],
+    }),
+    // one edit only loosely found, two exact ones that overlap: not judged here
+    () => ({
+      calls: [
+        {
+          name: "edit",
+          args: {
+            path: "f.txt",
+            edits: [
+              { oldText: "alpha\nbeta", newText: "A" },
+              { oldText: "beta\ngamma", newText: "B" },
+            ],
+          },
+        },
+      ],
+    }),
+    () => ({ text: "x" }),
+  ];
+  const id = await start();
+  for (let at = 0; at < 3; at++) {
+    const shown = await card(id);
+    expect(shown.action).toBe("edit_file");
+    await answer(shown, "decline");
+    await vi.waitFor(async () => expect((await operations(id)).length).toBeGreaterThan(at));
+  }
+  await until(id, ["completed"]);
+  expect(readFileSync(join(project, "f.txt"), "utf8")).toBe("alpha   \nbeta\ngamma\n");
+});
+
+// What Pi accepts although it looks like a duplicate or a BOM: it counts occurrences in its fuzzy-normalized text
+// (NFKC, trailing whitespace, quotes, dashes, spaces) and strips the BOM from the file only.
+const passes: [string, string, Edit[], string][] = [
+  [
+    "an oldText that is a single occurrence exactly but not after NFKC counting",
+    "caf\u0065\u0301 one\ncaf\u0065\u0301 two\n",
+    [{ oldText: "cafe", newText: "CAFE" }],
+    "caf",
+  ],
+  [
+    "an oldText of only spaces that normalizes away",
+    "  \n  ",
+    [{ oldText: "  ", newText: "x" }],
+    "x",
+  ],
+  [
+    "a newText that starts with a byte-order mark",
+    "alpha\nbeta\n",
+    [{ oldText: "alpha", newText: "\uFEFFalpha" }],
+    "alpha",
+  ],
+];
+for (const [label, body, edits] of passes)
+  test(`an edit with ${label} still asks: Pi does not refuse it`, async () => {
+    writeFileSync(join(project, "g.txt"), body);
+    script = [
+      () => ({ calls: [{ name: "edit", args: { path: "g.txt", edits } }] }),
+      () => ({ text: "x" }),
+    ];
+    const id = await start();
+    const shown = await card(id);
+    expect(shown.action).toBe("edit_file");
+    await answer(shown, "decline");
+    await until(id, ["completed"]);
+    expect(readFileSync(join(project, "g.txt"), "utf8")).toBe(body);
+  });
+
+test("auto: an edit Pi is certain to refuse is rejected without running, like in ask", async () => {
+  setPermission("auto");
+  writeFileSync(join(project, "f.txt"), "same\nsame\n");
+  script = [
+    () => ({
+      calls: [
+        { name: "edit", args: { path: "f.txt", edits: [{ oldText: "same", newText: "x" }] } },
+      ],
+    }),
+    () => ({ text: "x" }),
+  ];
+  const id = await start();
+  await until(id, ["completed"]);
+  expect((await operations(id))[0]).toMatchObject({ tool: "edit", status: "rejected" });
+  expect(readFileSync(join(project, "f.txt"), "utf8")).toBe("same\nsame\n");
+});
+
+test("disjoint multi-edits, also in a CRLF file, still show their card with the right lines and apply", async () => {
+  writeFileSync(join(project, "f.txt"), "alpha\r\nbeta\r\ngamma\r\ndelta\r\n");
+  script = [
+    () => ({
+      calls: [
+        {
+          name: "edit",
+          args: {
+            path: "f.txt",
+            edits: [
+              { oldText: "beta", newText: "B" },
+              { oldText: "gamma\ndelta", newText: "G" },
+            ],
+          },
+        },
+      ],
+    }),
+    () => ({ text: "x" }),
+  ];
+  const id = await start();
+  const shown = await card(id);
+  const hunks = (shown as { change: { diff: { k: string; s: string }[] } }).change.diff
+    .filter((l) => l.k === "hunk")
+    .map((l) => l.s);
+  expect(hunks).toEqual(["@@ f.txt · 2–2 @@", "@@ f.txt · 3–4 @@"]);
+  await answer(shown, "approve");
+  await until(id, ["completed"]);
+  expect(readFileSync(join(project, "f.txt"), "utf8")).toBe("alpha\r\nB\r\nG\r\n");
+});
+
+// ---------------------------------------------------------------------------------------------- //
 // Stop
 // ---------------------------------------------------------------------------------------------- //
 

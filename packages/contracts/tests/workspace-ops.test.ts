@@ -45,6 +45,7 @@ describe("closed Shell action union", () => {
       { action: "set_appearance", theme: "light", density: "compact" },
       { action: "open_copilot_settings" },
       { action: "open_copilot" },
+      { action: "open_copilot", conversationId: "85b4af77-56d0-4684-8a1c-b8926dec17d0" },
       { action: "close_copilot" },
       { action: "open_doc", docId: "demo" },
     ])
@@ -69,6 +70,9 @@ describe("closed Shell action union", () => {
       { action: "open_doc" },
       { action: "open_doc", docId: "d", path: "/etc/passwd" },
       { action: "open_copilot", apiKey: "k" },
+      { action: "open_copilot", conversationId: "" },
+      { action: "open_copilot", conversationId: 7 },
+      { action: "open_copilot", conversationId: "c", path: "/etc/passwd" },
     ])
       expect(WorkspaceViewActionSchema.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
   });

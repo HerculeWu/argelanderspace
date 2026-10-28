@@ -177,6 +177,8 @@ export const TOOL_TABLE: readonly AnyToolEntry[] = Object.freeze([
       page: deps.page,
       // State sync after a delete or a candidate save, not navigation: no runId, so a later Stop does not cancel it.
       shellSync: (action) => deps.shellSync(action),
+      // attach_local_pdf reads a file anywhere on this machine: it follows the file-tool permission, read at each call.
+      ...(workbench.fileTools ? { fileToolsPermission: workbench.fileTools.permission } : {}),
     }),
     create: (context) => one(LIBRARY_TOOL_NAME, createLibraryTool(context)),
   } satisfies ToolEntry<Parameters<typeof createLibraryTool>[0]>,

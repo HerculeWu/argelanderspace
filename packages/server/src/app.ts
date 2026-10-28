@@ -54,6 +54,7 @@ import {
   DEFAULT_COPILOT_FILE_TOOLS,
   DOCUMENT_BUSY,
   DocDescriptionSchema,
+  MANUAL_BIBCODES_MAX,
   ManualWorkRequestSchema,
   ManuscriptSchema,
   PDF_IMAGE_LONG_EDGE,
@@ -96,6 +97,7 @@ import {
 } from "@argelanderspace/core";
 import {
   AdsDiscoveryError,
+  type AdsLibrariesSource,
   type CredentialStore,
   configFilePath,
   createAdsCredentialStore,
@@ -146,6 +148,7 @@ import { environmentReport, mountEnvironmentRoutes } from "./environment.js";
 import { detail, pyRepr } from "./fastapi-parity.js";
 import { fileToolsDefault } from "./file-tools-default.js";
 import { type HostBridge, mountHostRoutes, switchJobOf } from "./host-routes.js";
+import { mountIntakeRoutes } from "./intake-routes.js";
 import type { JobRunner } from "./jobs.js";
 import { commitWorkPatch, type LibraryOpDeps } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
@@ -162,6 +165,7 @@ import { mountMailWatchRoutes } from "./mail-watch-routes.js";
 import { mountPageErrorRoute, type PageErrorOptions } from "./page-errors.js";
 import { PaperCache } from "./paper-cache.js";
 import { createPdfAccess } from "./pdf-access.js";
+import { normalizePdfFilename } from "./pdf-filename.js";
 import { mountPdfFontRoutes } from "./pdf-fonts.js";
 import {
   readPdfTextMaterial,
@@ -214,6 +218,11 @@ export interface AppDeps {
    * server.ts; tests inject stubs.
    */
   makeDiscoverySource?: () => AdsDiscoverySource | Promise<AdsDiscoverySource>;
+  /**
+   * The user's ADS libraries for the Copilot `library` tool (project intake ticket 02), read-only. Asked at each use
+   * so the token is read from the credential store then. Absent: the two actions answer `unsupported`.
+   */
+  makeAdsLibraries?: () => AdsLibrariesSource | Promise<AdsLibrariesSource>;
   /** The ingest pipelines (the upload endpoint consumes `ingestLatexZip`). */
   pipelines: IngestPipelines;
   /** The rate window of the page-error reports (page-errors.ts); a test shortens it. Default a minute. */
@@ -633,6 +642,9 @@ export function createApp(deps: AppDeps): Hono {
   // The host interface (host-routes.ts): which form the page runs in, and the desktop app's native requests.
   mountHostRoutes(app, deps.host);
 
+  // Project intake (intake-routes.ts): whether the Project root holds the intake checklist (existence only).
+  mountIntakeRoutes(app, { projectRoot });
+
   // The tutorial progress (tutorial-routes.ts): global data, the same route in both forms.
   const tutorialFile = () =>
     deps.tutorial?.file ??
@@ -681,7 +693,8 @@ export function createApp(deps: AppDeps): Hono {
   });
 
   const providerSettings = deps.providerSettings ?? new ProviderSettings();
-  mountProviderRoutes(app, providerSettings);
+  // `fits` asks the Copilot service built just below; it is only called when a request arrives.
+  mountProviderRoutes(app, providerSettings, () => copilot.modelFits());
   mountMailWatchRoutes(app, deps.mailWatch);
   const mailOps = mountMailRoutes(
     app,
@@ -835,6 +848,7 @@ export function createApp(deps: AppDeps): Hono {
     readPayload: async () => libraryPayload(paths, await currentGraph()),
     acquisition,
     deletion: docDeletion,
+    ...(deps.makeAdsLibraries ? { adsLibraries: deps.makeAdsLibraries } : {}),
   };
   const readerOps: ReaderOpDeps = {
     write: async (op): Promise<ReaderWriteOutcome> => {
@@ -2214,7 +2228,13 @@ export function createApp(deps: AppDeps): Hono {
     const body: unknown = await c.req.json().catch(() => null);
     const parsed = ManualWorkRequestSchema.safeParse(body);
     if (!parsed.success) {
-      const e = detail("invalid request body (expected {mode: identifier|bibcode|bib, …})", 400);
+      const asked = (body as { mode?: unknown } | null)?.mode === "bibcodes";
+      const e = detail(
+        asked
+          ? `invalid request body (bibcodes takes 1 to ${MANUAL_BIBCODES_MAX} bibcodes, each a non-empty string)`
+          : "invalid request body (expected {mode: identifier|bibcode|bib, …})",
+        400
+      );
       return c.json(e.body, e.status);
     }
     let imported: Awaited<ReturnType<typeof acquisition.importManualWorks>>;
@@ -2338,18 +2358,14 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("invalid PDF filename", 400);
       return c.json(e.body, e.status);
     }
-    filename = filename.split(/[\\/]/).pop() ?? "document.pdf";
-    filename = [...filename]
-      .map((character) => {
-        const code = character.charCodeAt(0);
-        return code < 0x20 || code === 0x7f ? "_" : character;
-      })
-      .join("");
-    if (!filename || filename.length > 255) {
+    const normalized = normalizePdfFilename(filename);
+    if (normalized === null) {
       const e = detail("invalid PDF filename", 400);
       return c.json(e.body, e.status);
     }
+    filename = normalized;
 
+    // The same start the Copilot `library` tool calls (attach_local_pdf).
     const started = acquisition.startPdfUpload(workId, bytes, filename);
     if (started.kind === "busy") {
       const e = detail(DOCUMENT_BUSY, 409);

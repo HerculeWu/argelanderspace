@@ -5,6 +5,7 @@
 import type { TutorialProgress } from "@argelanderspace/contracts";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import i18n from "../src/i18n";
 import { CHAPTERS } from "../src/tutorial/chapters";
 import { FINISH, FINISH_STEP_ID } from "../src/tutorial/chapters/finish";
 import { TutorialRunner, type RunnerDeps } from "../src/tutorial/TutorialLayer";
@@ -21,19 +22,20 @@ const LAST_CHAPTER_STEPS = BEFORE_FINISH[BEFORE_FINISH.length - 1]!.steps;
 const LAST = LAST_CHAPTER_STEPS[LAST_CHAPTER_STEPS.length - 1]!;
 
 function setup(over: { position?: string; desktop?: boolean; steps?: TutorialProgress["steps"] } = {}) {
+  const onViewAction = vi.fn(async () => ({ ok: true }));
   const put = vi.fn(async (_progress: TutorialProgress) => ({}));
   const deps: Partial<RunnerDeps> = { put, checkTex: async () => true, now: () => AT, measure: VISIBLE, rendered: () => true };
   render(
     <TutorialRunner
       initial={fakeProgress({ position: over.position ?? FINISH_STEP_ID, steps: over.steps ?? {} })}
       context={fakePage("plan")}
-      onViewAction={vi.fn(async () => ({ ok: true }))}
+      onViewAction={onViewAction}
       desktop={over.desktop ?? true}
       entered
       deps={deps}
     />,
   );
-  return { put };
+  return { put, onViewAction };
 }
 const lastWrite = (put: { mock: { calls: [TutorialProgress][] } }) => put.mock.calls[put.mock.calls.length - 1]![0];
 const ui = (name: string, key?: string) => document.querySelector(`[data-ui="${name}"]${key ? `[data-ui-key="${key}"]` : ""}`) as HTMLElement | null;
@@ -126,6 +128,42 @@ describe("the three ways out", () => {
     fireEvent.click(ui("tutorial-finish-open-own")!);
     await tick(0);
     expect(ui("tutorial-finish-open-own-failed")?.textContent).toContain("桌面应用没有接受这个请求。");
+  });
+  it("desktop: the button is 'move in a half-done project', with a line on what to pick and where the move-in starts; the Shelf line stays", async () => {
+    host.pick = vi.fn(async () => true);
+    setup();
+    await tick(16);
+    expect(ui("tutorial-finish-open-own")?.textContent).toBe("迁入一个做到一半的项目");
+    const hint = ui("tutorial-finish-open-own-hint")!;
+    expect(hint.textContent).toContain("材料大多在一处就选它，分散就新建一个空文件夹");
+    expect(hint.textContent).toContain(`「${i18n.t("library.intake.start")}」`);
+    expect(ui("tutorial-finish-open-own-shelf")).not.toBeNull();
+    // The hint comes between the button and the Shelf line.
+    const ways = [...document.querySelectorAll('[data-ui="tutorial-finish"] .tut-finish-ways > *')].map((el) => el.getAttribute("data-ui"));
+    expect(ways.slice(0, 3)).toEqual(["tutorial-finish-open-own", "tutorial-finish-open-own-hint", "tutorial-finish-open-own-shelf"]);
+    expect(card()?.textContent).toContain("还有 Copilot 和迁入");
+  });
+  it("desktop: picking a folder only asks for the picker; the move-in is not started from here (no request, no view action)", async () => {
+    const pick = vi.fn(async () => true);
+    host.pick = pick;
+    const fetchMock = vi.fn(async () => new Response("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+    const { onViewAction } = setup();
+    await tick(16);
+    fireEvent.click(ui("tutorial-finish-open-own")!);
+    await tick(16);
+    expect(pick).toHaveBeenCalledTimes(1);
+    expect(onViewAction).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+  it("browser form: the command to run in the project folder, then the empty library's button; no hint line of the desktop form", async () => {
+    setup({ desktop: false });
+    await tick(16);
+    const line = ui("tutorial-finish-open-own-browser")!;
+    expect(line.textContent).toContain("进入你的项目文件夹");
+    expect(line.textContent).toContain(`「${i18n.t("library.intake.start")}」`);
+    expect(ui("tutorial-finish-open-own-hint")).toBeNull();
   });
   it("browser form: no button, the command to run in a terminal", async () => {
     setup({ desktop: false });

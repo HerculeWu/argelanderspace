@@ -15,6 +15,12 @@
  *    source from arXiv" submits (`POST /api/library/acquire-arxiv-pdf`, `POST /api/library/attach-arxiv`); both
  *    start a job in the existing JobRunner and take only a work id. Refreshing an existing arXiv LaTeX Doc
  *    replaces its text, so it waits for the real user's confirmation, as the dialog's annotation-risk step does;
+ *  - attach_local_pdf: project intake's local PDF attach (contracts "项目迁入"): one PDF at an absolute local path
+ *    goes through the Files tab upload's own server path and becomes a Doc of an existing Work. It is the only
+ *    action that takes a path; it reads that file once, read-only, and is refused when `copilot_file_tools` is off;
+ *  - list_ads_libraries / read_ads_library: project intake's read of the user's own ADS libraries (contracts "项目迁入",
+ *    "ADS libraries"): the libraries' names and counts, and one library's bibcodes a page at a time. Read-only on ADS and
+ *    on the project; the token is read from the credential store by the service and never passes through the tool;
  *  - read_jobs: the acquisition status lines (queued/running/failed jobs of a work) from the JobRunner table.
  *  - delete_doc: the Files tab "delete document" dialog (`DELETE /api/paper/:doc_id`), the global physical delete.
  *    It only ever waits for the real user's confirmation card (the dialog's own confirm); there is no "unlink from
@@ -25,6 +31,7 @@ import { DISCOVERY_VIEW_ACTIONS, DiscoveryViewActionSchemas } from "./discovery-
 import {
   type LibraryRef,
   LibraryRefSchema,
+  MANUAL_BIBCODES_MAX,
   type ManualWorkRequest,
   ManualWorkRequestSchema,
 } from "./library.js";
@@ -253,27 +260,79 @@ export const LibrarySetMainDocSchema = z
 /**
  * The import menu's three dialogs (`POST /api/library/works`): one identifier, one ADS bibcode or pasted
  * BibTeX. Only the text the dialog would receive is accepted; there is no path, URL to fetch or file field.
- * Its limits are the dialog request's own (`ManualWorkRequestSchema`).
+ * Its limits are the dialog request's own (`ManualWorkRequestSchema`). The one difference is the tool's: a bibcode
+ * text may hold several bibcodes (a batch, at most `MANUAL_BIBCODES_MAX`; more is answered `rejected`, see
+ * `libraryToolImportRequest`).
  */
 export const LibraryImportWorksSchema = z
   .object({
     action: z.literal("import_works"),
     mode: z.enum(["identifier", "bibcode", "bib"]),
     text: z.string().min(1).max(1_000_000),
+    /**
+     * Migration semantics, for modes bibcode and identifier (bib mode never queues a PDF and does not take it): no
+     * automatic arXiv PDF job. In bibcode mode it also gives the batch result shape even for one bibcode (per-entry
+     * result, a record that would merge Works is refused alone); an identifier keeps its single-entry result.
+     * Project intake's migration always sets it.
+     */
+    batch: z.boolean().optional(),
   })
   .strict()
   .superRefine((op, ctx) => {
-    const request = ManualWorkRequestSchema.safeParse(libraryImportRequest(op));
+    if (op.batch !== undefined && op.mode === "bib") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["batch"],
+        message: "batch applies to modes bibcode and identifier only",
+      });
+      return;
+    }
+    if (op.mode === "bibcode" && libraryBibcodeTokens(op.text).length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["text"],
+        message: "no bibcode in the text (separate bibcodes with whitespace, commas or semicolons)",
+      });
+      return;
+    }
+    // More than MANUAL_BIBCODES_MAX bibcodes is not a malformed call: the operation answers it as rejected, with the limit.
+    if (op.mode === "bibcode" && libraryBibcodeTokens(op.text).length > MANUAL_BIBCODES_MAX) return;
+    const request = ManualWorkRequestSchema.safeParse(libraryToolImportRequest(op));
     if (!request.success)
       for (const issue of request.error.issues)
         ctx.addIssue({ code: "custom", path: ["text"], message: issue.message });
   });
 export type LibraryImportWorks = z.infer<typeof LibraryImportWorksSchema>;
 
+/**
+ * The bibcodes in an `import_works` bibcode text: split on whitespace, commas and semicolons (an ADS bibcode contains
+ * none of them). One token is the single-bibcode import unless `batch` is set; more are a batch (project intake
+ * ticket 03).
+ */
+export function libraryBibcodeTokens(text: string): string[] {
+  return text.split(/[\s,;]+/u).filter((t) => t !== "");
+}
+
+/**
+ * The request the Copilot `library` tool sends for this input: like {@link libraryImportRequest}, except that a bibcode
+ * text with several bibcodes (or `batch: true`) is the batch request; a single bibcode is the token itself. The import dialog keeps using `libraryImportRequest` (one bibcode).
+ */
+export function libraryToolImportRequest(
+  op: Pick<LibraryImportWorks, "mode" | "text" | "batch">
+): ManualWorkRequest {
+  if (op.mode === "bibcode") {
+    const tokens = libraryBibcodeTokens(op.text);
+    if (tokens.length > 1 || (op.batch === true && tokens.length === 1))
+      return { mode: "bibcodes", bibcodes: tokens };
+    if (tokens.length === 1) return { mode: "bibcode", bibcode: tokens[0] as string };
+  }
+  return libraryImportRequest(op);
+}
+
 /** The request the import dialog itself sends for this input (identifier/bibcode trimmed as the dialog does). */
 export function libraryImportRequest(
   op: Pick<LibraryImportWorks, "mode" | "text">
-): ManualWorkRequest {
+): Exclude<ManualWorkRequest, { mode: "bibcodes" }> {
   const text = op.text.trim();
   if (op.mode === "identifier") return { mode: "identifier", value: text };
   if (op.mode === "bibcode") return { mode: "bibcode", bibcode: text };
@@ -288,6 +347,38 @@ export const LibraryAcquireArxivPdfSchema = z
 export const LibraryAttachArxivSchema = z
   .object({ action: z.literal("attach_arxiv"), refId: Id })
   .strict();
+/**
+ * Project intake's local PDF attach: the Files tab's "upload PDF" for a file that is on this machine. `path` is an
+ * absolute local path of a regular PDF file (read once, never opened for writing, moved, renamed or deleted); the
+ * Work must already exist. Everything after the read is the upload's own server path, so a PDF the page would refuse
+ * is refused here too.
+ */
+export const LibraryAttachLocalPdfSchema = z
+  .object({
+    action: z.literal("attach_local_pdf"),
+    refId: Id,
+    path: z.string().min(1).max(4096),
+  })
+  .strict();
+export type LibraryAttachLocalPdf = z.infer<typeof LibraryAttachLocalPdfSchema>;
+/** The user's ADS libraries (name, id, count). Takes no parameter; the service reads the saved ADS token. */
+export const LibraryListAdsLibrariesSchema = z
+  .object({ action: z.literal("list_ads_libraries") })
+  .strict();
+/**
+ * One ADS library's bibcodes. The service asks ADS for just the window (`limit` bibcodes from `offset`, at most a few
+ * requests whatever the library's size); the default and the largest page (200) match the per-call cap of the batch bibcode import (project intake ticket 03).
+ * `libraryId` is the `id` that list_ads_libraries returned.
+ */
+export const LibraryReadAdsLibrarySchema = z
+  .object({
+    action: z.literal("read_ads_library"),
+    libraryId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+    offset: z.number().int().nonnegative().optional(),
+    limit: z.number().int().min(1).max(MANUAL_BIBCODES_MAX).optional(),
+  })
+  .strict();
+export type LibraryReadAdsLibrary = z.infer<typeof LibraryReadAdsLibrarySchema>;
 /** The acquisition status lines: jobs of one work (or the latest jobs of any work) from the JobRunner table. */
 export const LibraryReadJobsSchema = z
   .object({
@@ -360,6 +451,9 @@ export const LIBRARY_OPERATION_ACTIONS = [
   "import_works",
   "acquire_arxiv_pdf",
   "attach_arxiv",
+  "attach_local_pdf",
+  "list_ads_libraries",
+  "read_ads_library",
   "delete_doc",
   "read_jobs",
   "filter_library",

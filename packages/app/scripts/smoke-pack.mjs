@@ -41,6 +41,9 @@
 //      is the data dir of the installed server (`--data-dir <copy>/literatures`, own temp HOME/XDG), which lists the
 //      five Works and gives Jerabkova's three annotations without archiving them; NOTICE.md and the upload zip are
 //      there; its size is reported, not gated (tutorial-smoke-lib.mjs).
+//   6. the installed package's dist/skills (project-intake ticket 12) is what the Copilot lists: exactly the three
+//      allow-listed bundled skills, read from the installed dist/skills, while a decoy <project>/skills beside
+//      node_modules (README marker and a decoy-skill) is not taken for them.
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -49,6 +52,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -344,6 +348,28 @@ if (offlineLock) {
   log("install mode: plain `npm install <tarball>` from the registry");
 }
 const pkgDir = join(clean, "node_modules/argelanderspace");
+// A decoy skills folder of the project the package is installed in (<clean>/skills, with the README marker): a local npm
+// install must never take it for the application's own bundled skills (project-intake ticket 12). The entry is resolved
+// through symlinks, so a pnpm-style install (the --offline-lock one) reaches the package from another folder: the decoy
+// is planted beside the real node_modules as well, where the retired lookup would have found it.
+const decoyRoots = new Set([
+  clean,
+  join(realpathSync(pkgDir), "..", ".."), // <real>/node_modules/argelanderspace -> the folder holding node_modules
+]);
+for (const root of decoyRoots) {
+  // a decoy of an allow-listed name too, which the allow-list alone would not filter out
+  mkdirSync(join(root, "skills/argelander-project-intake"), { recursive: true });
+  writeFileSync(
+    join(root, "skills/argelander-project-intake/SKILL.md"),
+    "---\nname: argelander-project-intake\ndescription: DECOY_PROJECT_SKILL from the project's own skills folder.\n---\n\n# decoy\n"
+  );
+  mkdirSync(join(root, "skills/decoy-skill"), { recursive: true });
+  writeFileSync(join(root, "skills/README.md"), "# a project's own skills\n");
+  writeFileSync(
+    join(root, "skills/decoy-skill/SKILL.md"),
+    "---\nname: decoy-skill\ndescription: A decoy skill of the project, not the application's.\n---\n\n# decoy\n"
+  );
+}
 const piDir = join(clean, "node_modules/@earendil-works/pi-coding-agent");
 check(existsSync(join(pkgDir, "dist/bin.js")), "installed package has dist/bin.js");
 check(
@@ -1013,6 +1039,40 @@ try {
     "every model request used the configured synthetic key"
   );
   const allBodies = JSON.stringify(seen.map((s) => s.body));
+  // The bundled skills (project-intake ticket 12): the installed package carries dist/skills, infra's bundledSkillsDir
+  // finds it in the npm layout, and the Copilot lists exactly the three allow-listed skills, from that folder.
+  {
+    const skillsDir = join(pkgDir, "dist/skills");
+    check(
+      existsSync(join(skillsDir, "README.md")),
+      "the installed package has dist/skills/README.md"
+    );
+    const listedSkills = [
+      "argelander-read-paper",
+      "argelander-query-paper-library",
+      "argelander-project-intake",
+    ];
+    // JSON-escaped backslashes (Windows paths) folded to "/" so one comparison serves both.
+    const system = JSON.stringify(
+      seen.map((s) => s.body.instructions ?? s.body.input ?? s.body)
+    ).replaceAll("\\\\", "/");
+    // the real path: a pnpm-style install reaches the package through a symlink, the host reports where it read
+    const where = realpathSync(skillsDir).replaceAll("\\", "/");
+    const listed = (n) =>
+      system.includes(`<name>${n}</name>`) && system.includes(`${where}/${n}/SKILL.md`);
+    // every request repeats the prompt: the distinct skill names, not the occurrences
+    const skillEntries = new Set([...system.matchAll(/<name>([^<]*)<\/name>/g)].map((m) => m[1]))
+      .size;
+    check(
+      listedSkills.every(listed) && skillEntries === listedSkills.length,
+      "the Copilot (ask) lists exactly the three allow-listed skills, read from the installed dist/skills",
+      `${listedSkills.map((n) => `${n}:${listed(n)}`).join(",")} entries=${skillEntries}`
+    );
+    check(
+      !system.includes("decoy-skill") && !system.includes("DECOY_PROJECT_SKILL"),
+      "the project's own <project>/skills (a decoy beside node_modules) is not taken for the bundled skills"
+    );
+  }
   check(!allBodies.includes(DECOY), "no decoy .pi/AGENTS/skill resource reached a model request");
   check(
     readdirSync(sentinelDir).length === 0,

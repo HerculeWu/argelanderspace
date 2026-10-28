@@ -638,7 +638,16 @@ test("a PDF image larger than the room left in the window is refused whole with 
   // 40_000 + 1_440: the room left after the instruction and tools stays what it was (the argument tool added 2_520 B to the footprint; the window
   // holds back an eighth of its bytes, so the same room takes 4/7 token per footprint byte, see WINDOW_BIG_DOC in copilot-batching.test.ts)
   // + 1_710 for the shelf tool (shelf ticket 07: footprint +2991 B, see WINDOW_BIG_DOC)
-  model.contextWindow = 43_150;
+  // + 556 for attach_local_pdf (project intake ticket 01: footprint +973 B, see WINDOW_BIG_DOC)
+  // + 839 for list_ads_libraries / read_ads_library (project intake ticket 02: footprint +1469 B, see WINDOW_BIG_DOC)
+  // + 236 for the ticket 02 repair round (footprint +412 B)
+  // + 63 for the ticket 02 second repair round (footprint +110 B)
+  // + 375 for the batch bibcode import (project intake ticket 03: footprint +657 B)
+  // + 317 for the ticket 03 fix round (footprint +555 B)
+  // - 3 for the ticket 03 closing touch-up (footprint -6 B)
+  // + 44 for the ticket 04 repair round (`batch` also for an identifier: footprint +77 B)
+  // + 120 for the ticket 04 repair round 2 (bib refusal reasons in the import_works description: footprint +210 B)
+  model.contextWindow = 45_697;
   model.maxTokens = 1024;
   try {
     script = [

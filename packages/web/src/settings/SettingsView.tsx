@@ -823,6 +823,14 @@ export function SettingsView(_props: { paneId?: number }) {
   const P = usePreferences();
   const { settings, unreachable } = P;
   const [group, setGroup] = useState<SettingsGroup>("appearance");
+  // Sent here to one group (a card in the Copilot panel pointing at its file permission): take it once, then clear.
+  const ws = useWorkspace();
+  const { pendingSettingsGroup, clearPendingSettingsGroup } = ws;
+  useEffect(() => {
+    if (!pendingSettingsGroup) return;
+    setGroup(pendingSettingsGroup);
+    clearPendingSettingsGroup?.();
+  }, [pendingSettingsGroup, clearPendingSettingsGroup]);
   const body = useRef<HTMLDivElement>(null);
   const host = useHostInfo();
   const groups = host?.mode === "desktop" ? SETTINGS_GROUPS : BROWSER_GROUPS;

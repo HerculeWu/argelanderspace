@@ -126,6 +126,8 @@ export interface CopilotModel {
   capabilitiesKnown: boolean;
   defaultThinking: ThinkingLevel | null;
   defaultThinkingValid: boolean;
+  /** Added by the service when it lists models: false when a new Copilot conversation on this model cannot hold the instruction and tool schemas and still leave the reserve for a following round (it would be refused for capacity once it needs one; the first message may already be). Absent: not known, taken as fitting. */
+  fits?: boolean;
 }
 export type ProviderLoginStatus =
   | "running"

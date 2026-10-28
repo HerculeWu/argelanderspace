@@ -171,13 +171,14 @@ workflows, plus one self-contained skill that finds new papers on NASA ADS:
 | `argelander-query-paper-library` | Ranks the whole library against a research question (`note` is the primary signal), shows a shortlist, hands picks to read-paper, synthesizes with work ids + deep links |
 | `argelander-find-papers` | Standalone, read-only: searches NASA ADS for seed papers, expands with `similar` / `useful`, returns a ranked list. Uses its own script and `~/.ads/dev_key`, not the CLI — a separate copy from the token saved in the workbench |
 | `argelander-argument-graph` | Reads one ingested paper and writes its argument graph (Toulmin arguments, Native/End arguments, edges, sources) into the workbench with `argument put`; asks before replacing an existing graph and reports End arguments, main chains and audit findings |
+| `argelander-project-intake` | Moves a half-finished project into a Project by interview: ADS libraries, Zotero/.bib, loose PDFs, servers, Overleaf or local manuscripts and a TODO file become Works, PDFs, Plans and Tasks through the Copilot's business tools; progress lives in `argelanderspace-intake.md`. An external agent uses its read-only preparation mode and hands the writing to the Copilot |
 
 Install by symlinking into pi's skills directory (`~/.pi/agent/skills/`
 globally, or `.pi/skills/` in a project):
 
 ```bash
 mkdir -p ~/.pi/agent/skills
-for s in argelander-paper-ingest argelander-read-paper argelander-query-paper-library argelander-find-papers argelander-argument-graph; do
+for s in argelander-paper-ingest argelander-read-paper argelander-query-paper-library argelander-find-papers argelander-argument-graph argelander-project-intake; do
   ln -sfn "$PWD/skills/$s" ~/.pi/agent/skills/$s
 done
 ```

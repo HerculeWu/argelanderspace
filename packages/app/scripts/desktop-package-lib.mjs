@@ -220,16 +220,18 @@ export function tutorialCacheEntries(root, list) {
 }
 
 /**
- * The cpSync filter for packages/app/dist → sidecar/app/dist: everything but dist/tutorial (the npm build's copy of
- * the sample, ticket 16). The desktop package carries the sample once, at the resource directory's tutorial/, which is
- * where bundledTutorialDir looks in the packaged layout; a second copy under dist/ would only be dead weight.
+ * The cpSync filter for packages/app/dist → sidecar/app/dist: everything but dist/tutorial and dist/skills (the npm
+ * build's copies of the sample, ticket 16, and of the skills, project-intake ticket 12). The desktop package carries
+ * each once, at the resource directory's tutorial/ and skills/, which is where bundledTutorialDir and bundledSkillsDir
+ * look in the packaged layout; a second copy under dist/ would only be dead weight.
  */
 export function sidecarAppDistFilter(distRoot) {
   const slash = (p) => p.replaceAll("\\", "/");
-  const skip = `${slash(distRoot).replace(/\/+$/, "")}/${TUTORIAL_RESOURCE_DIR}`;
+  const root = slash(distRoot).replace(/\/+$/, "");
+  const skips = [TUTORIAL_RESOURCE_DIR, "skills"].map((d) => `${root}/${d}`);
   return (src) => {
     const p = slash(src);
-    return p !== skip && !p.startsWith(`${skip}/`);
+    return !skips.some((skip) => p === skip || p.startsWith(`${skip}/`));
   };
 }
 

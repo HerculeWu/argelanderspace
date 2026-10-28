@@ -33,6 +33,7 @@ import { dirname } from "node:path";
 import {
   type ArgumentGraphMergeNote,
   type LibraryRef,
+  type ManualBibcodeReason,
   WRITER_JOURNAL_MACROS,
 } from "@argelanderspace/contracts";
 import {
@@ -64,6 +65,7 @@ import {
   normDoi,
   type Work,
   type WorkFold,
+  workToDict,
 } from "./store.js";
 
 // --------------------------------------------------------------------------- //
@@ -86,6 +88,15 @@ export interface ManualAddOutcome {
   bridged?: string[];
   /** What the merge did with an absorbed Work's argument graph (only when one had a graph; ticket 06). */
   argumentGraphMerges?: ArgumentGraphMergeNote[];
+  /** Batch bibcode import only: the entry's bibcode. */
+  bibcode?: string;
+  /**
+   * Why the entry is not a plain create/exists (see `ManualBibcodeReasonSchema`): the batch bibcode import's reasons,
+   * and, in `bib` text with `bridge: "reject"`, `merge_refused` (with `works`) and `batch_refused`.
+   */
+  reason?: ManualBibcodeReason;
+  /** `merge_refused`: the stored Works the entry would have merged. */
+  works?: string[];
 }
 
 /**
@@ -323,6 +334,209 @@ export async function addManualBibcode(
 }
 
 // --------------------------------------------------------------------------- //
+// bibcodes mode (a batch of ADS picks; project intake ticket 03)
+// --------------------------------------------------------------------------- //
+
+/** How many bibcodes one ADS export request asks for (a 200-entry batch is two requests). */
+export const BIBCODE_EXPORT_CHUNK = 100;
+
+/**
+ * Add a batch of ADS bibcodes. One outcome per input bibcode, in input order; a bibcode is never lost or merged
+ * into another's report.
+ *
+ * - Fail-fast like the single mode: ADS must answer for the entry (no stubs). The export is batched
+ *   ({@link BIBCODE_EXPORT_CHUNK} per request); a request that fails fails exactly its own bibcodes
+ *   (`ads_unavailable`), a record ADS does not return is `not_found`. A bibcode the library already holds is
+ *   `exists` without asking ADS.
+ * - Entries are applied in order, each against the store as the earlier ones left it, and saved once at the end
+ *   (partial success). Unlike the single mode there is no per-entry resolution chain (N×3 requests for N entries is
+ *   not acceptable): the export supplies the bibliography, the next build resolves the rest, as for pasted BibTeX.
+ * - An entry whose record matches two or more Works (stored, or created earlier in this batch) would fold them into
+ *   one: it is refused on its own (`merge_refused`, `works` names them), with nothing of it written. The batch never
+ *   folds, whatever `bridge` the caller uses.
+ * - The same bibcode twice mirrors its first occurrence (`repeated`). Two different bibcodes that are one paper
+ *   resolve to one Work: the later is `exists` with `same_paper_as_earlier`; blank fields are filled as always and
+ *   its own bibcode is not recorded (a Work holds one).
+ * No arXiv PDF job is queued here (the caller does not either).
+ */
+export async function addManualBibcodes(
+  paths: LibraryPaths,
+  sources: MetadataSources,
+  bibcodes: readonly string[]
+): Promise<ManualAddOutcome[]> {
+  const list = bibcodes.map((b) => b.trim());
+  const store = LibraryStore.load(paths);
+  const used = usedKeys(store);
+  const outcomes: (ManualAddOutcome | undefined)[] = list.map(() => undefined);
+  /** index → the Work this entry resolved to (the ref is taken at the end, after later entries filled blanks) */
+  const workAt = new Map<number, Work>();
+  const firstAt = new Map<string, number>();
+  const todo: number[] = [];
+  list.forEach((bc, i) => {
+    if (firstAt.has(bc)) return; // mirrored below
+    firstAt.set(bc, i);
+    const held = store.works.find((w) => w.bibcode === bc);
+    if (held !== undefined) {
+      workAt.set(i, held);
+      outcomes[i] = {
+        status: "exists",
+        key: held.cite_key ?? undefined,
+        changed: false,
+        bibcode: bc,
+      };
+    } else todo.push(i);
+  });
+
+  // ---- ADS: one export request per chunk ----
+  const records = new Map<string, { rec: BibRecord; extras: AdsBibFields | null }>();
+  for (let at = 0; at < todo.length; at += BIBCODE_EXPORT_CHUNK) {
+    const chunk = todo.slice(at, at + BIBCODE_EXPORT_CHUNK);
+    const text = await sources.ads.exportBibtex(chunk.map((i) => list[i] as string));
+    if (!text) {
+      for (const i of chunk)
+        outcomes[i] = {
+          ...errorOutcome(
+            "ADS BibTeX export unavailable (offline, missing or rejected token, rate limit, timeout or request failed); nothing was kept for it, try again later",
+            list[i]
+          ),
+          bibcode: list[i],
+          reason: "ads_unavailable",
+        };
+      continue;
+    }
+    let recs: BibRecord[] = [];
+    let extras = new Map<string, AdsBibFields>();
+    try {
+      recs = parseBibtexText(text);
+      extras = parseAdsBibtexFields(text);
+    } catch {
+      recs = [];
+    }
+    for (const rec of recs) records.set(rec.key, { rec, extras: extras.get(rec.key) ?? null });
+  }
+
+  // ---- apply in input order ----
+  const created: Work[] = [];
+  const touched: Work[] = [];
+  /** index → whether this entry itself changed the stored Work it matched (only matched entries) */
+  const entryChanged = new Map<number, boolean>();
+  for (const i of todo) {
+    if (outcomes[i] !== undefined) continue; // ads_unavailable
+    const bc = list[i] as string;
+    const hit = records.get(bc);
+    if (hit === undefined) {
+      outcomes[i] = {
+        ...errorOutcome(`bibcode ${bc} not found on ADS`, bc),
+        bibcode: bc,
+        reason: "not_found",
+      };
+      continue;
+    }
+    const w = workFromBib(hit.rec, hit.extras, "manual");
+    w.bibcode = bc;
+    w.bib_fields = "ads";
+    recanonicalize(w);
+    const matches = store.matchesAll(w);
+    if (matches.length > 1) {
+      const ids = matches.map((m) => m.id);
+      const fromBatch = matches.some((m) => created.includes(m));
+      outcomes[i] = {
+        ...errorOutcome(
+          `not imported: this record would merge ${ids.length} ${fromBatch ? "works (one created earlier in this batch)" : "existing works"} into one (${ids.join(", ")}); merge or fix them in the Library page`,
+          bc
+        ),
+        bibcode: bc,
+        reason: "merge_refused",
+        works: ids,
+      };
+      continue;
+    }
+    const matched = matches[0];
+    if (matched === undefined) {
+      const collision = idCollision(store, w);
+      if (collision) {
+        outcomes[i] = { ...collision, key: bc, bibcode: bc, reason: "id_collision" };
+        continue;
+      }
+    }
+    const before = matched !== undefined ? JSON.stringify(workToDict(matched)) : null;
+    const saved = store.upsert(w);
+    if (!saved.cite_key) saved.cite_key = assignCiteKey(saved, used);
+    else used.add(saved.cite_key);
+    saved.acquisition = planToDict(planFor(saved));
+    const samePaper = matched !== undefined && created.includes(matched);
+    if (matched === undefined) created.push(saved);
+    if (!touched.includes(saved)) touched.push(saved);
+    workAt.set(i, saved);
+    // An entry that hit a Work created earlier in this batch is not an update of a stored Work; one that hit a
+    // stored Work is an update only if it changed a field of it itself.
+    if (before !== null)
+      entryChanged.set(i, !samePaper && before !== JSON.stringify(workToDict(saved)));
+    outcomes[i] = {
+      status: matched !== undefined ? "exists" : "created",
+      key: saved.cite_key ?? bc,
+      bibcode: bc,
+      ...(samePaper ? { reason: "same_paper_as_earlier" as const } : {}),
+    };
+  }
+
+  // ---- one narrow save ----
+  if (touched.length > 0) {
+    let changedIds: Set<string>;
+    try {
+      changedIds = saveWorksNarrow(paths, {
+        created,
+        updated: touched.filter((t) => !created.includes(t)),
+        removeIds: [],
+      });
+    } catch (error) {
+      throw followFoldsAfterFailedSave(paths, store, error);
+    }
+    for (const [i, saved] of workAt) {
+      const o = outcomes[i];
+      if (o !== undefined && o.changed === undefined)
+        o.changed = changedIds.has(saved.id) && (entryChanged.get(i) ?? true);
+    }
+  }
+  // Nothing created: the graph cache is not touched (it would only be loaded or rebuilt for nothing).
+  if (created.length > 0) {
+    try {
+      let graph = loadCurrentGraph(paths) ?? healGraph(paths);
+      for (const w of created) graph = mergeWorkIntoGraph(graph, store, w);
+      mkdirSync(dirname(paths.graphJson), { recursive: true });
+      writeFileSync(paths.graphJson, JSON.stringify(graph), "utf8");
+    } catch {
+      // the next library build/refresh converges the graph
+    }
+  }
+
+  // ---- refs from the final state; repeats mirror their first occurrence ----
+  const final: ManualAddOutcome[] = [];
+  list.forEach((bc, i) => {
+    const first = firstAt.get(bc) as number;
+    const base = outcomes[first] as ManualAddOutcome;
+    const w = workAt.get(first);
+    if (first === i) {
+      final.push(w === undefined ? base : { ...base, ref: workToRef(w) });
+      return;
+    }
+    final.push(
+      base.status === "error"
+        ? { ...base }
+        : {
+            status: "exists",
+            key: base.key,
+            bibcode: bc,
+            changed: false,
+            reason: "repeated",
+            ...(w !== undefined ? { ref: workToRef(w) } : {}),
+          }
+    );
+  });
+  return final;
+}
+
+// --------------------------------------------------------------------------- //
 // bib mode (raw BibTeX text, one or many entries, pure-local)
 // --------------------------------------------------------------------------- //
 
@@ -416,6 +630,8 @@ export async function addManualBibText(
           key
         ),
         bridged: ids,
+        reason: "merge_refused",
+        works: ids,
       });
       refusedBridge = true;
       continue;
@@ -446,13 +662,18 @@ export async function addManualBibText(
     outcomes.push(outcome);
   }
   if (refusedBridge) {
+    // The entries that would merge keep `merge_refused` + `works`; every other entry that was fine on its own is
+    // `batch_refused` (structured, so a caller never has to tell the two apart by the error text).
     return outcomes.map((o) =>
       o.status === "error"
         ? o
-        : errorOutcome(
-            "not imported: another entry of this batch would merge works, so the whole batch was refused",
-            o.key
-          )
+        : {
+            ...errorOutcome(
+              "not imported: another entry of this batch would merge works, so the whole batch was refused",
+              o.key
+            ),
+            reason: "batch_refused" as const,
+          }
     );
   }
   if (touched.length > 0 || removeIds.length > 0) {

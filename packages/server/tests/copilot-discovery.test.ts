@@ -547,6 +547,26 @@ describe("save_candidate", () => {
     expect(disk().works.filter((w: { bibcode?: string }) => w.bibcode === CB)).toHaveLength(0);
   });
 
+  test("a candidate string with whitespace is still the single import, never a batch", async () => {
+    const odd = `${CA} ${CB}`;
+    const shown = discoveryPage();
+    shown.graph?.nodes.push({ ...paper(odd), abstract: undefined } as never);
+    let payload: Record<string, unknown> = {};
+    script = [
+      () => save(odd),
+      (ctx) => {
+        payload = lastResult(ctx);
+        return { text: "done" };
+      },
+    ];
+    await run(exploring(shown));
+    // the single path asks ADS for the one string as given; a batch would have split it into two codes
+    expect(exportCalls).toEqual([[odd]]);
+    expect(payload).toMatchObject({ ok: false, status: "error", candidate: odd });
+    for (const key of ["entries", "requested", "reasons", "batch"])
+      expect(payload).not.toHaveProperty(key);
+  });
+
   test("a bibcode the open exploration does not show is rejected: nothing is written, announced or exported", async () => {
     const before = bytes();
     let payload: Record<string, unknown> = {};
@@ -821,7 +841,9 @@ describe("save_candidate", () => {
     ];
     await run(exploring());
     expect(outcomes[0]).toContain("Validation failed");
-    expect(outcomes[1]).toContain("Validation failed");
+    // `path` is a parameter of attach_local_pdf (project intake ticket 01): it passes the SDK's check and the shared
+    // schema refuses it for save_candidate
+    expect(JSON.parse(outcomes[1] ?? "{}")).toMatchObject({ ok: false, status: "unsupported" });
     // a save without a bibcode passes the SDK schema and is refused by the shared one
     expect(outcomes[2]).toBe("unsupported");
     expect(bytes()).toBe(before);

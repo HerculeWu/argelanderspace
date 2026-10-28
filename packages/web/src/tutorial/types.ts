@@ -112,6 +112,8 @@ export interface StepDefinition {
   readonly floatsOver?: FloatableDialog;
   readonly sources?: readonly L2Source[];
   readonly requires?: Requirement;
+  /** The copy key (under `tutorial.steps.<id>`) of the body when it is not `body`: the chapter 9 steps without a replay. */
+  readonly bodyKey?: string;
   /**
    * A registered view action the anchored card offers as "take me there" (step 8.3: the plan page the operation card
    * wrote to). Navigation only, like a requirement's: it records nothing and is never a gate.

@@ -7,7 +7,8 @@
 // not match its own list, see ticket 16's comments). Ticket 17 adds ② the preset annotations survive an `ensure` (no
 // archive) and target blocks the IR has, ③ the argument graph reads and its audit has exactly the one deliberate
 // noPathToEnd finding, ④ the Plan and the manuscript read, ⑤ the preset Copilot conversation reads back through
-// `readCopilotHistory` and the host's snapshot with three questions, two operation cards and no confirmation.
+// `readCopilotHistory` and the host's snapshot for both conversations (chapter 8's: three questions, two operation cards, no confirmation; chapter 9's move-in conversation:
+// five questions, only decided cards, one declined command).
 // A red test here means the sample has to be regenerated with packages/app/scripts/tutorial-sample.mjs (or the
 // product changed a format the sample relies on; for ⑤ the conversation is re-run by hand, spec §7).
 import {
@@ -188,27 +189,35 @@ describe("the tutorial sample loads", () => {
     for (const work of store.works) expect(sources, work.id).toContain(work.cite_key);
   });
 
-  it("⑤ the preset Copilot conversation reads back: three questions, two operation cards, no confirmation", async () => {
+  it("⑤ the preset Copilot conversations read back: chapter 8's has three questions, two operation cards, no confirmation; chapter 9's move-in conversation has five questions and only decided cards", async () => {
     const records = join(dataDir, "copilot", "conversations");
     expect(
       existsSync(records),
-      "tutorial-sample has no preset Copilot conversation: run it by hand (spec §7) and copy its two files back"
+      "tutorial-sample has no preset Copilot conversations: run them by hand (spec §7) and copy their files back"
     ).toBe(true);
-    const names = readdirSync(records);
-    expect(names).toHaveLength(1);
-    const record = JSON.parse(readFileSync(join(records, names[0] as string), "utf8"));
-    const session = join(dataDir, "copilot", "sessions", `${record.sessionId}.jsonl`);
-    expect(readdirSync(join(dataDir, "copilot", "sessions"))).toEqual([
-      `${record.sessionId}.jsonl`,
-    ]);
-    expect(readCopilotHistory(session, record.sessionId).length).toBeGreaterThan(0);
+    const names = readdirSync(records).sort();
+    expect(names).toHaveLength(2);
+    const parsed = names.map((n) => JSON.parse(readFileSync(join(records, n), "utf8")));
+    const chapter8 = parsed.find((r) => r.id === "85b4af77-56d0-4684-8a1c-b8926dec17d0");
+    const intake = parsed.find((r) => r.id === "6f4116e9-be39-4f2e-891e-6e4c27e25e19");
+    expect(chapter8 && intake, `records: ${parsed.map((r) => r.id)}`).toBeTruthy();
+    // one session per record, nothing else
+    expect(readdirSync(join(dataDir, "copilot", "sessions")).sort()).toEqual(
+      [chapter8.sessionId, intake.sessionId].map((id: string) => `${id}.jsonl`).sort()
+    );
+    for (const r of [chapter8, intake]) {
+      const session = join(dataDir, "copilot", "sessions", `${r.sessionId}.jsonl`);
+      expect(readCopilotHistory(session, r.sessionId).length).toBeGreaterThan(0);
+    }
+    // chapter 8's conversation stays the most recently updated: its 8.1 relies on being selected by default
+    expect(Date.parse(chapter8.updatedAt)).toBeGreaterThan(Date.parse(intake.updatedAt));
     const host = new CopilotHost(
       dataDir,
       new ProviderSettings({ configDir: join(root, "provider-config") }),
       () => {}
     );
     try {
-      const snapshot = await host.snapshot(record.id);
+      const snapshot = await host.snapshot(chapter8.id);
       const questions = snapshot.messages.filter((m) => m.role === "user" && m.kind !== "resume");
       expect(questions).toHaveLength(3);
       // the first question was asked in the Jerabkova reader and carries that page
@@ -217,6 +226,22 @@ describe("the tutorial sample loads", () => {
       expect(operations).toHaveLength(2);
       expect(operations.some((o) => o.fileTool !== undefined)).toBe(false);
       expect(snapshot.confirmations).toEqual([]);
+
+      // the move-in conversation (recorded with file and command permission on "ask"): five user turns; every tool
+      // card is decided and none failed or was refused (the product's status "ok" or "declined" are all there are);
+      // the one declined card is the command the user refused; the file tools and the library calls are the work
+      const move = await host.snapshot(intake.id);
+      const turns = move.messages.filter((m) => m.role === "user" && m.kind !== "resume");
+      expect(turns).toHaveLength(5);
+      expect(turns[0]?.text).toBe("开始迁入已有项目");
+      expect(move.confirmations).toEqual([]);
+      const cards = move.messages.flatMap((m) => m.operations ?? []);
+      expect(cards.filter((c) => c.status !== "ok" && c.status !== "declined")).toEqual([]);
+      const declined = cards.filter((c) => c.status === "declined");
+      expect(declined).toHaveLength(1);
+      expect(declined[0]?.fileTool?.kind).toBe("command");
+      expect(cards.some((c) => c.fileTool?.kind === "write")).toBe(true);
+      expect(cards.some((c) => c.tool === "library")).toBe(true);
     } finally {
       await host.close();
     }

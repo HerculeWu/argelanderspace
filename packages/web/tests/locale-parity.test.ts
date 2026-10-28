@@ -111,6 +111,7 @@ const SAME_IN_BOTH: Record<string, string> = {
   "tutorial.steps.prepare.agent.skill": "skill names, code tokens",
   "tutorial.steps.prepare.agent.promptBrowser": "URL",
   "tutorial.steps.copilot.agent.skill": "skill names, code tokens",
+  "tutorial.steps.intake.agent.skill": "skill names, code tokens",
   // Toulmin-model terms the domain language keeps in English (CONTEXT.md)
   "argument.canvas.kindNative": "domain term Native",
   "argument.canvas.kindEnd": "domain term End",

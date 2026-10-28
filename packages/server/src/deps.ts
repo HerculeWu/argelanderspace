@@ -21,6 +21,8 @@ import type {
 import {
   AdsClient,
   AdsDiscoveryClient,
+  AdsLibrariesClient,
+  type AdsLibrariesSource,
   type AppConfig,
   CrossrefClient,
   type ExternalObserver,
@@ -165,6 +167,14 @@ export async function realDiscoverySource(
     cacheDir: join(paths.cacheDir, "ads-discovery"),
     ...fetchOf(wiring, "ads"),
   });
+}
+
+/**
+ * The ADS libraries source (project intake ticket 02): read-only GETs against the biblib service, with the token read
+ * from the credential store at each use. No cache, nothing written.
+ */
+export async function realAdsLibraries(wiring: AdapterWiring = {}): Promise<AdsLibrariesSource> {
+  return new AdsLibrariesClient({ ...(await adsTokenOf(wiring)), ...fetchOf(wiring, "ads") });
 }
 
 /** The ingest pipeline writing under `<dataDir>/output` (Stage 5 tex pipeline). */

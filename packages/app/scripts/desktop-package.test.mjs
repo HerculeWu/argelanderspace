@@ -236,6 +236,21 @@ test("the sidecar's app dist leaves out dist/tutorial: the package carries the s
     assert.equal(keep(p), false, p);
 });
 
+test("the sidecar's app dist leaves out dist/skills too: the package carries the skills once, at skills/ (project-intake ticket 12)", () => {
+  const dist = "/repo/packages/app/dist";
+  const keep = sidecarAppDistFilter(dist);
+  for (const p of [`${dist}/skills-notes.txt`, `${dist}/web/skills`, `${dist}/web/skills/x.js`])
+    assert.equal(keep(p), true, p);
+  for (const p of [
+    `${dist}/skills`,
+    `${dist}/skills/README.md`,
+    `${dist}/skills/argelander-project-intake/SKILL.md`,
+  ])
+    assert.equal(keep(p), false, p);
+  // Windows separators are folded the same way.
+  assert.equal(sidecarAppDistFilter("C:\\r\\dist")("C:\\r\\dist\\skills\\README.md"), false);
+});
+
 test("SPDX expressions: OR takes an allowed branch, AND needs both, WITH and unknown ids are not allowed", () => {
   const ok = (e) => evalLicense(e, RUNTIME_LICENSE_ALLOWED);
   assert.equal(ok("MIT"), true);

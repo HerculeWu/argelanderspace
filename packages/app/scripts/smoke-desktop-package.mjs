@@ -406,6 +406,12 @@ if (existsSync(nodeExe) && existsSync(binJs)) {
 } else
   check(false, "the unpacked sidecar runs with the package's Node", "node or bin.js is missing");
 
+// ---- the skills are in the package once (project-intake ticket 12) ------------------------------------------------- //
+check(
+  existsSync(join(resources, "skills/README.md")) && !existsSync(join(sidecar, "app/dist/skills")),
+  "the skills are in the package once: <resources>/skills, no sidecar/app/dist/skills"
+);
+
 // ---- the tutorial sample (in-app-tutorial ticket 27) --------------------------------------------------------------- //
 {
   const tutorialDir = join(resources, TUTORIAL_RESOURCE_DIR);

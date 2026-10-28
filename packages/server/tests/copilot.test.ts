@@ -418,8 +418,17 @@ test("request output reservation permits a model whose maximum output equals its
   if (!model) return;
   const original = { contextWindow: model.contextWindow, maxTokens: model.maxTokens };
   // 43_500 + 1_710 for the shelf tool's schema (shelf ticket 07, footprint +2991 B; see WINDOW_BIG_DOC in copilot-batching.test.ts)
-  model.contextWindow = 45_210;
-  model.maxTokens = 45_210;
+  // + 556 for attach_local_pdf (project intake ticket 01: footprint +973 B, see WINDOW_BIG_DOC)
+  // + 839 for list_ads_libraries / read_ads_library (project intake ticket 02: footprint +1469 B, see WINDOW_BIG_DOC)
+  // + 236 for the ticket 02 repair round (footprint +412 B)
+  // + 63 for the ticket 02 second repair round (footprint +110 B)
+  // + 375 for the batch bibcode import (project intake ticket 03: footprint +657 B)
+  // + 317 for the ticket 03 fix round (footprint +555 B)
+  // - 3 for the ticket 03 closing touch-up (footprint -6 B)
+  // + 44 for the ticket 04 repair round (`batch` also for an identifier: footprint +77 B)
+  // + 120 for the ticket 04 repair round 2 (bib refusal reasons in the import_works description: footprint +210 B)
+  model.contextWindow = 47_757;
+  model.maxTokens = 47_757;
   try {
     const snapshot = await host.create({ provider: "openai", model: model.id, thinking: null });
     const context = page();

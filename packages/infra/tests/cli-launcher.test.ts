@@ -686,7 +686,36 @@ describe("the bundled skills", () => {
     expect(bundledSkillsDir(repoBin)).toBe(join(__dirname, "..", "..", "..", "skills"));
   });
 
-  test("none where there is no such folder (an npm install, say)", () => {
+  test("an npm install finds dist/skills beside the entry (project-intake ticket 12)", () => {
+    const home = tempHome();
+    const dist = join(home, "lib", "node_modules", "argelanderspace", "dist");
+    mkdirSync(join(dist, "skills"), { recursive: true });
+    writeFileSync(join(dist, "skills", "README.md"), "# skills\n");
+    expect(bundledSkillsDir(join(dist, "bin.js"))).toBe(join(dist, "skills"));
+    // A local install in a project that has its own skills/ gets the package's, never the project's.
+    const project = tempHome();
+    const local = join(project, "node_modules", "argelanderspace", "dist");
+    mkdirSync(join(local, "skills"), { recursive: true });
+    writeFileSync(join(local, "skills", "README.md"), "# the package's\n");
+    mkdirSync(join(project, "skills"));
+    writeFileSync(join(project, "skills", "README.md"), "# the project's own\n");
+    expect(bundledSkillsDir(join(local, "bin.js"))).toBe(join(local, "skills"));
+  });
+
+  test("dist/skills counts only with its README and only beside a dist/ entry", () => {
+    const home = tempHome();
+    const dist = join(home, "node_modules", "argelanderspace", "dist");
+    mkdirSync(join(dist, "skills"), { recursive: true });
+    expect(bundledSkillsDir(join(dist, "bin.js"))).toBeNull();
+    writeFileSync(join(dist, "skills", "README.md"), "# skills\n");
+    expect(bundledSkillsDir(join(dist, "bin.js"))).toBe(join(dist, "skills"));
+    // an entry not in a dist folder does not take a skills/ beside it
+    mkdirSync(join(home, "plain", "skills"), { recursive: true });
+    writeFileSync(join(home, "plain", "skills", "README.md"), "# x\n");
+    expect(bundledSkillsDir(join(home, "plain", "bin.js"))).toBeNull();
+  });
+
+  test("none where there is no such folder (an npm install without one, say)", () => {
     const home = tempHome();
     mkdirSync(join(home, "lib", "node_modules", "argelanderspace", "dist"), { recursive: true });
     expect(

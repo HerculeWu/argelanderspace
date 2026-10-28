@@ -78,8 +78,18 @@ export const WorkspaceViewActionSchema = z.discriminatedUnion("action", [
     ),
   /** Opens the Copilot panel and its provider settings dialog. Only opens it: the user enters any secret. */
   z.object({ action: z.literal("open_copilot_settings") }).strict(),
-  /** The toolbar's Copilot toggle: show or collapse the panel (the conversation keeps running either way). */
-  z.object({ action: z.literal("open_copilot") }).strict(),
+  /**
+   * The toolbar's Copilot toggle: show or collapse the panel (the conversation keeps running either way). With
+   * `conversationId` it also shows that saved conversation (the tutorial's replay of a preset one, project-intake
+   * ticket 07); an id the panel does not list changes nothing but the panel opening. Navigation only: the model's
+   * `workspace` tool does not take it (it would pull the user away from the conversation they are in).
+   */
+  z
+    .object({
+      action: z.literal("open_copilot"),
+      conversationId: z.string().min(1).max(200).optional(),
+    })
+    .strict(),
   z.object({ action: z.literal("close_copilot") }).strict(),
   /**
    * Show a library Doc in the Reader through the Shell's own openDoc: the pane that already shows a Doc,

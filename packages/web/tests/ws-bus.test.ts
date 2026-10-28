@@ -67,6 +67,7 @@ const FRAMES: Record<WsServerMessage["type"], WsServerMessage> = {
   "text-doc.published": { type: "text-doc.published", doc_id: "d1" } as unknown as WsServerMessage,
   "mail.changed": { type: "mail.changed" } as unknown as WsServerMessage,
   "settings.changed": { type: "settings.changed", cause: "external", at: "2026-10-14T00:00:00Z" },
+  "intake.changed": { type: "intake.changed", at: "2026-10-27T00:00:00Z" },
   "shelf.changed": { type: "shelf.changed", cause: "replace", entry_id: "e1", rev: 2, removed: [{ entry_id: "e1", rev: 1 }], at: "2026-10-23T00:00:00Z" },
   "host.switch-confirmation": { type: "host.switch-confirmation", id: "s1" } as unknown as WsServerMessage,
   "host.tutorial-result": { type: "host.tutorial-result", reason: "copy_failed", path: { path: "/t", display: "/t" } },

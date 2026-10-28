@@ -403,6 +403,78 @@ const MAX_DIFF_FILE = 4_000_000;
 const lineCount = (text: string): number =>
   text === "" ? 0 : text.split("\n").length - (text.endsWith("\n") ? 1 : 0);
 
+/** Pi's `normalizeToLF`: every line ending LF. Applied to the model's edits. */
+const toLF = (text: string): string => text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+/** The file as Pi matches it: byte-order mark off (the file only; an edit's own U+FEFF stays), LF endings. */
+const toPiContent = (text: string): string =>
+  toLF(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
+/** Pi 1.0.0 `normalizeForFuzzyMatch` (edit-diff.js), copied verbatim: Pi counts duplicates in this space. */
+const fuzzyNormalize = (text: string): string =>
+  text
+    .normalize("NFKC")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, "-")
+    .replace(/[\u00A0\u2002-\u200A\u202F\u205F\u3000]/g, " ");
+
+/**
+ * What Pi's edit tool is certain to refuse, found before anyone is asked. The rules are those of
+ * `applyEditsToNormalizedContent` in @earendil-works/pi-coding-agent 1.0.0 (dist/core/tools/edit-diff.js, not exported),
+ * in Pi's order: an empty oldText; then edit by edit, an oldText found nowhere exactly ends the check (Pi may still match
+ * it loosely or report it, so it is left to Pi and the card); one found exactly whose occurrences, counted as Pi counts
+ * them (in the fuzzy-normalized text, `countOccurrences`), number more than one; then, with every oldText found exactly,
+ * overlapping regions and replacements that change nothing. The sentences are Pi's own, so the model corrects itself as
+ * it would from Pi. Returns Pi's message, or null.
+ */
+export function editPrecheck(
+  content: string,
+  edits: { oldText: string; newText: string }[],
+  path: string
+): string | null {
+  if (edits.length === 0) return null;
+  const text = toPiContent(content);
+  const items = edits.map((e) => ({ oldText: toLF(e.oldText), newText: toLF(e.newText) }));
+  const total = items.length;
+  for (let i = 0; i < total; i++)
+    if (items[i]?.oldText.length === 0)
+      return total === 1
+        ? `oldText must not be empty in ${path}.`
+        : `edits[${i}].oldText must not be empty in ${path}.`;
+  const fuzzyText = fuzzyNormalize(text);
+  const found: { editIndex: number; at: number; length: number; newText: string }[] = [];
+  for (let i = 0; i < total; i++) {
+    const item = items[i] as { oldText: string; newText: string };
+    const at = text.indexOf(item.oldText);
+    if (at < 0) return null;
+    const occurrences = fuzzyText.split(fuzzyNormalize(item.oldText)).length - 1;
+    if (occurrences > 1)
+      return total === 1
+        ? `Found ${occurrences} occurrences of the text in ${path}. The text must be unique. Please provide more context to make it unique.`
+        : `Found ${occurrences} occurrences of edits[${i}] in ${path}. Each oldText must be unique. Please provide more context to make it unique.`;
+    found.push({ editIndex: i, at, length: item.oldText.length, newText: item.newText });
+  }
+  found.sort((a, b) => a.at - b.at);
+  for (let i = 1; i < found.length; i++) {
+    const previous = found[i - 1] as (typeof found)[number];
+    const current = found[i] as (typeof found)[number];
+    if (previous.at + previous.length > current.at)
+      return `edits[${previous.editIndex}] and edits[${current.editIndex}] overlap in ${path}. Merge them into one edit or target disjoint regions.`;
+  }
+  let next = text;
+  for (let i = found.length - 1; i >= 0; i--) {
+    const f = found[i] as (typeof found)[number];
+    next = next.slice(0, f.at) + f.newText + next.slice(f.at + f.length);
+  }
+  if (next === text)
+    return total === 1
+      ? `No changes made to ${path}. The replacement produced identical content. This might indicate an issue with special characters or the text not existing as expected.`
+      : `No changes made to ${path}. The replacements produced identical content.`;
+  return null;
+}
+
 /** What a card can show of a change: the change, or why it is refused (nothing is ever shown cut). */
 export type ChangeAccount = { change: FileToolChange } | { refusal: string };
 
@@ -426,14 +498,16 @@ export function editChange(
     return {
       refusal: `this edit changes ${chars} characters on ${changedLines} lines, more than the ${LIMIT.changeTotal} characters / ${LIMIT.changeLines} lines the confirmation card can show whole, so nothing was changed. Split it into smaller edits`,
     };
+  // Lines are located in the text Pi matches against (BOM off, LF endings), so a CRLF or BOM file shows the right lines.
+  content = content === null ? null : toPiContent(content);
   const lines = content === null ? [] : content.split("\n");
   const diff: FileToolDiffLine[] = [];
   let added = 0;
   let removed = 0;
   for (const edit of edits) {
-    const at = content === null ? -1 : content.indexOf(edit.oldText);
-    const oldLines = edit.oldText.split("\n");
-    const newLines = edit.newText.split("\n");
+    const at = content === null ? -1 : content.indexOf(toLF(edit.oldText));
+    const oldLines = toLF(edit.oldText).split("\n");
+    const newLines = toLF(edit.newText).split("\n");
     const first = at < 0 || content === null ? 0 : content.slice(0, at).split("\n").length; // 1-based line of the first old line
     const last = first + oldLines.length - 1;
     diff.push({
@@ -901,6 +975,12 @@ export function createFileTools(context: FileToolsContext): {
                 content = null;
               }
             }
+            // Pi's certain refusals are answered here, before a card: an approval would only buy the same error.
+            const certain =
+              content === null || context.permission() === "off"
+                ? null
+                : editPrecheck(content, clean, raw);
+            if (certain !== null) return refuse(toolName, toolCallId, "rejected", base, certain);
             account = editChange(content, clean, raw);
           }
           if ("refusal" in account)

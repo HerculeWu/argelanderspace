@@ -376,6 +376,13 @@ input, textarea { font-family: inherit; color: inherit; }
 .import-result-err { font-size: var(--fs-sm); color: oklch(0.70 0.16 25); line-height: 1.45; word-break: break-word; }
 
 .lib-main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
+/* Project intake (ticket 06): the empty Library's entry, centred where the graph would be; the checklist's menu item sits under a rule */
+.lib-empty { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; text-align: center; }
+.lib-empty h2 { margin: 6px 0 0; font: 22px var(--font-serif); font-weight: 400; color: var(--text); }
+.lib-empty p { margin: 0; max-width: 360px; font-size: var(--fs-sm); line-height: 1.6; color: var(--text-dim); }
+.lib-empty .lib-empty-ico { width: 28px; height: 28px; color: var(--text-faint); }
+.lib-empty-action { margin-top: 6px; min-height: var(--control-h); display: flex; justify-content: center; }
+.import-opt-intake { margin-top: 4px; border-top: 1px solid var(--border-soft); border-radius: 0 0 var(--radius-sm) var(--radius-sm); padding-top: 10px; }
 .lib-toolbar { height: 52px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid var(--border-soft); }
 .lib-search { flex: 1; max-width: 360px; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid var(--border); }
 .lib-search svg { color: var(--text-faint); }

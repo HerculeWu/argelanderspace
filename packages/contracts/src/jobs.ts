@@ -22,6 +22,7 @@ import {
   WsCopilotViewActionSchema,
 } from "./copilot.js";
 import { WsHostSwitchConfirmationSchema, WsHostTutorialResultSchema } from "./host-api.js";
+import { WsIntakeChangedSchema } from "./intake.js";
 import { JobKindSchema, JobStatusSchema } from "./job-status.js";
 import { WsMailChangedSchema } from "./mail-events.js";
 import { WsPdfReadingPositionChangedSchema } from "./pdf-doc.js";
@@ -122,6 +123,7 @@ export const WsServerMessageSchema = z.discriminatedUnion("type", [
   WsTextDocPublishedSchema,
   WsMailChangedSchema,
   WsSettingsChangedSchema,
+  WsIntakeChangedSchema,
   WsShelfChangedSchema,
   WsHostSwitchConfirmationSchema,
   WsHostTutorialResultSchema,

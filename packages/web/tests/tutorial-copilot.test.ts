@@ -37,13 +37,13 @@ const shape = (a: TutorialAnchor) => [a.ui, a.key ?? null, a.within ? `${a.withi
 /** The rungs that apply now (a rung with a false condition counts as absent). */
 const rungs = (s: StepDefinition, snap: WorkbenchSnapshot) => s.anchors.filter((a) => !a.when || a.when(snap)).map(shape);
 
-describe("chapter 8 is registered after chapter 7 and before the finish page", () => {
+describe("chapter 8 is registered after chapter 7 and before chapter 9 and the finish page", () => {
   it("its steps, in the order of appendix A", () => {
     expect(COPILOT_CHAPTER.id).toBe("copilot");
     expect(COPILOT_CHAPTER.n).toBe(8);
     expect(COPILOT_CHAPTER.steps.map((s) => s.id)).toEqual(["copilot.open", "copilot.context", "copilot.operations", "copilot.conversations", "copilot.provider", "copilot.agent"]);
     const ids = CHAPTERS.map((c) => c.id);
-    expect(ids.slice(-3)).toEqual(["writer", "copilot", "finish"]);
+    expect(ids.slice(-4)).toEqual(["writer", "copilot", "intake", "finish"]);
   });
   it("has no prerequisite, nothing to type and nothing that needs TeX", () => {
     for (const s of COPILOT_CHAPTER.steps) {
@@ -121,8 +121,8 @@ describe("8.2-8.5: looks at the open panel; a closed panel docks the card with '
       ["provider-settings", null, null],
     ]);
   });
-  it("each requires the panel open (L1, L3 behind it); 'take me there' opens it with the workspace's registered action", () => {
-    for (const id of ["copilot.context", "copilot.operations", "copilot.conversations", "copilot.provider"]) {
+  it("8.4 and 8.5 require only the open panel (L1, L3 behind it); 'take me there' opens it with the workspace's registered action, no conversation id", () => {
+    for (const id of ["copilot.conversations", "copilot.provider"]) {
       const r = step(id).requires!;
       expect(r.where).toBe("copilot");
       expect(r.takeMeThere).toEqual({ action: "open_copilot" });
@@ -130,6 +130,24 @@ describe("8.2-8.5: looks at the open panel; a closed panel docks the card with '
       expect(r.test(panel(false))).toBe(false);
       expect(r.test(noWorkspace({ "copilot-sidebar": {} }))).toBe(true);
       expect(r.test(noWorkspace({ "copilot-sidebar": { hidden: "" } }))).toBe(false);
+    }
+  });
+  it("8.2 and 8.3 require the open panel showing this chapter's conversation (its first question in the page); 'take me there' opens the panel on it; a conversation still loading is not yet 'wrong'", () => {
+    const shown = { [`copilot-message[${Q1}]`]: {} };
+    for (const id of ["copilot.context", "copilot.operations"]) {
+      const r = step(id).requires!;
+      expect(r.where).toBe("copilot");
+      expect(r.takeMeThere).toEqual({ action: "open_copilot", conversationId: SAMPLE_CONVERSATION.id });
+      const withMessage = (open: boolean) => ({ ...panel(open), dom: fakeDom(shown) });
+      expect(r.test(withMessage(true))).toBe(true);
+      expect(r.test(withMessage(false))).toBe(false);
+      // Open but showing another conversation (chapter 9's move-in one, say): not met, so the card offers 'take me there'.
+      expect(r.test(panel(true))).toBe(false);
+      // Open and still reading the conversation (the messages area says so): undecided, so no 'go back' card flashes.
+      expect(r.test({ ...panel(true), dom: fakeDom({ "copilot-messages": { "data-loading": "" } }) })).toBe(true);
+      expect(r.test({ ...panel(false), dom: fakeDom({ "copilot-messages": { "data-loading": "" } }) })).toBe(false);
+      expect(r.test(noWorkspace({ "copilot-sidebar": {}, ...shown }))).toBe(true);
+      expect(r.test(noWorkspace({ "copilot-sidebar": { hidden: "" }, ...shown }))).toBe(false);
     }
     expect(step("copilot.open").requires).toBeUndefined();
     expect(step("copilot.agent").requires).toBeUndefined();
@@ -149,8 +167,8 @@ const card = (steps: Tree, id: string) => {
 };
 
 describe("the agent cards name the skills the repository ships", () => {
-  it("every chapter but the tour ends with an agent card", () => {
-    expect(agentSteps).toEqual(["prepare.agent", "library.agent", "reading.agent", "discovery.agent", "argument.agent", "plan.agent", "writer.agent", "copilot.agent"]);
+  it("every chapter but the tour ends with an agent card (chapter 9 included)", () => {
+    expect(agentSteps).toEqual(["prepare.agent", "library.agent", "reading.agent", "discovery.agent", "argument.agent", "plan.agent", "writer.agent", "copilot.agent", "intake.agent"]);
   });
   for (const locale of ["zh-CN.json", "en.json"]) {
     it(`every argelander-* name on a card is a skill folder of skills/ (${locale})`, () => {
@@ -166,13 +184,13 @@ describe("the agent cards name the skills the repository ships", () => {
         for (const m of prompt.matchAll(/argelander-[a-z-]+/g)) expect(skill, id).toContain(m[0]);
       }
     });
-    it(`0.A lists all five shipped skills; 8.A the Copilot's two read-only ones (${locale})`, () => {
+    it(`0.A lists all six shipped skills; 8.A the Copilot's three (${locale})`, () => {
       const steps = stepsOf(locale);
       expect(new Set(card(steps, "prepare.agent").skill?.match(/argelander-[a-z-]+/g))).toEqual(SHIPPED);
       // The Copilot's allow-list is the server's COPILOT_SKILL_NAMES (read as text: the web package does not import the server).
       const resources = readFileSync(fileURLToPath(new NodeURL("../../server/src/copilot-resources.ts", import.meta.url)), "utf8");
       const allowed = [...(resources.match(/COPILOT_SKILL_NAMES[^=]*=\s*\[([^\]]*)\]/)?.[1] ?? "").matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-      expect(allowed).toEqual(["argelander-read-paper", "argelander-query-paper-library"]);
+      expect(allowed).toEqual(["argelander-read-paper", "argelander-query-paper-library", "argelander-project-intake"]);
       expect(card(steps, "copilot.agent").skill?.match(/argelander-[a-z-]+/g)).toEqual(allowed);
     });
   }

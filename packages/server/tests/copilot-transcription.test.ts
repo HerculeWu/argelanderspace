@@ -545,8 +545,19 @@ test("the base instruction plus the tool schemas stay within the measured footpr
   // Review round A added the read tool's `field` parameter (and reworded its read line): +30 bytes. Measured 71958.
   expect(footprint).toBeGreaterThan(70_000);
   // Copilot ticket 58: the closing paragraph (data rules and the file-tools-off sentence) added 1400 bytes (data rules and the off sentence). Measured 73358.
-  // Shelf ticket 07 added the shelf tool (description and parameter schema), about 3 KB. Measured 76349.
-  expect(footprint).toBeLessThan(76_349 + 300);
+  // Shelf ticket 07 added the shelf tool (description and parameter schema), about 3 KB. Measured 76349 (the bound at HEAD was 76349 + 300).
+  // Project intake ticket 01 added attach_local_pdf (description, `path` parameter, one prompt sentence). Its window chain
+  // in copilot-batching.test.ts started from 76539 and counted +973 B to 77512; the 76349 above was already stale at HEAD 4f29248
+  // (re-measured there: 76520), so the unrecorded gap to 76539 is 19 B. Measured 77512.
+  // Project intake ticket 02 added list_ads_libraries and read_ads_library (two actions, the `libraryId` parameter, the description paragraph, one prompt sentence), +1469 B. Measured 78981.
+  // Project intake ticket 02 repair round: read_ads_library now asks ADS for one window (description rewritten), +412 B. Measured 79393.
+  // Second repair round: invalid_response wording in the description and its failure text, +110 B. Measured 79503.
+  // Project intake ticket 03: batch bibcode import (the `text` parameter and the import_works description), +657 B. Measured 80160.
+  // Ticket 03 fix round: the `batch` parameter, the reasons map and the prompt sentence, +555 B. Measured 80715.
+  // Ticket 03 closing touch-up: the `updated` parenthetical reworded, -6 B. Measured 80709.
+  // Ticket 04 repair round: `batch` also for an identifier (parameter and import_works description reworded), +77 B. Measured 80786.
+  // Ticket 04 repair round 2: bib refusals carry merge_refused / batch_refused (import_works description), +210 B. Measured 80996.
+  expect(footprint).toBeLessThan(80_996 + 300);
   expect(Buffer.byteLength(instruction?.text ?? "")).toBeGreaterThan(3_000);
 });
 

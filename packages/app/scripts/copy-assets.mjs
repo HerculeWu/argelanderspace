@@ -14,6 +14,8 @@
 //    server is inlined into bin.js; the file is self-contained (Node
 //    built-ins and the @embedpdf/* runtime dependencies only). Missing, every
 //    PDF upload, page and text read fails;
+//  - the repository's skills/ is copied to dist/skills (the folder bundledSkillsDir finds in the npm layout,
+//    project-intake ticket 12), without test files;
 //  - the root README.md / LICENSE are copied to the package root because npm
 //    only auto-includes them from there (both are git-ignored here).
 // The @argelanderspace/web devDependency exists purely so `pnpm -r build`
@@ -71,6 +73,21 @@ if (!existsSync(join(tutorialSrc, "argelanderspace-tutorial.json"))) {
 const tutorialTarget = join(appRoot, "dist", "tutorial");
 rmSync(tutorialTarget, { recursive: true, force: true });
 cpSync(tutorialSrc, tutorialTarget, { recursive: true });
+
+// The bundled skills (project-intake ticket 12): the repository's skills/ goes to dist/skills, where infra's
+// bundledSkillsDir finds it in the npm layout (the desktop package copies it to <resources>/skills on its own).
+// Copied as it is, minus the skills' own test files (a test file may not be in the tarball: pack-contents.mjs). A
+// skills folder without its README marker stops the build.
+const skillsSrc = join(repoRoot, "skills");
+if (!existsSync(join(skillsSrc, "README.md"))) {
+  throw new Error("skills/README.md is missing");
+}
+const skillsTarget = join(appRoot, "dist", "skills");
+rmSync(skillsTarget, { recursive: true, force: true });
+cpSync(skillsSrc, skillsTarget, {
+  recursive: true,
+  filter: (src) => !/\.test\.[^/\\]+$/.test(src),
+});
 
 for (const name of ["README.md", "LICENSE"]) {
   copyFileSync(join(repoRoot, name), join(appRoot, name));
@@ -316,5 +333,5 @@ writeFileSync(join(target, "THIRD-PARTY-EDITOR-NOTICES.txt"), noticeText);
 writeFileSync(join(appRoot, "dist", "THIRD-PARTY-EMBEDPDF-NOTICES.txt"), embedPdfNoticeText);
 writeFileSync(join(target, "THIRD-PARTY-EMBEDPDF-NOTICES.txt"), embedPdfNoticeText);
 console.log(
-  `copied web/sty/tutorial/root assets, ${notices.size} editor notices, ${sdkNotices.size} EmbedPDF notices, ${bundledNotices.size} bundled-library notices and ${mailNotices.size} Mail notices`
+  `copied web/sty/tutorial/skills/root assets, ${notices.size} editor notices, ${sdkNotices.size} EmbedPDF notices, ${bundledNotices.size} bundled-library notices and ${mailNotices.size} Mail notices`
 );

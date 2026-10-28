@@ -231,6 +231,16 @@ export function createWorkspaceTool(context: WorkspaceToolContext) {
               .slice(0, 5)
               .map((issue) => ({ path: issue.path.join("."), message: issue.message })),
           });
+        // `conversationId` is for the tutorial's navigation: shown to the user it would take them out of this conversation.
+        // Insurance only: the tool's own parameter schema does not offer the field, so the SDK normally rejects the call
+        // before this runs (recorded as `error`, nothing reaches the browser). This guard keeps the rule if that schema
+        // ever widens.
+        if (parsed.data.action === "open_copilot" && parsed.data.conversationId !== undefined)
+          return done(record(toolCallId, action, { status: "unsupported" }), {
+            ok: false,
+            status: "unsupported",
+            detail: "open_copilot takes no parameters; the conversation shown is the user's choice",
+          });
         const outcome = viewOutcomeResult(
           await context.viewAction(parsed.data),
           parsed.data.action

@@ -20,7 +20,7 @@ function keysOf(): string[] {
       const k = `tutorial.steps.${s.id}`;
       keys.push(`${k}.title`);
       if (s.kind === "agent") keys.push(`${k}.intro`, `${k}.prompt`, `${k}.skill`);
-      else keys.push(`${k}.body`);
+      else keys.push(`${k}.${s.bodyKey ?? "body"}`);
       if (s.browser) keys.push(`${k}.introBrowser`, `${k}.promptBrowser`);
       if (s.gate) keys.push(`${k}.waiting`);
       if (s.needsTex) keys.push(`${k}.alt`);

@@ -3,6 +3,7 @@ import { ARGUMENT } from "./argument";
 import { COPILOT_CHAPTER } from "./copilot";
 import { DISCOVERY } from "./discovery";
 import { FINISH } from "./finish";
+import { INTAKE } from "./intake";
 import { LIBRARY } from "./library";
 import { PLAN_CHAPTER } from "./plan";
 import { PREPARE } from "./prepare";
@@ -23,5 +24,6 @@ export const CHAPTERS: readonly ChapterDefinition[] = [
   PLAN_CHAPTER,
   WRITER,
   COPILOT_CHAPTER,
+  INTAKE,
   FINISH,
 ];

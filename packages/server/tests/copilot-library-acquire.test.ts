@@ -1251,10 +1251,12 @@ test("read_jobs shows the Files tab's lines: newest first, only the asked work, 
   expect(mine[1]?.docId).toMatch(/^pdf-/);
   expect(mine[1]?.progress).toBe("Publishing PDF Doc");
   expect((lines[1]?.jobs as unknown[] | undefined)?.length).toBe(3);
-  expect(String(lines[2]?.raw)).toContain("Validation failed");
+  // `path` is a parameter of attach_local_pdf (project intake ticket 01): on read_jobs it passes the SDK's check and
+  // the shared schema refuses it
+  expect(String(lines[2]?.raw)).toContain("unsupported");
 });
 
-test("there is no path, URL or file field in the tool: such a call is refused by the closed schema and nothing runs", async () => {
+test("a URL or file field, or a path on an action that takes none, is refused and nothing runs", async () => {
   const before = bytes();
   const calls: Record<string, unknown>[] = [
     { action: "acquire_arxiv_pdf", refId: W_DOCLESS, path: "/etc/hosts" },
@@ -1283,8 +1285,11 @@ test("there is no path, URL or file field in the tool: such a call is refused by
   ];
   const { snapshot } = await run(page());
   expect(answers).toHaveLength(calls.length);
-  for (const answer of answers.slice(0, 3)) expect(answer).toContain("Validation failed");
-  expect(JSON.parse(answers[3] as string)).toMatchObject({ ok: false, status: "unsupported" });
+  // a `path` on acquire_arxiv_pdf passes the SDK's check (attach_local_pdf has one) and fails the shared schema;
+  // url and file exist nowhere in the tool
+  for (const answer of answers.slice(1, 3)) expect(answer).toContain("Validation failed");
+  for (const answer of [answers[0], answers[3]])
+    expect(JSON.parse(answer as string)).toMatchObject({ ok: false, status: "unsupported" });
   expect(ops(snapshot).filter((o) => o.status === "ok")).toEqual([]);
   expect(jobsOf()).toHaveLength(0);
   expect(bytes()).toBe(before);

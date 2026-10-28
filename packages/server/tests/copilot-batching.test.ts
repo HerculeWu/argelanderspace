@@ -391,7 +391,18 @@ async function send(id: string, context: PageContext, text: string) {
 // file tools off, as the tests run): +1400 * 4/7 = +800 tokens, 62440 -> 63240.
 // Shelf ticket 07: the shelf tool (description and parameter schema) took the footprint from 73358 to 76349 bytes
 // (+2991 B): +2991 * 4/7 = +1710 tokens, 63240 -> 64950.
-const WINDOW_BIG_DOC = 64_950;
+// Project intake ticket 01: attach_local_pdf (one library action, its description, the `path` parameter and one prompt
+// sentence) took the footprint from 76539 to 77512 bytes (+973 B): +973 * 4/7 = +556 tokens, 64950 -> 65506.
+// Project intake ticket 02: list_ads_libraries / read_ads_library (two actions, `libraryId`, the description paragraph and one
+// prompt sentence) took the footprint from 77512 to 78981 bytes (+1469 B): +1469 * 4/7 = +839 tokens, 65506 -> 66345.
+// Repair round (window read, description rewritten): footprint 78981 -> 79393 bytes (+412 B): +412 * 4/7 = +236 tokens, 66345 -> 66581.
+// Second repair round (invalid_response wording in the description and the failure text): footprint 79393 -> 79503 bytes (+110 B): +110 * 4/7 = +63 tokens, 66581 -> 66644.
+// Project intake ticket 03 (batch bibcode import: the `text` parameter and the import_works description): footprint 79503 -> 80160 bytes (+657 B): +657 * 4/7 = +375 tokens, 66644 -> 67019.
+// Fix round of ticket 03 (batch flag, reasons map, prompt sentence): footprint 80160 -> 80715 bytes (+555 B): +555 * 4/7 = +317 tokens, 67019 -> 67336.
+// Closing touch-up of ticket 03 (updated parenthetical reworded): footprint 80715 -> 80709 bytes (-6 B): -6 * 4/7 = -3 tokens, 67336 -> 67333.
+// Ticket 04 repair round (`batch` also for an identifier: the parameter and the import_works description reworded): footprint 80709 -> 80786 bytes (+77 B): +77 * 4/7 = +44 tokens, 67333 -> 67377.
+// Ticket 04 repair round 2 (bib refusals say merge_refused / batch_refused: import_works description): footprint 80786 -> 80996 bytes (+210 B): +210 * 4/7 = +120 tokens, 67377 -> 67497.
+const WINDOW_BIG_DOC = 67_497;
 
 // ---- Reader: a document many windows long -------------------------------------------------------------- //
 test("a Reader document several windows long is delivered in parts with its range; reading on reaches the last unique marker, earlier parts leave the conversation and the record stays", async () => {
@@ -715,8 +726,8 @@ test("a PDF several windows long is delivered in page parts, reading on reaches 
   };
   // ticket 33: lane 1 removed attachment tool text, lane 3 added download_original, lane 4 undo_delete_task; merged: 49700 -> 50_300.
   // Review rounds A and B: bound to the fixed footprint like the others, +1440 tokens (see WINDOW_BIG_DOC for the derivation).
-  await withWindow(54_250, async () => {
-    // 51_740 + 800 (copilot ticket 58, see WINDOW_BIG_DOC) + 1_710 (shelf ticket 07, see WINDOW_BIG_DOC)
+  await withWindow(56_797, async () => {
+    // 51_740 + 800 (copilot ticket 58, see WINDOW_BIG_DOC) + 1_710 (shelf ticket 07, see WINDOW_BIG_DOC) + 556 (project intake ticket 01) + 839 (project intake ticket 02) + 236 (ticket 02 repair round) + 63 (ticket 02 second repair round) + 375 (project intake ticket 03) + 317 (ticket 03 fix round); - 3 (ticket 03 closing touch-up); + 44 (ticket 04 repair round); + 120 (ticket 04 repair round 2)
     const reader: Step = (c) => {
       const state = progress(c);
       const batch = state.batch;
@@ -1238,6 +1249,69 @@ test("a window barely above the instruction: a read that finds no room is an hon
       expect(result.detail).toMatch(/none of it is read|NOT read/);
     }
   );
+});
+
+// ---- project-intake ticket 11: the model list says which models can hold a conversation at all ---------- //
+test("the model list marks a model whose window cannot hold the instruction, the tools and the reserve for a next round; what it marks fitting accepts a first message, what it marks not fitting is refused for capacity", async () => {
+  const listed = async () => {
+    const body = (await (await app.request("/api/copilot/providers")).json()) as {
+      providers: { id: string; models: { id: string; contextWindow: number; fits?: boolean }[] }[];
+    };
+    const models = body.providers.find((item) => item.id === "openai")?.models ?? [];
+    const find = (id: string) => models.find((model) => model.id === id);
+    return { small: find("gpt-4"), large: find("gpt-4.1") };
+  };
+  const { small, large } = await listed();
+  expect(small?.contextWindow).toBe(8192);
+  expect(small?.fits).toBe(false);
+  expect(large?.fits).toBe(true);
+  const first = async (model: string) => {
+    const context = page();
+    const created = (await (
+      await request("/conversations", "POST", { model: { ...choice, model } })
+    ).json()) as ConversationSnapshot;
+    expect((await request(`/views/${context.viewId}`, "PUT", context)).status).toBe(200);
+    return send(created.conversation.id, context, "Hello");
+  };
+  // the model it marks not fitting is really refused for capacity ...
+  const refused = await first("gpt-4");
+  expect(refused.status).not.toBe(202);
+  expect(refused.body).toMatchObject({ code: "capacity" });
+  // ... and the one it marks fitting is not
+  expect((await first("gpt-4.1")).status).toBe(202);
+  // the mark follows the window the service measures: shrink the fitting model and it flips
+  await withWindow(8192, async () => {
+    expect((await listed()).large?.fits).toBe(false);
+  });
+  expect((await listed()).large?.fits).toBe(true);
+});
+
+test("the mark follows the system footprint, not the window alone: the same window flips when only what the instruction and tools take grows", async () => {
+  const measured = host as unknown as { systemFootprint(): number; fileToolsFootprint(): number };
+  const base = measured.systemFootprint() + measured.fileToolsFootprint();
+  // a window with comfortable room over today's footprint (the output reservation of this helper is 1024 tokens + 2048 of framing)
+  const windowBytes = Math.ceil(base * 1.2) + 20_000;
+  const tokens = Math.ceil(windowBytes / 2) + 1024 + 2048;
+  const large = async () => {
+    const body = (await (await app.request("/api/copilot/providers")).json()) as {
+      providers: { id: string; models: { id: string; fits?: boolean }[] }[];
+    };
+    return body.providers
+      .find((item) => item.id === "openai")
+      ?.models.find((model) => model.id === "gpt-4.1")?.fits;
+  };
+  await withWindow(tokens, async () => {
+    expect(await large()).toBe(true);
+    // only the occupancy changes (the file tools' schemas join the window): the window is untouched
+    const original = measured.fileToolsFootprint;
+    measured.fileToolsFootprint = () => windowBytes;
+    try {
+      expect(await large()).toBe(false);
+    } finally {
+      measured.fileToolsFootprint = original;
+    }
+    expect(await large()).toBe(true);
+  });
 });
 
 // ---- ticket 32: the history-growth carry-over of tickets 24 and 29 ---------------------------------------- //

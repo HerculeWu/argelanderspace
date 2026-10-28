@@ -19,6 +19,8 @@ core 不知 ADS URL/Solr/token/HTTP/cache 路径；infra 不改 Library/UI 状�
 
 ADS token（desktop-app 票 12）：用户在设置页「文献服务与凭据」里填写或从 `~/.ads/dev_key` 导入，保存在工作台的凭据存储（系统钥匙串；钥匙串不可用时仅经用户同意才落受限文件）；server 每次组装探索来源时现读，保存或移除后不用重启。`ADS_DEV_KEY` 环境变量、config.toml 的 `ads_dev_key` 与 `~/.ads/dev_key` 都不再被读取；没有 token 即下表的「token 缺失」。机制见 [architecture](architecture.md)「ADS 凭据」。
 
+<a id="ads-libraries"></a>**ADS libraries（项目迁入票 02）**：用户账户里的 libraries 由 Copilot `library` 工具的只读动作 `list_ads_libraries` / `read_ads_library` 读取，走 biblib 的 GET 接口，与 Discovery 共用同一个 ADS token（现读、不回显），但不是 Discovery 的一部分，不进探索图、不写缓存。接口、上限与错误分类的权威说明在 [library](library.md)「读 ADS libraries」。
+
 查询次序固定：
 
 1. seed bibcode 精确查询。

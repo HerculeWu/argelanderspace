@@ -353,8 +353,9 @@ test("the bundled skills folder is found the way the program finds it, and holds
   expect(loadBundledSkills(undefined).skills).toEqual([]);
 });
 
-test("the Copilot's skills are exactly the two read-only ones, whatever else is bundled", () => {
+test("the Copilot's skills are exactly the two read-only ones and the intake skill, whatever else is bundled", () => {
   expect([...COPILOT_SKILL_NAMES].sort()).toEqual([
+    "argelander-project-intake",
     "argelander-query-paper-library",
     "argelander-read-paper",
   ]);
@@ -362,7 +363,11 @@ test("the Copilot's skills are exactly the two read-only ones, whatever else is 
     loadBundledSkills(BUNDLED)
       .skills.map((skill) => skill.name)
       .sort()
-  ).toEqual(["argelander-query-paper-library", "argelander-read-paper"]);
+  ).toEqual([
+    "argelander-project-intake",
+    "argelander-query-paper-library",
+    "argelander-read-paper",
+  ]);
   // the others are bundled (for external agents) and are not seen
   const all = loadSkillsFromDir({ dir: BUNDLED as string, source: "all" }).skills.map(
     (skill) => skill.name
@@ -420,12 +425,20 @@ async function decoyRun(): Promise<void> {
   expect(ask.prompt).toContain("argelander-read-paper");
   expect(ask.prompt).toContain(join(BUNDLED as string, "argelander-read-paper", "SKILL.md"));
   expect(ask.prompt).toContain("The bundled skills listed below");
+  // only the argelanderspace commands that write are barred; the intake skill's other steps stay available
+  expect(ask.prompt).toContain("argelanderspace command that writes, do not run it");
+  expect(ask.prompt).toContain("business tools and the file and shell tools");
+  expect(ask.prompt).not.toContain("describe how to read papers");
   expect(ask.prompt).not.toContain("decoy-skill");
   expect(ask.prompt).not.toContain("DECOY");
   expect(ask.prompt).not.toContain("project_instructions");
-  // exactly the two read-only skills, none of the others that are bundled
+  // exactly the two read-only skills and the intake skill, none of the others that are bundled
   const listed = [...ask.prompt.matchAll(/<name>([^<]+)<\/name>/g)].map((m) => m[1]).sort();
-  expect(listed).toEqual(["argelander-query-paper-library", "argelander-read-paper"]);
+  expect(listed).toEqual([
+    "argelander-project-intake",
+    "argelander-query-paper-library",
+    "argelander-read-paper",
+  ]);
   // every skill location in the prompt is inside the bundled folder
   const locations = [...ask.prompt.matchAll(/<location>([^<]+)<\/location>/g)].map((m) => m[1]);
   expect(locations.length).toBeGreaterThan(0);

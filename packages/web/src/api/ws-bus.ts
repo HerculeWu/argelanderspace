@@ -112,6 +112,8 @@ function createRouter(send: (frame: object) => void) {
     "text-doc.published": emit,
     "mail.changed": emit,
     "settings.changed": emit,
+    // The Project root's intake checklist appeared or went (project-intake ticket 06): only an explicit `on` (the Library entries).
+    "intake.changed": emit,
     // The Shelf changed through this server (shelf ticket 03): only an explicit `on` (the Shelf dialog, the add button).
     "shelf.changed": emit,
     // A folder the shell picked waits for the user's confirmation (desktop-app ticket 19): only an explicit `on`.

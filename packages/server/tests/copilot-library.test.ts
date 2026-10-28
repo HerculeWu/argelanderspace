@@ -485,14 +485,16 @@ test("fields and actions the Library page has no control for are refused and wri
     () => ({ text: "refused" }),
   ];
   const { snapshot } = await run(page());
-  // Unknown actions and extra fields never reach the store (the SDK's schema check refuses them: error);
+  // Unknown actions and unknown fields never reach the store (the SDK's schema check refuses them: error);
   // a request that parses but misses the version it relies on is unsupported; an unattached Doc is rejected.
+  // `path` is a field of attach_local_pdf (project intake ticket 01), so on `read` it passes the SDK's check and
+  // fails the shared zod schema: unsupported, still nothing written.
   expect(ops(snapshot).map((o) => o.status)).toEqual([
     "error",
     "unsupported",
     "rejected",
     "error",
-    "error",
+    "unsupported",
   ]);
   expect(bytes()).toBe(before);
   expect(changed()).toHaveLength(0);

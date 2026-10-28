@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import type { ContextCoverage, Conversation, ConversationModel, CopilotConfirmation, ConversationSnapshot, CopilotOperation, CopilotProvider, CopilotViewAction, CopilotViewActionResult, PageContext, ThinkingLevel, WsCopilotEvent } from "@argelanderspace/contracts";
+import type { ContextCoverage, Conversation, CopilotFileToolsSetting, ConversationModel, CopilotConfirmation, ConversationSnapshot, CopilotOperation, CopilotProvider, CopilotViewAction, CopilotViewActionResult, PageContext, ThinkingLevel, WsCopilotEvent } from "@argelanderspace/contracts";
 import { type ArgumentContextSummary, type PdfContextSummary, summarizeArgumentPage, summarizeDiscoveryPage, summarizeMailPage, summarizePdfPage, summarizeReaderPage, summarizeWriterPage } from "@argelanderspace/contracts";
 import { FileToolCard } from "./FileToolCard";
 import { MailSendUndo, MailSummary } from "./MailConfirmation";
@@ -13,6 +13,8 @@ import { onPlanChanged, subscribeCopilot } from "../api/ws";
 import { fetchUndoableState } from "../api/plans";
 import { ActionButton, Badge, Button, Dialog, getConfiguredIcon, Select } from "../ui";
 import { ProviderSettingsDialog } from "./ProviderSettings";
+import type { ConversationRequest, IntakeKind, IntakeRequest } from "./intake";
+import { chosenTooSmall, defaultModel, fitsWindow, intakeModel as pickIntakeModel, modelKey, windowBlocksIntake } from "./model-pick";
 import { LiveRunStatus, ThinkingBlock } from "./LiveStatus";
 import { Icon } from "../lib/icons";
 import { copilotMarkdown } from "./markdown";
@@ -44,7 +46,7 @@ export const OPERATION_ACTION_KEYS = {
   set_main_doc: "copilot.operations.actions.set_main_doc", filter_library: "copilot.operations.actions.filter_library", select_work: "copilot.operations.actions.select_work",
   set_detail_tab: "copilot.operations.actions.set_detail_tab", set_sidebar: "copilot.operations.actions.set_sidebar", set_temp_label: "copilot.operations.actions.set_temp_label",
   set_graph_labels: "copilot.operations.actions.set_graph_labels", graph_control: "copilot.operations.actions.graph_control", import_works: "copilot.operations.actions.import_works",
-  acquire_arxiv_pdf: "copilot.operations.actions.acquire_arxiv_pdf", attach_arxiv: "copilot.operations.actions.attach_arxiv", read_jobs: "copilot.operations.actions.read_jobs", delete_doc: "copilot.operations.actions.delete_doc",
+  acquire_arxiv_pdf: "copilot.operations.actions.acquire_arxiv_pdf", attach_arxiv: "copilot.operations.actions.attach_arxiv", attach_local_pdf: "copilot.operations.actions.attach_local_pdf", list_ads_libraries: "copilot.operations.actions.list_ads_libraries", read_ads_library: "copilot.operations.actions.read_ads_library", read_jobs: "copilot.operations.actions.read_jobs", delete_doc: "copilot.operations.actions.delete_doc",
   read_discovery: "copilot.operations.actions.read_discovery", save_candidate: "copilot.operations.actions.save_candidate", explore_work: "copilot.operations.actions.explore_work", explore_candidate: "copilot.operations.actions.explore_candidate",
   retry_exploration: "copilot.operations.actions.retry_exploration", cancel_exploration: "copilot.operations.actions.cancel_exploration", step_exploration: "copilot.operations.actions.step_exploration", exit_exploration: "copilot.operations.actions.exit_exploration",
   resume_exploration: "copilot.operations.actions.resume_exploration", filter_discovery: "copilot.operations.actions.filter_discovery", search_discovery: "copilot.operations.actions.search_discovery", set_discovery_display: "copilot.operations.actions.set_discovery_display",
@@ -187,19 +189,35 @@ const isApplied = (operation: CopilotOperation) => operation.status === "ok" || 
 
 export type CopilotViewActionHandler = (action: CopilotViewAction) => Promise<Pick<CopilotViewActionResult, "ok" | "detail" | "http" | "folded">>;
 
-export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, settingsAsked = 0, viewReady = true, onAttention, guards }: { open: boolean; /** Counts the requests to open the provider settings dialog from elsewhere (the settings page's entry): each new count opens it, as the panel's own settings button does. */ settingsAsked?: number; /** The page's own guards before an approval takes something open away (unsaved draft protection); false keeps the card. A missing guard lets the approval through. */ guards?: Partial<ConfirmationGuards>; context: PageContext; onClose: () => void; onViewAction?: CopilotViewActionHandler; /** Shows the panel itself: an explicit request to open its settings must be visible. */ onOpenPanel?: () => void; /** False until this tab knows its view id is its own: nothing subscribes or publishes before. */ viewReady?: boolean; /** True while a confirmation waits for the user, so a collapsed panel can say so. */ onAttention?: (waiting: boolean) => void }) {
+export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, settingsAsked = 0, intakeAsked, conversationAsked, fileTools, onOpenFileToolsSettings, viewReady = true, onAttention, guards }: { open: boolean; /** A request from the Library to move in an existing project (project-intake ticket 06): each new `seq` reads the model catalog afresh; with a usable model and the file permission not off it opens a new conversation and sends one fixed message, otherwise a card in the panel says what is missing and the user starts it by hand. A request that arrives while another is in flight is dropped. */ intakeAsked?: IntakeRequest; /** A request to show one saved conversation (the tutorial replay's "take me there"): each new `seq` re-reads the list and, when it holds `id`, shows that conversation as picking it in the list does. Nothing is sent or created; an unknown id changes nothing. */ conversationAsked?: ConversationRequest; /** The Copilot file and command permission as the settings last gave it; `undefined` when not known (then nothing is held back). `off`: a move-in reads files, so it waits behind a card until the user turns the permission on. */ fileTools?: CopilotFileToolsSetting; /** Opens the settings page at the Copilot group, where that permission is. */ onOpenFileToolsSettings?: () => void; /** Counts the requests to open the provider settings dialog from elsewhere (the settings page's entry): each new count opens it, as the panel's own settings button does. */ settingsAsked?: number; /** The page's own guards before an approval takes something open away (unsaved draft protection); false keeps the card. A missing guard lets the approval through. */ guards?: Partial<ConfirmationGuards>; context: PageContext; onClose: () => void; onViewAction?: CopilotViewActionHandler; /** Shows the panel itself: an explicit request to open its settings must be visible. */ onOpenPanel?: () => void; /** False until this tab knows its view id is its own: nothing subscribes or publishes before. */ viewReady?: boolean; /** True while a confirmation waits for the user, so a collapsed panel can say so. */ onAttention?: (waiting: boolean) => void }) {
   const { t } = useTranslation();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [id, setId] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<ConversationSnapshot | null>(null);
   const [providers, setProviders] = useState<CopilotProvider[]>([]);
-  const [draftModel, setDraftModel] = useState<ConversationModel | null>(null);
+  const [draftModel, setDraftModelState] = useState<ConversationModel | null>(null);
+  /** The draft model as last set, readable at once (a state updater runs when React chooses, so decisions never read through one). */
+  const draftRef = useRef<ConversationModel | null>(null);
+  const setDraftModel = (next: ConversationModel | null) => { draftRef.current = next; setDraftModelState(next); };
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const idRef = useRef(id); idRef.current = id;
   const busyRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [settings, setSettings] = useState(false);
+  // The model catalog, as the last read left it (an intake request reads it afresh and decides on that read).
+  const [catalog, setCatalog] = useState<"loading" | "ready" | "failed">("loading");
+  // An intake the Library asked for. `setup` stays null while the request is in flight; true: it could not start by itself and waits for the user's click on a card in the panel (the catalog could not be read, no model can run, the file permission is off, or everything is ready and the user starts it). Which card shows follows the current state, in that order; the click is the only way a card sends.
+  const [intake, setIntake] = useState<{ kind: IntakeKind; setup: boolean | null } | null>(null);
+  const handledIntake = useRef(intakeAsked?.seq ?? 0);
+  /** Key of the model this page picked for the user (the default rule); a model the user chose is never this one, and only this one gives way to a model that fits. */
+  const autoModel = useRef<string | null>(null);
+  const handledConversation = useRef(conversationAsked?.seq ?? 0);
+  const fileToolsRef = useRef(fileTools); fileToolsRef.current = fileTools;
+  // False once the panel is gone: an intake chain in flight stops at its next step.
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => { if (settingsAsked > 0) setSettings(true); }, [settingsAsked]);
   const [list, setList] = useState(false);
   const [detail, setDetail] = useState(false);
@@ -260,13 +278,19 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, set
   }, [id, context, viewReady]);
   // A restarted service knows no views: forget what was published and send the current page again.
   const republish = () => { published.current = null; sentReading.current = null; void enqueue(publishLatest).catch(() => undefined); };
-  const refreshCatalog = async () => {
+  /** Reads the model catalog; the providers it read, or null when it could not be read. */
+  const refreshCatalog = async (): Promise<CopilotProvider[] | null> => {
     try {
       const result = await fetchProviders(); setProviders(result.providers);
-      const provider = result.providers.find((item) => item.credential.configured && item.models.some((model) => model.tools));
-      const model = provider?.models.find((item) => item.tools);
-      if (provider && model) setDraftModel((current) => current ?? { provider: provider.id, model: model.id, thinking: null });
-    } catch { setError("unavailable"); }
+      const picked = defaultModel(result.providers);
+      // A default this page picked earlier that the service now says cannot hold the conversation (the permission or a mail account grew the instruction) gives way to one that fits, or is dropped when none does; a model the user chose never does.
+      const current = draftRef.current;
+      const stale = !!current && autoModel.current === modelKey(current) && result.providers.find((item) => item.id === current.provider)?.models.find((item) => item.id === current.model)?.fits === false;
+      if (stale) { autoModel.current = picked ? modelKey(picked) : null; setDraftModel(picked); }
+      else if (!current && picked) { autoModel.current = modelKey(picked); setDraftModel(picked); }
+      setCatalog("ready");
+      return result.providers;
+    } catch { setError("unavailable"); setCatalog("failed"); return null; }
   };
   const refreshList = async () => {
     try { const result = await listConversations(); setConversations(result.conversations); setUnreadable(result.unreadable ?? []); return result.conversations; }
@@ -405,16 +429,23 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, set
     catch (reason) { setUndoResult({ kind: "failed", label }); if (!(reason instanceof CopilotApiError && (reason.code === "stale" || reason.code === "not_found"))) setError(reason instanceof CopilotApiError ? reason.code : "unavailable"); }
     finally { setUndone((previous) => new Set(previous).add(target)); }
   };
+  // The model a move-in starts with (copilot/model-pick.ts): the one on screen when it can run it, else any other that can and whose window holds the conversation; null when none.
+  const intakeModel = (list: CopilotProvider[]) => pickIntakeModel(list, snapshot?.conversation.model ?? draftRef.current, autoModel.current);
+  const usableModel = intakeModel(providers) !== null;
+  const windowBlocked = !usableModel && windowBlocksIntake(providers, snapshot?.conversation.model ?? draftRef.current, autoModel.current);
+  const chosenSmall = windowBlocked && chosenTooSmall(providers, snapshot?.conversation.model ?? draftRef.current, autoModel.current);
   const begin = () => { if (busyRef.current) return false; busyRef.current = true; setBusy(true); setError(null); return true; };
   const end = () => { busyRef.current = false; setBusy(false); };
   const newConversation = async () => {
     if (!begin()) return;
+    setIntake(null);
     try { const result = await createConversation(choice ? { ...choice, thinking: null } : null); setId(result.conversation.id); setList(false); setText(""); retry.current = null; await refreshList(); }
     catch (reason) { setError(reason instanceof CopilotApiError ? reason.code : "unavailable"); }
     finally { end(); }
   };
   const choose = async (selected: ConversationModel) => {
     if (!begin()) return;
+    autoModel.current = null;
     try {
       if (id) { const result = await selectConversationModel(id, selected); setSnapshot((current) => current ? { ...current, conversation: result.conversation } : result); }
       else setDraftModel(selected);
@@ -447,6 +478,61 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, set
     } catch (reason) { if (reason instanceof CopilotApiError && reason.code === "stale") published.current = null; setError(reason instanceof CopilotApiError ? reason.code : "unavailable"); }
     finally { end(); }
   };
+  /** Move in an existing project (project-intake ticket 06): always a new conversation, then one fixed message in the user's name, visible like any other. The caller holds `begin()`. */
+  const sendIntake = async (kind: IntakeKind, wanted: ConversationModel) => {
+    try {
+      const created = (await createConversation(wanted)).conversation.id;
+      if (!alive.current) return;
+      setId(created); setList(false); setText(""); retry.current = null; resumeAttempt.current = null;
+      const clientMessageId = crypto.randomUUID();
+      await enqueue(async () => { const sent = await publishLatest(); await sendCopilotMessage(created, { clientMessageId, text: t(kind === "resume" ? "copilot.intake.resumeMessage" : "copilot.intake.startMessage"), viewId: sent.viewId, contextRevision: sent.revision }); });
+      following.current = true;
+      await refreshList();
+    } catch (reason) { if (reason instanceof CopilotApiError && reason.code === "stale") published.current = null; setError(reason instanceof CopilotApiError ? reason.code : "unavailable"); }
+  };
+  // A request from the Library. One at a time: while a request (or any other send) is in flight, a further click is dropped, never queued. The catalog is read afresh; a usable model starts it at once, otherwise a card says why and nothing is sent until the user clicks it.
+  useEffect(() => {
+    if (!intakeAsked || intakeAsked.seq === handledIntake.current) return;
+    handledIntake.current = intakeAsked.seq;
+    if (!begin()) return;
+    const kind = intakeAsked.kind;
+    setIntake({ kind, setup: null });
+    void (async () => {
+      try {
+        const read = await refreshCatalog();
+        if (!alive.current) return;
+        const wanted = read && intakeModel(read);
+        if (!wanted || fileToolsRef.current === "off") { setIntake({ kind, setup: true }); return; }
+        setIntake(null);
+        await sendIntake(kind, wanted);
+      } finally { end(); }
+    })();
+  }, [intakeAsked]);
+  // A request to show one saved conversation: what picking it in the list does, once the list holds it. Reads, never writes.
+  useEffect(() => {
+    if (!conversationAsked || conversationAsked.seq === handledConversation.current) return;
+    handledConversation.current = conversationAsked.seq;
+    const wanted = conversationAsked.id;
+    void refreshList().then((items) => {
+      if (!alive.current || !items.some((item) => item.id === wanted)) return;
+      // Already the shown conversation: nothing to switch, and the draft in the box stays (picking another one clears it, as the list does).
+      if (idRef.current === wanted) return;
+      setIntake(null); setId(wanted); setList(false); setText(""); retry.current = null; resumeAttempt.current = null;
+    });
+  }, [conversationAsked]);
+  const startFromCard = async (kind: IntakeKind) => {
+    const wanted = intakeModel(providers);
+    if (!wanted || fileToolsRef.current === "off" || !begin()) return;
+    setIntake(null);
+    try { await sendIntake(kind, wanted); } finally { end(); }
+  };
+  const intakeCard = useRef<HTMLDivElement>(null);
+  const intakeWaiting = !!intake?.setup;
+  // The card the waiting request shows: what blocks it first. The model catalog and a model that can run come before the file permission: they decide whether the Copilot can answer at all, and the permission only matters once it can.
+  const intakeCardKind = catalog === "failed" ? "catalog-failed" : !usableModel ? (chosenSmall ? "chosen-small" : windowBlocked ? "window-small" : "no-provider") : fileTools === "off" ? "file-tools-off" : "ready";
+  useEffect(() => {
+    if (intakeWaiting && open) intakeCard.current?.scrollIntoView?.({ block: "nearest" });
+  }, [intakeWaiting, intakeCardKind, open]);
   const stop = async () => {
     if (!id || stopping) return;
     try { const result = await stopConversation(id); setSnapshot((current) => current ? { ...current, conversation: result.conversation } : current); }
@@ -471,7 +557,7 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, set
       <ActionButton unstyled mode="icon" iconName="settings-2" label={t("providers.title")} data-ui="copilot-settings" className="btn icon ghost" onClick={() => setSettings(true)} />
       <ActionButton unstyled mode="icon" iconName="panel-right-close" label={t("copilot.close")} data-ui="copilot-close" className="btn icon ghost" onClick={() => { onClose(); document.querySelector<HTMLElement>('[data-ui="copilot-toggle"]')?.focus(); }} />
     </header>
-    <div ref={scroll} className="copilot-messages" data-ui="copilot-messages" onScroll={() => {
+    <div ref={scroll} className="copilot-messages" data-ui="copilot-messages" data-loading={id && !snapshot && !error ? "" : undefined} onScroll={() => {
       const node = scroll.current; if (!node) return;
       following.current = node.scrollHeight - node.clientHeight - node.scrollTop < 40;
       if (following.current) setNewContent(false);
@@ -489,6 +575,19 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, set
       {undoable && <div className="copilot-notice" data-ui="copilot-undo" role="status"><span>{t("plan.undo.deleted", { title: undoable.label ?? "" })}</span><Button data-ui="copilot-undo-delete" onClick={() => void undo()}>{t("plan.undo.action")}</Button><ActionButton unstyled mode="icon" iconSize="small" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-undo-dismiss" className="btn icon ghost" onClick={() => setUndone((previous) => new Set(previous).add(undoable.id))} /></div>}
       {undoResult && <div className={undoResult.kind === "failed" ? "copilot-notice error" : "copilot-notice"} data-ui="copilot-undo-result" data-status={undoResult.kind} role={undoResult.kind === "failed" ? "alert" : "status"}><span>{t(undoResult.kind === "restored" ? "copilot.undo.restored" : "copilot.undo.failed", { title: undoResult.label })}</span><ActionButton unstyled mode="icon" iconSize="small" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-undo-result-dismiss" className="btn icon ghost" onClick={() => setUndoResult(null)} /></div>}
       {runStatus === "interrupted" && <div className="copilot-notice" data-ui="copilot-run-result" role="status" data-status="interrupted"><span data-ui="copilot-interrupted">{t("copilot.interrupted")}</span></div>}
+      {intake?.setup && <div ref={intakeCard} className="copilot-notice" data-ui={{ "catalog-failed": "copilot-intake-catalog-failed", "no-provider": "copilot-no-provider", "window-small": "copilot-window-small-card", "chosen-small": "copilot-chosen-small-card", "file-tools-off": "copilot-file-tools-off", ready: "copilot-provider-ready" }[intakeCardKind]} role="status">
+        {intakeCardKind === "catalog-failed"
+          ? <><span><strong>{t("copilot.intake.catalogFailedTitle")}</strong><br />{t("copilot.intake.catalogFailedBody")}</span><Button appearance="primary" data-ui="retry-intake-catalog" disabled={busy} onClick={() => void refreshCatalog()}>{t("common.retry")}</Button></>
+          : intakeCardKind === "no-provider"
+          ? <><span><strong>{t("copilot.intake.noProviderTitle")}</strong><br />{t("copilot.intake.noProviderBody")}</span><Button appearance="primary" data-ui="open-provider-settings" onClick={() => setSettings(true)}>{t("copilot.intake.openSettings")}</Button></>
+          : intakeCardKind === "window-small"
+          ? <><span><strong>{t("copilot.intake.windowSmallTitle")}</strong><br />{t("copilot.intake.windowSmallBody")}</span><Button appearance="primary" data-ui="open-provider-settings" onClick={() => setSettings(true)}>{t("copilot.intake.openSettings")}</Button></>
+          : intakeCardKind === "chosen-small"
+          ? <span><strong>{t("copilot.intake.chosenSmallTitle")}</strong><br />{t("copilot.intake.chosenSmallBody")}</span>
+          : intakeCardKind === "file-tools-off"
+          ? <><span><strong>{t("copilot.intake.fileToolsOffTitle")}</strong><br />{t("copilot.intake.fileToolsOffBody")}</span><Button appearance="primary" data-ui="open-file-tools-settings" disabled={!onOpenFileToolsSettings} onClick={() => onOpenFileToolsSettings?.()}>{t("copilot.intake.openFileToolsSettings")}</Button></>
+          : <><span>{t(fileTools === undefined ? "copilot.intake.readyModel" : "copilot.intake.ready")}</span><Button appearance="primary" data-ui="start-intake-after-provider" disabled={busy} onClick={() => void startFromCard(intake.kind)}>{t("copilot.intake.go")}</Button></>}
+      </div>}
       {failed && <div className="copilot-notice error" data-ui="copilot-run-result" role="alert" data-status="failed">
         <span data-ui="copilot-run-error">{errorCopy(snapshot?.conversation.run?.error ?? null)}</span>
         <Button data-ui="copilot-retry" disabled={busy || (!!id && !connected)} onClick={() => void resume()}>{t("common.retry")}</Button>
@@ -506,7 +605,7 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, set
         <div className="copilot-composer-actions">
           <Select variant="inline" data-ui="copilot-model" aria-label={t("copilot.model")} value={choice ? `${choice.provider}\n${choice.model}` : ""} disabled={busy}
             onChange={(next) => { const [providerId, modelId] = next.split("\n"); void choose({ provider: providerId, model: modelId, thinking: null }); }}
-            options={[{ value: "", label: t("copilot.model"), disabled: true }, ...providers.flatMap((item) => item.models.filter((model) => model.tools).map((model) => ({ value: `${item.id}\n${model.id}`, label: model.name, group: item.name })))]} />
+            options={[{ value: "", label: t("copilot.model"), disabled: true }, ...providers.flatMap((item) => item.models.filter((model) => model.tools).map((model) => ({ value: `${item.id}\n${model.id}`, label: fitsWindow(model) ? model.name : t("copilot.windowSmallTag", { name: model.name }), group: item.name })))]} />
           <span className="copilot-spacer" />
           <ComposerAction kind={stopping || running ? "stop" : resumeAction ? "resume" : "send"} stopping={stopping} disabled={stopping ? true : running ? !connected : resumeAction ? busy || (!!id && !connected) : busy || !text.trim() || !thinkingValid || (!!id && !connected)} onSend={() => void send()} onStop={() => void stop()} onResume={() => void resume()} />
         </div>
@@ -519,10 +618,11 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, set
           ...(levels.length > 1 ? levels.map((level) => ({ value: level, label: thinkingLabel(level) })) : []),
         ]} /></div>
       {!thinkingValid && choice && <p role="alert">{t("copilot.errors.capabilities")}</p>}
+      {!choice && catalog === "ready" && windowBlocksIntake(providers, null, null) && <p role="status" data-ui="copilot-window-small">{t("copilot.windowSmall")}</p>}
       {context.pdf && model && !model.image && <div className="copilot-notice warning" data-ui="copilot-pdf-no-image" role="status"><span>{t("copilot.pdf.noImage")}</span></div>}
     </div>
     {settings && <ProviderSettingsDialog onClose={() => { setSettings(false); void refreshCatalog(); }} />}
-    {list && <Dialog title={t("copilot.conversations")} closeLabel={t("copilot.close")} onClose={() => setList(false)} uiId="copilot-conversation-list"><div className="copilot-conversation-list"><Button onClick={() => void newConversation()} disabled={busy}>{t("copilot.new")}</Button>{conversations.map((conversation) => <Button key={conversation.id} data-ui="copilot-conversation" data-ui-key={conversation.id} data-status={conversation.run?.status} aria-pressed={conversation.id === id} onClick={() => { setId(conversation.id); setList(false); setText(""); retry.current = null; resumeAttempt.current = null; }}><span className="copilot-conversation-title">{conversation.title || t("copilot.new")}</span>{conversation.run && conversation.run.status !== "completed" && <Badge tone={conversation.run.status === "running" || conversation.run.status === "waiting-for-user" || conversation.run.status === "stopping" ? "accent" : "neutral"}>{t(RUN_STATUS_KEYS[conversation.run.status])}</Badge>}</Button>)}{unreadable.map((entry) => <p key={entry.id} className="copilot-conversation-unreadable" data-ui="copilot-conversation-unreadable" role="alert">{t("copilot.unreadable")}</p>)}</div></Dialog>}
+    {list && <Dialog title={t("copilot.conversations")} closeLabel={t("copilot.close")} onClose={() => setList(false)} uiId="copilot-conversation-list"><div className="copilot-conversation-list"><Button onClick={() => void newConversation()} disabled={busy}>{t("copilot.new")}</Button>{conversations.map((conversation) => <Button key={conversation.id} data-ui="copilot-conversation" data-ui-key={conversation.id} data-status={conversation.run?.status} aria-pressed={conversation.id === id} onClick={() => { setIntake(null); setId(conversation.id); setList(false); setText(""); retry.current = null; resumeAttempt.current = null; }}><span className="copilot-conversation-title">{conversation.title || t("copilot.new")}</span>{conversation.run && conversation.run.status !== "completed" && <Badge tone={conversation.run.status === "running" || conversation.run.status === "waiting-for-user" || conversation.run.status === "stopping" ? "accent" : "neutral"}>{t(RUN_STATUS_KEYS[conversation.run.status])}</Badge>}</Button>)}{unreadable.map((entry) => <p key={entry.id} className="copilot-conversation-unreadable" data-ui="copilot-conversation-unreadable" role="alert">{t("copilot.unreadable")}</p>)}</div></Dialog>}
     {detail && <Dialog title={t("copilot.context")} closeLabel={t("copilot.close")} onClose={() => setDetail(false)} uiId="copilot-context-detail"><div className="copilot-context-detail">{!context.reader && !context.pdf && !context.writer && !context.mail && !context.argument && <p>{t(context.status === "complete" ? "copilot.completeDetail" : "copilot.unavailableDetail")}</p>}{context.writer && <WriterSummary summary={summarizeWriterPage(context.writer)} />}{context.mail && <MailSummary summary={summarizeMailPage(context.mail)} />}{context.library && <LibrarySummary summary={{ source: context.library.source, error: context.library.error, query: context.library.query, total: context.library.total, matched: context.library.matched, selectedRefId: context.library.selectedRefId }} title={context.library.detail?.ref.title} />}{context.discovery && <DiscoverySummary summary={summarizeDiscoveryPage(context.discovery)} />}{context.argument && <ArgumentSummary summary={summarizeArgumentPage(context.argument)} />}{context.reader && <ReaderSummary summary={summarizeReaderPage(context.reader)} title={context.reader.reading?.title} />}{context.pdf && <PdfSummary summary={summarizePdfPage(context.pdf)} />}{context.plan && <><p>{t(context.plan.mode === "list" ? "plan.modes.list" : context.plan.mode === "board" ? "plan.modes.board" : context.plan.mode === "focus" ? "plan.focus.title" : "plan.timeline.title")} · {t("copilot.version", { rev: context.plan.rev })} · {t(context.plan.saveState === "saved" ? "copilot.saved" : context.plan.saveState === "pending" ? "copilot.saving" : "plan.notice.saveFailed")}</p>{context.plan.plans.map((plan) => <section key={plan.id}><h3>{plan.name}</h3><p>{plan.desc}</p><ul>{plan.tasks.map((task) => <li key={task.id}>{task.title} · {t(task.status === "todo" ? "plan.status.todo" : task.status === "doing" ? "plan.status.doing" : task.status === "blocked" ? "plan.status.blocked" : "plan.status.done")} · {fmtDate(task.due)}</li>)}</ul></section>)}{context.plan.detail && <p>{t("copilot.taskDetail")} · {context.plan.detail.task.title}</p>}</>}</div></Dialog>}
   </aside>;
 }

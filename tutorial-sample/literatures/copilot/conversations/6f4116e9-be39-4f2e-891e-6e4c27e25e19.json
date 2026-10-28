@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "id": "6f4116e9-be39-4f2e-891e-6e4c27e25e19",
+  "title": "开始迁入已有项目",
+  "createdAt": "2026-10-27T18:09:34.163Z",
+  "updatedAt": "2026-10-21T18:46:00.000Z",
+  "model": {
+    "provider": "deepseek",
+    "model": "deepseek-flash",
+    "thinking": null
+  },
+  "sessionId": "914795d0-d2a6-4a9e-9c15-2599ddc3ed73",
+  "run": {
+    "id": "7fd00cf4-727a-4dd3-b2f3-fbdbfbc3ba8b",
+    "status": "completed",
+    "error": null
+  }
+}

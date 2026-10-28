@@ -65,6 +65,20 @@ export const SAMPLE_CONVERSATION = {
   operationReplies: ["e391048f", "43bb4cbc"],
 } as const;
 
+/**
+ * The preset move-in conversation chapter 9 replays (project-intake ticket 10 recorded it; `null` would make chapter 9 degrade): its id, the Pi session entry id of the agent's first reply (the
+ * interview) and of the reply that carries the summary table, both the panel's message keys. Recorded once with a real
+ * provider by the same procedure as the conversation above and frozen with it.
+ */
+export interface SampleIntakeConversation {
+  readonly id: string;
+  readonly replies: { readonly interview: string; readonly summary: string };
+}
+export const SAMPLE_INTAKE_CONVERSATION: SampleIntakeConversation | null = {
+  id: "6f4116e9-be39-4f2e-891e-6e4c27e25e19",
+  replies: { interview: "34c82213", summary: "8b2fa4da" },
+};
+
 /** Jerabkova 2021's argument graph: its End argument and the Native argument deliberately left unlinked. */
 export const SAMPLE_ARGUMENT_IDS = {
   end: "ak4e7r",

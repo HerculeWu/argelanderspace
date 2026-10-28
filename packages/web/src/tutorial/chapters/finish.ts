@@ -11,6 +11,6 @@ export const FINISH_STEP_ID = "finish.page";
  */
 export const FINISH: ChapterDefinition = {
   id: FINISH_CHAPTER_ID,
-  n: 9,
+  n: 10,
   steps: [{ id: FINISH_STEP_ID, kind: "look", anchors: [] }],
 };

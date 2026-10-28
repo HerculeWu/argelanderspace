@@ -866,6 +866,29 @@ test("the Copilot panel, a library Doc and the settings dialog are opened on the
   expect(tabB.actions).toEqual([]);
 });
 
+// The refusal comes from the tool's parameter schema (the SDK rejects the unknown field before `execute` runs, so the
+// operation is recorded as `error`); the guard in the tool itself is insurance behind it and is not reached here.
+test("open_copilot takes no conversation id from the model: the schema rejects it and nothing reaches the browser", async () => {
+  const port = await startHub();
+  const id = await create();
+  const a = withWorkspace(page(A));
+  const tabA = await openTab(port, a.viewId, id);
+  await request(`/views/${a.viewId}`, "PUT", a);
+  script = [
+    () => ({
+      tool: "workspace",
+      call: { action: "open_copilot", conversationId: "85b4af77-56d0-4684-8a1c-b8926dec17d0" },
+    }),
+    () => ({ text: "done" }),
+  ];
+  expect((await send(id, a)).status).toBe(202);
+  await settled(id);
+  expect(tabA.actions).toEqual([]);
+  expect(operations(await host.snapshot(id)).map((o) => `${o.action}:${o.status}`)).toEqual([
+    "open_copilot:error",
+  ]);
+});
+
 test("a withdrawn action says it was stopped, not that the browser was offline", async () => {
   await startHub();
   const a = withWorkspace(page(A));
