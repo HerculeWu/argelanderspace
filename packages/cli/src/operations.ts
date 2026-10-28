@@ -10,8 +10,9 @@
  * `ok: false` or failed, 2 the parameters were not valid (nothing was run).
  *
  * Only the catalog's operations are registered here; the older commands (`ingest`, `library build`, `annot`, ...) are
- * not in the catalog and are not touched. This ticket runs in the CLI's own process; routing to a running workbench
- * is ticket 02.
+ * not in the catalog and are not touched. A command first looks for a workbench running for the data directory and, if
+ * there is one, hands the operation to it over local HTTP (server `workbench-instance.ts`, `operation-routes.ts`);
+ * otherwise it runs in this process. Both give the same output and exit codes.
  */
 import { readFileSync } from "node:fs";
 import {
@@ -24,7 +25,13 @@ import {
   operationsOfDomain,
 } from "@argelanderspace/contracts";
 import { libraryPaths } from "@argelanderspace/core";
-import { createLocalOperationRuntime, runCatalogOperation } from "@argelanderspace/server";
+import {
+  createLocalOperationRuntime,
+  findRunningWorkbench,
+  parseOperationParams,
+  runCatalogOperation,
+  runOnWorkbench,
+} from "@argelanderspace/server";
 import type { Command } from "commander";
 import { fail, resolveDataDir, withDataDir } from "./common.js";
 
@@ -93,22 +100,30 @@ async function runOperationCommand(op: OperationDef, cmd: Command): Promise<void
   let params: Record<string, unknown>;
   try {
     params = paramsFromOptions(operationOptions(op), opts);
-    const parsed = op.params.safeParse(params);
-    if (!parsed.success)
-      throw new ParamError(
-        parsed.error.issues
-          .slice(0, 5)
-          .map((issue) => `${issue.path.join(".") || "(parameters)"}: ${issue.message}`)
-          .join("; ")
-      );
-    params = parsed.data as Record<string, unknown>;
+    const parsed = parseOperationParams(op, params);
+    if (!parsed.ok) throw new ParamError(parsed.detail);
+    params = parsed.params;
   } catch (e) {
     if (!(e instanceof ParamError)) throw e;
     printResult({ ok: false, status: "unsupported", detail: e.message });
     process.exitCode = 2;
     return;
   }
-  const runtime = createLocalOperationRuntime(libraryPaths(resolveDataDir(opts)));
+  const dataDir = resolveDataDir(opts);
+  // Single writer (ADR 0015): a workbench running for this data directory takes the operation, reads included, so the
+  // answer is its current state and its writes are announced to the open pages. Otherwise it runs in this process.
+  let workbench: Awaited<ReturnType<typeof findRunningWorkbench>>;
+  try {
+    workbench = await findRunningWorkbench(dataDir);
+  } catch (e) {
+    fail(e);
+    return;
+  }
+  if (workbench !== null) {
+    await runViaWorkbench(workbench, op, params);
+    return;
+  }
+  const runtime = createLocalOperationRuntime(libraryPaths(dataDir));
   let result: unknown;
   try {
     result = await runCatalogOperation(runtime, op.id as OperationId, params);
@@ -118,6 +133,42 @@ async function runOperationCommand(op: OperationDef, cmd: Command): Promise<void
   }
   printResult(result);
   if ((result as { ok?: boolean } | null)?.ok === false) process.exitCode = 1;
+}
+
+/** The workbench's answer, in the same shape and with the same exit codes as the in-process run. */
+async function runViaWorkbench(
+  workbench: NonNullable<Awaited<ReturnType<typeof findRunningWorkbench>>>,
+  op: OperationDef,
+  params: Record<string, unknown>
+): Promise<void> {
+  let answer: Awaited<ReturnType<typeof runOnWorkbench>>;
+  try {
+    answer = await runOnWorkbench(workbench, {
+      id: op.id,
+      params,
+      client: {
+        pid: process.pid,
+        commandLine: ["argelanderspace", ...process.argv.slice(2)].join(" "),
+      },
+    });
+  } catch {
+    fail(
+      new Error(
+        `the workbench (port ${workbench.port}) stopped answering; the operation may or may not have run`
+      )
+    );
+    return;
+  }
+  const body = answer.body as { ok?: boolean; status?: string; detail?: string } | null;
+  if (answer.status === 200) {
+    printResult(body);
+    if (body?.ok === false) process.exitCode = 1;
+  } else if (answer.status === 400) {
+    printResult(body);
+    process.exitCode = 2;
+  } else {
+    fail(new Error(body?.detail ?? `the workbench refused the operation (HTTP ${answer.status})`));
+  }
 }
 
 function registerOperation(group: Command, op: OperationDef): void {

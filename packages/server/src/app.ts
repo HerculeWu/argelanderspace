@@ -162,6 +162,7 @@ import { mountMailRoutes } from "./mail-routes.js";
 import { mailSendsInWindow } from "./mail-send.js";
 import type { MailWatcher } from "./mail-watch.js";
 import { mountMailWatchRoutes } from "./mail-watch-routes.js";
+import { mountOperationRoutes } from "./operation-routes.js";
 import { mountPageErrorRoute, type PageErrorOptions } from "./page-errors.js";
 import { PaperCache } from "./paper-cache.js";
 import { createPdfAccess } from "./pdf-access.js";
@@ -267,6 +268,11 @@ export interface AppDeps {
   /** Writing and sending mail (ticket 07); production builds it over the real global directories on first use. */
   mailCompose?: MailComposeServices;
   copilot?: CopilotHost;
+  /**
+   * The workbench's operation route (operation-routes.ts): present when this server was started with a run token, absent
+   * in apps that nobody routes CLI operations to.
+   */
+  operations?: { token: string };
   /** Test seam of the text Doc generator (runs between building a candidate and publishing it). */
   textDocHooks?: Pick<TextDocDeps, "beforePublish">;
   /** Longest the Copilot `library` tool waits for an acquisition job before answering `pending` (default ten minutes). */
@@ -850,6 +856,9 @@ export function createApp(deps: AppDeps): Hono {
     deletion: docDeletion,
     ...(deps.makeAdsLibraries ? { adsLibraries: deps.makeAdsLibraries } : {}),
   };
+  if (deps.operations) {
+    mountOperationRoutes(app, { token: deps.operations.token, runtime: { library: libraryOps } });
+  }
   const readerOps: ReaderOpDeps = {
     write: async (op): Promise<ReaderWriteOutcome> => {
       if (badDocId(op.docId) || !op.docId.trim()) return { kind: "not_found" };

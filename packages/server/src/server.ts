@@ -99,6 +99,12 @@ import {
   startupLocations,
 } from "./settings.js";
 import { startWatcher } from "./watch.js";
+import {
+  newWorkbenchToken,
+  registerWorkbench,
+  WorkbenchConflictError,
+  type WorkbenchRegistration,
+} from "./workbench-instance.js";
 import { WsHub } from "./ws.js";
 
 export interface ServerOptions {
@@ -187,6 +193,8 @@ export interface ServerOptions {
   logDir?: string;
   /** The program's version, for the diagnostics' environment report. */
   version?: string;
+  /** The run token of the operation route (operation-routes.ts); absent: the route is not mounted. */
+  operationToken?: string;
   /** The desktop host this server runs under (desktop-app ticket 17, host-routes.ts); absent in the browser form. */
   host?: HostBridge;
 }
@@ -331,6 +339,7 @@ export function createServer(opts: ServerOptions): RunningServer {
     ...(opts.logDir === undefined ? {} : { logDir: opts.logDir }),
     ...(opts.version === undefined ? {} : { version: opts.version }),
     ...(opts.host === undefined ? {} : { host: opts.host }),
+    ...(opts.operationToken === undefined ? {} : { operations: { token: opts.operationToken } }),
     // The tutorial progress lives in the global directories this server pins.
     tutorial: {
       file: join(opts.globalDirs.dataDir, TUTORIAL_PROGRESS_FILE),
@@ -603,6 +612,7 @@ export async function startServer(
         : { tutorialSampleDir: start.tutorialSampleDir }),
       log: common.log,
       logDir: common.logDir,
+      operationToken: common.operationToken,
       ...(start.version === undefined ? {} : { version: start.version }),
       sweepMailStagingIn: common.globalDirs.cacheDir,
       globalDirs: common.globalDirs,
@@ -649,6 +659,8 @@ interface StartCommon {
   globalDirs: GlobalDirs;
   startup: StartupLocations;
   values: SettingsValues;
+  /** This run's token for the operation route and the instance record (workbench-instance.ts). */
+  operationToken: string;
 }
 
 async function startWith<S extends { ready(): Promise<number>; close(): Promise<void> }>(
@@ -672,9 +684,30 @@ async function startWith<S extends { ready(): Promise<number>; close(): Promise<
   let srv: S;
   let project: { root: string; dataDir: string } | null;
   let port: number;
+  let registration: WorkbenchRegistration | null = null;
+  const operationToken = newWorkbenchToken();
   try {
-    ({ srv, project } = create({ log: serveLog.log, logDir, globalDirs, startup, values }, cfg));
+    ({ srv, project } = create(
+      { log: serveLog.log, logDir, globalDirs, startup, values, operationToken },
+      cfg
+    ));
     port = await srv.ready();
+    // One workbench per data directory (ADR 0015): the instance record is what a CLI process finds the server by. A
+    // live workbench already holding the directory refuses this start; any other failure to write the record leaves
+    // the server running without it (CLI operations then run in their own process, as before this record existed).
+    if (project !== null) {
+      try {
+        registration = await registerWorkbench(project.dataDir, { port, token: operationToken });
+      } catch (error) {
+        if (error instanceof WorkbenchConflictError) {
+          await srv.close().catch(() => {});
+          throw error;
+        }
+        console.error(
+          "warning: the workbench could not be registered for command-line routing; CLI operations will run in their own process"
+        );
+      }
+    }
     start.desktop?.onListening?.(port);
   } catch (error) {
     serveLog.close();
@@ -714,6 +747,10 @@ async function startWith<S extends { ready(): Promise<number>; close(): Promise<
     port,
     logDir,
     log: serveLog.log,
-    close: () => close().finally(() => serveLog.close()),
+    close: () => {
+      // The record goes first: from here on the workbench no longer takes operations.
+      registration?.revoke();
+      return close().finally(() => serveLog.close());
+    },
   });
 }

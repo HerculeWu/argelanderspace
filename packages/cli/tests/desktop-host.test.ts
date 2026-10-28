@@ -11,6 +11,7 @@
 
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -161,7 +162,8 @@ function lineReader(stream: NodeJS.ReadableStream): {
 
 function startHost(
   w: World,
-  webDist: string = w.web
+  webDist: string = w.web,
+  project: string = w.project
 ): {
   child: ChildProcess;
   out: ReturnType<typeof lineReader>;
@@ -170,7 +172,7 @@ function startHost(
 } {
   const child = spawn(
     process.execPath,
-    [BIN, "desktop-host", "--project", w.project, "--web-dist", webDist],
+    [BIN, "desktop-host", "--project", project, "--web-dist", webDist],
     {
       env: w.env,
       // The shell's working directory is not the project; the host must not depend on it.
@@ -343,7 +345,11 @@ describe("the built desktop host", () => {
     writeConfig(w, `port = ${port}\n`);
     const first = startHost(w);
     await first.out.next("ready");
-    const second = startHost(w);
+    // Another project: one workbench per data directory (release-0.2 ticket 02), so a second host for the same folder is
+    // refused (the next test); this one is about the port.
+    const otherProject = join(w.root, "Other Project");
+    mkdirSync(otherProject);
+    const second = startHost(w, w.web, otherProject);
     const ready = await second.out.next("ready");
     expect(ready).toMatchObject({
       configuredPort: port,
@@ -362,6 +368,22 @@ describe("the built desktop host", () => {
       expect(await h.exited).toBe(0);
     }
     expect(await portFree(port)).toBe(true);
+  }, 60_000);
+
+  test("a second host for a project folder that already has a workbench is refused: one failed line, exit 1, the first host keeps its record", async () => {
+    const w = world();
+    const first = startHost(w);
+    await first.out.next("ready");
+    const second = startHost(w);
+    const failed = await second.out.next("failed");
+    expect(failed).toMatchObject({ type: "failed" });
+    expect(await second.exited).toBe(1);
+    expect(second.err()).toMatch(/another ArgelanderSpace workbench is already running/);
+    // the first host is untouched and its record is still there
+    expect(existsSync(join(w.project, "literatures", "workbench.json"))).toBe(true);
+    first.child.stdin?.end();
+    expect(await first.exited).toBe(0);
+    expect(existsSync(join(w.project, "literatures", "workbench.json"))).toBe(false);
   }, 60_000);
 
   test("a project folder that is not there: exit 1, no ready line; one failed line the shell tells apart from a crash", () => {
