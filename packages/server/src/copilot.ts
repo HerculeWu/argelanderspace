@@ -381,13 +381,24 @@ export function filePrompt(files?: FilePromptContext): string {
   );
 }
 
-/** The base instruction of a session: small and always present; the versioned instructions are loaded on demand. */
+/** The machine's local calendar date as YYYY-MM-DD (not UTC: the user's "today"). */
+export function localDateOf(date: Date): string {
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}`;
+}
+
+/**
+ * The base instruction of a session: small and always present; the versioned instructions are loaded on demand.
+ * `today` (YYYY-MM-DD, the machine's local date) adds one sentence stating it: this prompt has no date of its own, so
+ * without the sentence the model does not know the day.
+ */
 export const basePrompt = (
   writer: boolean,
   text: boolean,
   mail = false,
   argument = false,
-  files?: FilePromptContext
+  files?: FilePromptContext,
+  today?: string
 ): string => {
   let base = writer ? SYSTEM_PROMPT + WRITER_PROMPT : SYSTEM_PROMPT;
   if (mail) {
@@ -415,6 +426,7 @@ export const basePrompt = (
     (text ? TEXT_PROMPT : "") +
     (mail ? MAIL_PROMPT : "") +
     (argument ? ARGUMENT_PROMPT : "") +
+    (today ? ` Today's date on this machine (local time) is ${today}.` : "") +
     filePrompt(files)
   );
 };
@@ -522,6 +534,11 @@ export class CopilotHost {
   private skillsDir: string | null = null;
   useSkillsDir(dir: string | null | undefined): void {
     this.skillsDir = dir ?? null;
+  }
+  /** The clock the system prompt's date sentence reads; tests inject a fixed one. */
+  private now: () => Date = () => new Date();
+  useClock(now: () => Date): void {
+    this.now = now;
   }
   /** The transport that can reach exactly one browser view; absent in headless hosts. */
   useViewDelivery(deliver: ViewDelivery): void {
@@ -2215,7 +2232,8 @@ export class CopilotHost {
   ): ApplicationResourceLoader {
     return createApplicationResourceLoader({
       extensions,
-      systemPrompt: () => basePrompt(writer, text, mail, argument, files?.()),
+      systemPrompt: () =>
+        basePrompt(writer, text, mail, argument, files?.(), localDateOf(this.now())),
       // Skills are read with the read tool: with the file tools off there is nothing to list.
       skills: () =>
         files?.()?.skills ? loadBundledSkills(this.skillsDir) : loadBundledSkills(null),

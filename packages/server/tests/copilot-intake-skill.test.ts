@@ -25,6 +25,7 @@ import {
 } from "@argelanderspace/contracts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from "@earendil-works/pi-coding-agent";
 import { expect, test } from "vitest";
+import { basePrompt } from "../src/copilot.js";
 import { LIBRARY_TOOL_NAME } from "../src/copilot-library-tool.js";
 import { PLAN_TOOL_NAME } from "../src/copilot-plan-tool.js";
 import { COPILOT_SKILL_NAMES } from "../src/copilot-resources.js";
@@ -256,4 +257,98 @@ test("the PDF folder step reads every first page with one loop, the command the 
   expect(skill).not.toMatch(/pdftotext -l 1 <file>/);
   // The shell tool keeps only the tail of a long output: the skill must say how to read what was cut off.
   expect(skill).toMatch(/output was truncated[^\n]*`read` that file in windows/);
+});
+
+// ---- follow-ups of the second recording (project intake ticket 13) ------------------------------------- //
+
+/** The checklist template: the one ```markdown block of the skill. */
+const template = /```markdown\n([\s\S]*?)\n```/.exec(skill)?.[1] ?? "";
+const preparation = skill.slice(skill.indexOf("## Preparation mode"));
+const intakeMode = skill.slice(0, skill.indexOf("## Preparation mode"));
+
+test("the date comes from the system prompt's own line, never from a command", () => {
+  // the sentence the skill quotes is the one the Copilot's base prompt really carries
+  const quoted = /\("(Today's date on this machine)[^"]*"\)/.exec(skill)?.[1];
+  expect(quoted).toBeDefined();
+  expect(basePrompt(false, false, false, false, undefined, "2031-03-04")).toContain(
+    `${quoted} (local time) is 2031-03-04.`
+  );
+  expect(skill).toMatch(/Never run a command, the date command included, to learn it/);
+  expect(skill).toMatch(/system prompt has no date sentence[^\n]*日期未知/);
+  // the old wording left the date open and the model ran a command for it
+  expect(skill).not.toMatch(/`date\b/);
+});
+
+test("the checklist keeps exactly five sections; the next step is one line under 状态, never a sixth section", () => {
+  const headings = template.split("\n").filter((l) => /^## /.test(l));
+  expect(headings).toEqual([
+    "## 状态",
+    "## 来源",
+    "## 已带入",
+    "## 待定与跳过",
+    "## 留在原处的材料",
+  ]);
+  const status = template.slice(template.indexOf("## 状态"), template.indexOf("## 来源"));
+  expect(status).toMatch(/^- 下一步：/m);
+  expect(skill).toMatch(/never a sixth/);
+  expect(skill).toMatch(/not into a new section/);
+  // no confirmation that did not happen
+  expect(skill).toMatch(
+    /Do not write that[^\n]*confirmed, agreed or checked with the user unless the user said so/
+  );
+});
+
+test("the PDF line, the stops and the way to continue are written down", () => {
+  // attaching never changes a row; the fixed line sits after the table of Zotero, PDF folder and server-copy batches
+  expect(skill).toContain("A PDF that was attached successfully changes no row");
+  expect(skill).toContain("`挂上 PDF：n（其中同文件已存在 m）`");
+  expect(skill).toMatch(/m those that returned `noop`/);
+  // stops: after each source's table, before step 5 and before step 6; no draft of the next step in a stop message
+  expect(skill).toMatch(/after each source: show the summary table/);
+  expect(skill).toMatch(/before step 5 \(arXiv full text\) and before step 6 \(Plans and Tasks\)/);
+  expect(skill).toMatch(/the only question is whether to start that step/);
+  expect(skill).toMatch(/holds nothing from the next step: no draft/);
+  expect(skill).toMatch(/Do not decide on your own that a step can be skipped/);
+  // the way to continue: the button of the entry, or telling the Copilot, at every stop and at the end
+  for (const part of [intakeMode, preparation]) {
+    expect(part).toContain("「继续迁入」");
+    expect(part).toMatch(/button/);
+  }
+  expect(intakeMode).toMatch(/Every time you stop, and when you wrap up/);
+});
+
+test("preparation mode has no system-prompt date to count on and still gives the next step", () => {
+  expect(preparation).toContain("日期未知，外部 agent");
+  expect(preparation).toMatch(/do not run a command for it/);
+  expect(preparation).toContain("- 下一步：在工作台让 Copilot 继续迁入");
+});
+
+test("the button the skill names is the one the entry shows, in both interface languages", () => {
+  const label = (name: string) =>
+    (
+      JSON.parse(
+        readFileSync(new URL(`../../web/src/locales/${name}.json`, import.meta.url), "utf8")
+      ) as { library: { intake: { resume: string } } }
+    ).library.intake.resume;
+  // zh-CN is quoted as it is, English as the interface language's own wording
+  expect(skill).toContain(`「${label("zh-CN")}」`);
+  expect(skill).toContain(`"${label("en")}"`);
+  // every place that names the button also gives the English wording once, in the interface sentence
+  expect(skill.split("(in the English interface").length - 1).toBe(2);
+});
+
+test("the PDF line covers the sources that attach PDFs, and a file left unattached is its own 待定 item", () => {
+  expect(skill).toMatch(
+    /every source in which you attach PDFs \(Zotero, a PDF folder, a server copy, a `\.bib` file with a PDF folder the user named\)/
+  );
+  expect(skill).toMatch(/A PDF that was attached successfully changes no row/);
+  expect(skill).toMatch(/is one item under 待定/);
+  expect(skill).toMatch(/they are different objects/);
+  expect(skill).not.toContain("Attaching a PDF never changes a row");
+  // one table per source, rows summed over its batches; the PDF line is defined where it is first used
+  expect(skill).toMatch(/summary table for the whole source \(the rows summed over its batches\)/);
+  expect(skill.indexOf("described under Summary tables")).toBeLessThan(
+    skill.indexOf("add one fixed line")
+  );
+  expect(skill).toMatch(/"继续迁入", or when/);
 });

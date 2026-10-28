@@ -14,7 +14,9 @@ import { basename, dirname, join, resolve } from "node:path";
 import { call, type Feed, type Gen, type Json, say, tool } from "./intake-harness.js";
 
 export const CHECKLIST = "argelanderspace-intake.md";
-const TODAY = new Date().toISOString().slice(0, 10);
+/** the day the model read in its system prompt (set by `loadSkill`); the script never asks the machine */
+let today = "";
+export const CONTINUE = "下次点入口的「继续迁入」，或对我说「继续迁入」。";
 
 // ---- the checklist, rendered and parsed ---------------------------------------------------------------- //
 
@@ -27,6 +29,10 @@ export interface Source {
 }
 export interface Checklist {
   state: string;
+  /** the 下一步 line under 状态 */
+  next: string;
+  /** set when the writer has no date to give (an external agent): written instead of today's */
+  updated?: string;
   agent: string;
   sources: Source[];
   imported: string[];
@@ -41,7 +47,8 @@ export function render(c: Checklist): string {
     "",
     "## 状态",
     `- 状态：${c.state}`,
-    `- 最近更新：${TODAY}，${c.agent}`,
+    `- 最近更新：${c.updated ?? today}，${c.agent}`,
+    `- 下一步：${c.next}`,
     "",
     "## 来源",
     ...c.sources.flatMap((s) => [
@@ -77,8 +84,10 @@ export function parse(text: string): Checklist {
     }
   }
   const status = (sections.get("状态") ?? []).find((l) => l.startsWith("状态："));
+  const next = (sections.get("状态") ?? []).find((l) => l.startsWith("下一步："));
   return {
     state: status ? status.slice(3) : "进行中",
+    next: next ? next.slice(4) : "",
     agent: "Copilot",
     sources: (sections.get("来源") ?? []).map((l) => {
       const [head = "", ...sub] = l.split("\n");
@@ -116,6 +125,9 @@ export const table = (c: Counts) =>
     `| 失败 | ${c.failed} |`,
     `| 待定 | ${c.pending} |`,
   ].join("\n");
+
+/** SKILL.md "Summary tables": the fixed line after the table of a batch that attached PDFs. */
+const pdfCountLine = (n: number, same: number) => `挂上 PDF：${n}（其中同文件已存在 ${same}）`;
 
 /** SKILL.md "Summary tables", the bibcode batch (`entries`). */
 function countEntries(entries: Json[]): Counts {
@@ -202,6 +214,12 @@ function* save(c: Checklist): Gen<void> {
 
 /** The skill is read first, from the location the session's skill list gives. */
 function* loadSkill(system: string): Gen<void> {
+  // the date comes from the system prompt's own line; no command is run for it
+  const day = /Today's date on this machine \(local time\) is (\d{4}-\d{2}-\d{2})\./.exec(
+    system
+  )?.[1];
+  if (!day) throw new Error("the system prompt has no date sentence");
+  today = day;
   const location = /<location>([^<]*argelander-project-intake[^<]*)<\/location>/.exec(system)?.[1];
   if (!location) throw new Error("the intake skill is not in the session's skill list");
   const text = yield* call("read", { path: location });
@@ -214,7 +232,7 @@ const find = (c: Checklist, kind: string) => c.sources.find((s) => s.kind.starts
 
 function note(c: Checklist, batch: string, counts: Counts, extra = "") {
   c.imported.push(
-    `${TODAY} ${batch}：新建 ${counts.created}，并入 ${counts.merged}，被拒 ${counts.refused}，失败 ${counts.failed}，待定 ${counts.pending}${extra}`
+    `${today} ${batch}：新建 ${counts.created}，并入 ${counts.merged}，被拒 ${counts.refused}，失败 ${counts.failed}，待定 ${counts.pending}${extra}`
   );
 }
 
@@ -253,6 +271,7 @@ export function* intakeFirstSession(): Gen<void> {
   // 3. survey
   const c: Checklist = {
     state: "进行中",
+    next: "问清有哪些材料",
     agent: "Copilot",
     sources: [],
     imported: [],
@@ -281,6 +300,7 @@ export function* intakeFirstSession(): Gen<void> {
     const d = answers.get(kind);
     if (d) c.left.push(`${kind}：${d}`);
   }
+  c.next = "带入 ADS libraries";
   yield* save(c);
 
   // 4. ADS libraries
@@ -347,8 +367,11 @@ export function* intakeFirstSession(): Gen<void> {
   }
   const adsLine = find(c, "ADS libraries");
   if (adsLine) adsLine.status = "已带入";
+  c.next = "等你决定 ADS 被拒与失败的条目，然后做 Zotero";
   yield* save(c);
-  const settle = yield* say(`${tables.join("\n\n")}\n\n${open.join("\n")}\n这些怎么处理？`);
+  const settle = yield* say(
+    `${tables.join("\n\n")}\n\n${open.join("\n")}\n这些怎么处理？${CONTINUE}`
+  );
   if (!/过期|跳过/.test(settle)) throw new Error(`unexpected reply: ${settle}`);
 
   // Zotero
@@ -380,6 +403,7 @@ export function* intakeFirstSession(): Gen<void> {
   // attach the PDFs named by the `file` fields; entries without one wait for the PDF folder
   const waiting: string[] = [];
   let attached = 0;
+  let attachedNoop = 0;
   for (const e of batch) {
     const field = e.field("file");
     if (!field) {
@@ -396,6 +420,7 @@ export function* intakeFirstSession(): Gen<void> {
       if (!(a.ok && (a.status === "ok" || a.status === "noop")))
         throw new Error(`attach ${pdf}: ${JSON.stringify(a)}`);
       attached++;
+      if (a.status === "noop") attachedNoop++;
     }
   }
   zCounts.pending = waiting.length;
@@ -412,12 +437,13 @@ export function* intakeFirstSession(): Gen<void> {
   for (const key of waiting) c.pending.push(`Zotero ${key}：没有 file 字段，到 PDF 文件夹里找`);
   note(c, "Zotero", zCounts, `，挂 PDF ${attached}`);
   if (zline) zline.status = "部分";
+  c.next = "PDF 文件夹（Zotero 里没有 file 字段的条目到那里按 DOI 找）";
   yield* save(c);
   const stop = yield* say(
-    `Zotero 这一批：\n${table(zCounts)}\n\n${refusedLines.join("\n")}\n${waiting.join("、")} 没有 file 字段，我会在 PDF 文件夹里按 DOI 找。接着做 PDF 文件夹吗？`
+    `Zotero 这一批：\n${table(zCounts)}\n${pdfCountLine(attached, attachedNoop)}\n\n${refusedLines.join("\n")}\n${waiting.join("、")} 没有 file 字段，我会在 PDF 文件夹里按 DOI 找。接着做 PDF 文件夹吗？${CONTINUE}`
   );
   if (!/先到这|今天/.test(stop)) throw new Error(`unexpected reply: ${stop}`);
-  yield* say("好，进度已记在迁入清单里。下次说「继续迁入」，我读清单接着做。");
+  yield* say(`好，进度已记在迁入清单里。${CONTINUE}`);
 }
 
 /** The skill's one command per PDF folder: every first page, each after its `=== <path>` line (one confirmation card). */
@@ -447,6 +473,7 @@ export function* intakeResumedSession(project: string): Gen<void> {
     .map((s) => s.kind);
   if (!todo.includes("PDF 文件夹"))
     throw new Error(`the checklist does not say the PDF folder is next: ${todo}`);
+  if (!c.next.includes("PDF 文件夹")) throw new Error(`the 下一步 line does not say it: ${c.next}`);
 
   // PDF folder
   const folder = pathsIn(find(c, "PDF 文件夹")?.detail ?? "")[0] as string;
@@ -456,6 +483,7 @@ export function* intakeResumedSession(project: string): Gen<void> {
   const candidates: { file: string; why: string }[] = [];
   const overLimit: string[] = [];
   const attachedWorks: string[] = [];
+  let attachedSame = 0;
   const pages = yield* firstPages(folder);
   const extra: string[] = [];
   for (const file of files) {
@@ -500,11 +528,15 @@ export function* intakeResumedSession(project: string): Gen<void> {
       }
       continue;
     }
+    // SKILL.md "Summary tables": the Work counts by its import result; a file that cannot be attached (below) is a
+    // separate 待定 item. A PDF over the page limit therefore adds one to 新建 (its Work) and one to 待定 (its file).
     if (imp.results[0].status === "created") counts.created++;
     else counts.merged++;
     const a = yield* tool("library", { action: "attach_local_pdf", refId: ref.id, path });
-    if (a.ok && (a.status === "ok" || a.status === "noop")) attachedWorks.push(ref.id);
-    else if (a.reason === "too_large" || a.reason === "page_limit") {
+    if (a.ok && (a.status === "ok" || a.status === "noop")) {
+      attachedWorks.push(ref.id);
+      if (a.status === "noop") attachedSame++;
+    } else if (a.reason === "too_large" || a.reason === "page_limit") {
       overLimit.push(file);
       counts.pending++;
       c.pending.push(`PDF ${file}：超出上传上限（${a.reason}），Work 已建，PDF 未挂`);
@@ -517,13 +549,15 @@ export function* intakeResumedSession(project: string): Gen<void> {
   note(c, `PDF 文件夹 ${basename(folder)}`, counts, `，挂 PDF ${attachedWorks.length}`);
   const pdfLine = find(c, "PDF 文件夹");
   if (pdfLine) pdfLine.status = "部分";
+  c.next = "等你确认 PDF 文件夹里的候选；之后做服务器";
   yield* save(c);
   const userReply = yield* say(
-    `PDF 文件夹共 ${files.length} 个 PDF：\n${table(counts)}\n\n${extra.join("\n")}\n超限：${overLimit.join("、")}（只登记）。\n需要你确认的候选：\n${candidates.map((x) => `- ${x.file}：${x.why}`).join("\n")}\n识别不了的请给我标题、作者、年份和出处，或者先放待定。`
+    `PDF 文件夹共 ${files.length} 个 PDF：\n${table(counts)}\n${pdfCountLine(attachedWorks.length, attachedSame)}\n\n${extra.join("\n")}\n超限：${overLimit.join("、")}（只登记）。\n需要你确认的候选：\n${candidates.map((x) => `- ${x.file}：${x.why}`).join("\n")}\n识别不了的请给我标题、作者、年份和出处，或者先放待定。${CONTINUE}`
   );
 
   // the user confirmed one of them with title, authors, year and venue: a BibTeX entry, then the PDF
   const counts2 = zero();
+  let suppAttached = 0;
   const scan = candidates.find((x) => x.file === "notes_scan.pdf");
   const m =
     /标题[:：]\s*([^，,;；\n]+)[，,;；]\s*作者[:：]\s*([^;；\n]+)[;；]\s*年份[:：]\s*(\d{4})[，,;；]\s*出处[:：]\s*([^\n。]+)/.exec(
@@ -542,13 +576,19 @@ export function* intakeResumedSession(project: string): Gen<void> {
     });
     if (!a.ok) throw new Error(`attach ${scan.file}: ${JSON.stringify(a)}`);
     counts2.created++;
+    suppAttached++;
     // it is no longer pending
     const at = c.pending.findIndex((p) => p.startsWith(`PDF ${scan.file}`));
     if (at >= 0) c.pending.splice(at, 1);
   }
   counts2.pending = candidates.filter((x) => x !== scan).length + overLimit.length;
   note(c, "PDF 文件夹（用户确认后补）", counts2);
+  c.next = "服务器：取 papers 的副本到 intake-inbox/";
   yield* save(c);
+  const goServers = yield* say(
+    `补的一批：\n${table(counts2)}\n${pdfCountLine(suppAttached, 0)}\n\n接着做服务器吗？我会先把 rsync 命令给你确认。${CONTINUE}`
+  );
+  if (!/服务器/.test(goServers)) throw new Error(`unexpected reply: ${goServers}`);
 
   // servers: only what is to be imported, copied once the user has agreed to the command (the confirmation card)
   const serverLine = find(c, "服务器");
@@ -563,6 +603,8 @@ export function* intakeResumedSession(project: string): Gen<void> {
     .filter((f) => f.endsWith(".pdf"));
   const sCounts = zero();
   const copyPages = yield* firstPages(inbox);
+  let copyAttached = 0;
+  let copySame = 0;
   for (const file of copies) {
     const path = join(inbox, file);
     const page = copyPages.get(path) ?? "";
@@ -581,13 +623,20 @@ export function* intakeResumedSession(project: string): Gen<void> {
     sCounts.merged += imp.results[0].status === "exists" ? 1 : 0;
     const a = yield* tool("library", { action: "attach_local_pdf", refId: ref.id, path });
     if (!a.ok) throw new Error(`attach ${file}: ${JSON.stringify(a)}`);
+    copyAttached++;
+    if (a.status === "noop") copySame++;
   }
   if (serverLine) {
     serverLine.status = "已带入";
     serverLine.detail = `${serverLine.detail}；副本在 intake-inbox/lab-server/`;
   }
   note(c, "服务器 papers", sCounts);
+  c.next = "稿件：读 Overleaf zip，对照引用";
   yield* save(c);
+  const goMs = yield* say(
+    `服务器 papers：\n${table(sCounts)}\n${pdfCountLine(copyAttached, copySame)}\n\n接着做稿件（Overleaf zip）吗？${CONTINUE}`
+  );
+  if (!/稿件/.test(goMs)) throw new Error(`unexpected reply: ${goMs}`);
 
   // manuscript: Overleaf. The zip is read in place.
   const msLine = find(c, "稿件");
@@ -640,7 +689,12 @@ export function* intakeResumedSession(project: string): Gen<void> {
   note(c, "稿件 Overleaf zip", oCounts, `，引用了但库里没有：${missing.join("、") || "无"}`);
   if (msLine) msLine.status = "已带入";
   if (missing.length) c.pending.push(`稿件 Overleaf：引用了但库里没有 ${missing.join("、")}`);
+  c.next = "arXiv 正文：问你要取哪几篇";
   yield* save(c);
+  const goArxiv = yield* say(
+    `Overleaf zip：\n${table(oCounts)}\n\n稿件里引用了但 .bib 里没有的：${missing.join("、") || "无"}。\n\n来源都做完了。接着进入 arXiv 正文这一步吗？${CONTINUE}`
+  );
+  if (!/arXiv|好/.test(goArxiv)) throw new Error(`unexpected reply: ${goArxiv}`);
 
   // 5. arXiv full text, asked once
   const all = yield* tool("library", { action: "read", limit: 200 });
@@ -648,7 +702,7 @@ export function* intakeResumedSession(project: string): Gen<void> {
     (r.arxiv_id as string | undefined) ?? (r.id.startsWith("arxiv:") ? r.id.slice(6) : undefined);
   const noPdf = (all.refs as Json[]).filter((r) => !r.pdf && arxivOf(r));
   const arxivReply = yield* say(
-    `用户确认后补的一批：\n${table(counts2)}\n\n服务器 papers：\n${table(sCounts)}\n\nOverleaf zip：\n${table(oCounts)}\n\n稿件里引用了但 .bib 里没有的：${missing.join("、") || "无"}。\n\n所有来源处理完了。最后问一次：哪些要取 arXiv 正文？我建议取有 arXiv id 又没有本地 PDF 的：${noPdf.map((r) => `${arxivOf(r)}《${r.title}》`).join("；")}。`
+    `最后问一次：哪些要取 arXiv 正文？我建议取有 arXiv id 又没有本地 PDF 的：${noPdf.map((r) => `${arxivOf(r)}《${r.title}》`).join("；")}。${CONTINUE}`
   );
   const wanted = noPdf.filter(
     (r) => arxivReply.includes(arxivOf(r) as string) || /都取|全部/.test(arxivReply)
@@ -663,8 +717,13 @@ export function* intakeResumedSession(project: string): Gen<void> {
     if (!a.ok) throw new Error(`acquire ${r.id}: ${JSON.stringify(a)}`);
     fetched++;
   }
-  c.imported.push(`${TODAY} arXiv 正文：取 ${fetched}`);
+  c.imported.push(`${today} arXiv 正文：取 ${fetched}`);
+  c.next = "计划：读 TODO 文件，起草 Plans 和 Tasks，等你确认和补期限";
   yield* save(c);
+  const goPlans = yield* say(
+    `arXiv 正文取了 ${fetched} 篇。接着整理计划（Plans 和 Tasks）吗？${CONTINUE}`
+  );
+  if (!/计划/.test(goPlans)) throw new Error(`unexpected reply: ${goPlans}`);
 
   // 6. plans: read the notes, draft, ask for the missing deadline
   const planLine = find(c, "计划");
@@ -681,7 +740,7 @@ export function* intakeResumedSession(project: string): Gen<void> {
       due: /by (\d{4}-\d{2}-\d{2})/.exec(l)?.[1],
     }));
   const dateReply = yield* say(
-    `计划草案：Plan「Thesis」（${planName?.[1]}）；\n${tasks.map((t) => `- ${t.title}${t.due ? `（${t.due}）` : "（没有期限）"}`).join("\n")}\n每个 Task 都要有期限，「${tasks.find((t) => !t.due)?.title}」的期限是？确认后我写入。`
+    `计划草案：Plan「Thesis」（${planName?.[1]}）；\n${tasks.map((t) => `- ${t.title}${t.due ? `（${t.due}）` : "（没有期限）"}`).join("\n")}\n每个 Task 都要有期限，「${tasks.find((t) => !t.due)?.title}」的期限是？确认后我写入。${CONTINUE}`
   );
   const given = /(\d{4}-\d{2}-\d{2})/.exec(dateReply)?.[1];
   for (const t of tasks) t.due ??= given;
@@ -720,8 +779,9 @@ export function* intakeResumedSession(project: string): Gen<void> {
     }
   }
   plan = yield* tool("plan", { action: "read" });
-  c.imported.push(`${TODAY} 计划：Plan 1，Task ${tasks.length}`);
+  c.imported.push(`${today} 计划：Plan 1，Task ${tasks.length}`);
   if (planLine) planLine.status = "已带入";
+  c.next = "等你宣布迁入完成";
   yield* save(c);
 
   // 7. wrap up
@@ -730,9 +790,10 @@ export function* intakeResumedSession(project: string): Gen<void> {
   );
   if (/完成/.test(done)) {
     c.state = "已完成（用户宣布）";
+    c.next = "无";
     yield* save(c);
   }
-  yield* say("迁入清单已更新。");
+  yield* say(`迁入清单已更新。要补充材料时，${CONTINUE}`);
 }
 
 // ======================================================================================================== //
@@ -754,6 +815,8 @@ export function* preparationAgent(project: string): Gen<void> {
   }
   const c: Checklist = {
     state: "进行中",
+    next: "在工作台让 Copilot 继续迁入",
+    updated: "日期未知",
     agent: "外部 agent",
     sources: [],
     imported: [],
@@ -820,7 +883,9 @@ export function* preparationAgent(project: string): Gen<void> {
       ];
   }
   yield* save(c);
-  yield* say("准备好了：清单已写好，原文件夹没动。请打开工作台，让 Copilot 继续迁入。");
+  yield* say(
+    "准备好了：清单已写好，原文件夹没动。请打开工作台，点入口的「继续迁入」，或对 Copilot 说「继续迁入」。"
+  );
 }
 
 // ======================================================================================================== //
@@ -845,6 +910,8 @@ export function* intakeFromPrepared(project: string): Gen<void> {
     }));
   if (rows.length === 0) throw new Error("the prepared checklist has no PDF table");
   const counts = zero();
+  let attachedN = 0;
+  let attachedSame = 0;
   const preparedPages = yield* firstPages(folder);
   for (const { file, id } of rows) {
     if (id === "未识别") {
@@ -878,6 +945,10 @@ export function* intakeFromPrepared(project: string): Gen<void> {
       counts.pending++;
       c.pending.push(`PDF ${file}：超出上传上限（${a.reason}），Work 已建，PDF 未挂`);
     } else if (!a.ok) throw new Error(`attach ${file}: ${JSON.stringify(a)}`);
+    else {
+      attachedN++;
+      if (a.status === "noop") attachedSame++;
+    }
   }
   const serverCopy = find(c, "服务器")?.sub?.some((l) => l.includes("intake-inbox/lab-server/"));
   const copy = serverCopy ? join(project, "intake-inbox", "lab-server") : null;
@@ -901,12 +972,17 @@ export function* intakeFromPrepared(project: string): Gen<void> {
       counts[imp.results[0].status === "created" ? "created" : "merged"]++;
       const a = yield* tool("library", { action: "attach_local_pdf", refId: ref.id, path });
       if (!a.ok) throw new Error(`attach ${file}: ${JSON.stringify(a)}`);
+      attachedN++;
+      if (a.status === "noop") attachedSame++;
     }
   }
   if (pdfLine) pdfLine.status = "部分";
   note(c, "准备好的 PDF 表", counts);
+  c.next = "等你确认后做 Zotero 以外的其余来源";
   yield* save(c);
-  yield* say(`按准备好的清单带入了 PDF：\n${table(counts)}`);
+  yield* say(
+    `按准备好的清单带入了 PDF：\n${table(counts)}\n${pdfCountLine(attachedN, attachedSame)}\n${CONTINUE}`
+  );
 }
 
 // ======================================================================================================== //

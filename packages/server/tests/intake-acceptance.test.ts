@@ -14,6 +14,7 @@ import { getCurrentTools, type TranscriptContext } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import {
   CHECKLIST,
+  CONTINUE,
   importLongBib,
   intakeFirstSession,
   intakeFromPrepared,
@@ -31,6 +32,7 @@ import {
   snapshotTree,
 } from "./intake-fixture.js";
 import {
+  FIXED_DATE,
   newConversation,
   openWorld,
   operationsOf,
@@ -141,6 +143,10 @@ test.skipIf(!HAVE_SHELL_TOOLS)(
     // the summary tables of session 1: two columns, five rows, in the skill's order
     const texts1 = await assistantTexts(c1);
     const t1 = texts1.flatMap(tablesIn);
+    // the Zotero stop: the PDF line follows its table (attach calls that came back ok or noop, and the noop ones)
+    expect(texts1.find((t) => t.startsWith("Zotero 这一批")) ?? "").toMatch(
+      /\| 待定 \| 2 \|\n挂上 PDF：2（其中同文件已存在 0）/
+    );
     expect(t1.length).toBe(3);
     for (const t of t1) {
       expect(t.header).toEqual(["结果", "数量"]);
@@ -179,6 +185,11 @@ test.skipIf(!HAVE_SHELL_TOOLS)(
       expect(written).toContain(heading);
     const mid = parse(written);
     expect(mid.state).toBe("进行中");
+    // ticket 13: the date is the one in the system prompt (a fixed clock, not today), the next step is one line under 状态, no sixth section
+    expect(written).toContain(`- 最近更新：${FIXED_DATE}，Copilot`);
+    expect(written.split("\n").filter((l) => l.startsWith("## "))).toHaveLength(5);
+    expect(mid.next).toContain("PDF 文件夹");
+    expect(written).not.toMatch(/已与用户(对过|确认)|下一步（/);
     expect(mid.sources.find((s) => s.kind === "ADS libraries")?.status).toBe("已带入");
     expect(mid.sources.find((s) => s.kind === "Zotero")?.status).toBe("部分");
     expect(mid.sources.find((s) => s.kind === "PDF 文件夹")?.status).toBe("未开始");
@@ -204,9 +215,13 @@ test.skipIf(!HAVE_SHELL_TOOLS)(
       c2,
       "notes_scan.pdf 的 标题：A note on tidal tails，作者：H. Kowalski, B. Berg；年份：2018，出处：Proceedings of the Synthetic Conference。trap.pdf 是内部备忘录，跳过；blank.pdf 我也不认识，先放待定。"
     );
-    // nothing is fetched from arXiv before the one question
+    // nothing is fetched from arXiv before the one question; each source ends in a stop, the next one waits for the user
     expect(w.arxivFetches).toEqual([]);
-    const r3 = await userTurn(w, c2, "2101.00002 和 2105.04321 要，其余不用。");
+    const r3 = await userTurn(w, c2, "好，接着做服务器。");
+    const r4 = await userTurn(w, c2, "接着做稿件。");
+    expect(w.arxivFetches).toEqual([]);
+    const r5 = await userTurn(w, c2, "好，进入 arXiv 这一步。");
+    const r6 = await userTurn(w, c2, "2101.00002 和 2105.04321 要，其余不用。");
     // the question named every Work with an arXiv id and no PDF; only the two the user picked were fetched
     const arxivQuestion =
       (await assistantTexts(c2)).find((t) => t.includes("哪些要取 arXiv 正文")) ?? "";
@@ -214,17 +229,44 @@ test.skipIf(!HAVE_SHELL_TOOLS)(
       expect(arxivQuestion).toContain(id);
     expect(arxivQuestion).not.toContain("2108.01234"); // already has its PDF
     expect(w.arxivFetches.sort()).toEqual(["2101.00002", "2105.04321"]);
-    const r4 = await userTurn(w, c2, "2026-12-15，草案可以，写入吧。");
-    const r5 = await userTurn(w, c2, "完成。");
-    for (const t of [r1, r2, r3, r4, r5]) expect(t.status).toBe("completed");
+    const r7 = await userTurn(w, c2, "好，接着整理计划。");
+    const r8 = await userTurn(w, c2, "2026-12-15，草案可以，写入吧。");
+    const r9 = await userTurn(w, c2, "完成。");
+    for (const t of [r1, r2, r3, r4, r5, r6, r7, r8, r9]) expect(t.status).toBe("completed");
 
     // the server copy was asked for as a command card (the user's agreement) and went where the skill says
-    const rsync = [...r2.cards, ...r1.cards].find((c) => c.detail.startsWith("rsync"));
+    const rsync = [r1, r2, r3].flatMap((t) => t.cards).find((c) => c.detail.startsWith("rsync"));
     expect(rsync?.detail).toContain(`${w.project}/intake-inbox/lab-server/`);
     expect(rsync?.decision).toBe("approve");
 
     const texts2 = await assistantTexts(c2);
     const t2 = texts2.flatMap(tablesIn);
+    // ticket 13: a stop message holds the table, the lines after it and one question, and nothing of the next step
+    const stopAfter = (needle: string) => texts2.find((t) => t.includes(needle)) ?? "";
+    const pdfStop = stopAfter("PDF 文件夹共");
+    const supplementStop = stopAfter("补的一批");
+    const serverStop = stopAfter("服务器 papers：");
+    const overleafStop = stopAfter("Overleaf zip：");
+    for (const stop of [pdfStop, supplementStop, serverStop, overleafStop]) {
+      expect(stop).not.toBe("");
+      expect(stop).toContain(CONTINUE);
+      expect(stop).not.toMatch(/计划草案|哪些要取 arXiv 正文/);
+    }
+    expect(pdfStop).not.toMatch(/rsync|服务器 papers/);
+    expect(overleafStop).not.toContain("哪些要取");
+    // the PDF line after the table: attaching is not a row. Folder: 5 attach calls came back ok or noop (the huge one
+    // did not), one of them the byte-identical copy of a PDF already on its Work
+    expect(pdfStop).toMatch(/\| 待定 \| 4 \|\n挂上 PDF：5（其中同文件已存在 1）/);
+    expect(supplementStop).toMatch(/\| 待定 \| 3 \|\n挂上 PDF：1（其中同文件已存在 0）/);
+    expect(serverStop).toMatch(/\| 待定 \| 0 \|\n挂上 PDF：1（其中同文件已存在 0）/);
+    expect(overleafStop).not.toContain("挂上 PDF");
+    const arxivAsk = stopAfter("哪些要取 arXiv 正文");
+    expect(arxivAsk).toContain(CONTINUE);
+    expect(stopAfter("接着整理计划")).toContain(CONTINUE);
+    // the plan draft came only after the user agreed to step 6, and not inside the arXiv message
+    expect(texts2.findIndex((t) => t.includes("计划草案"))).toBeGreaterThan(
+      texts2.findIndex((t) => t.includes("接着整理计划"))
+    );
     for (const t of t2) {
       expect(t.header).toEqual(["结果", "数量"]);
       expect(t.rows.map((r) => r[0])).toEqual(LABELS);
@@ -302,7 +344,15 @@ test.skipIf(!HAVE_SHELL_TOOLS)(
     expect(JSON.stringify(plans.plans[0]?.tasks[0])).toContain(smithMain);
 
     // ---- the final checklist ---------------------------------------------------------------------------- //
-    const done = parse(readFileSync(join(w.project, CHECKLIST), "utf8"));
+    const finalText = readFileSync(join(w.project, CHECKLIST), "utf8");
+    expect(finalText).toContain(`- 最近更新：${FIXED_DATE}，Copilot`);
+    expect(finalText).toContain("- 下一步：无");
+    expect(finalText.split("\n").filter((l) => l.startsWith("## "))).toHaveLength(5);
+    expect(finalText).not.toContain("## 下一步");
+    expect(w.calls.some((x) => x.name === "bash" && /\bdate\b/.test(String(x.args.command)))).toBe(
+      false
+    );
+    const done = parse(finalText);
     expect(done.state).toBe("已完成（用户宣布）");
     for (const kind of ["ADS libraries", "Zotero", "PDF 文件夹", "服务器", "稿件", "计划"])
       expect(done.sources.find((s) => s.kind === kind)?.status, kind).toMatch(/已带入|部分/);
@@ -350,7 +400,7 @@ test.skipIf(!HAVE_SHELL_TOOLS)(
     expect(loops).toHaveLength(2);
     expect(commands.filter((c) => c.includes("pdftotext"))).toEqual(loops);
     // under "ask" every command and every write waited for the user: one card each, in order, and the user said yes
-    const cards = [...turns1, r1, r2, r3, r4, r5].flatMap((t) => t.cards);
+    const cards = [...turns1, r1, r2, r3, r4, r5, r6, r7, r8, r9].flatMap((t) => t.cards);
     expect(cards.filter((c) => c.action === "run_command").map((c) => c.detail)).toEqual(commands);
     expect(cards.every((c) => c.decision === "approve")).toBe(true);
     const writes = w.calls.filter((x) => x.name === "write" || x.name === "edit");
@@ -461,7 +511,13 @@ test.skipIf(!HAVE_SHELL_TOOLS)(
       "intake-inbox/lab-server/cluster_run.pdf",
     ]);
     const prepared = parse(readFileSync(join(w.project, CHECKLIST), "utf8"));
-    expect(readFileSync(join(w.project, CHECKLIST), "utf8")).toContain("外部 agent");
+    const preparedText = readFileSync(join(w.project, CHECKLIST), "utf8");
+    expect(preparedText).toContain("外部 agent");
+    // an external agent has no date line to count on: it says so instead of running a command
+    expect(preparedText).toContain("- 最近更新：日期未知，外部 agent");
+    expect(preparedText).toContain("- 下一步：在工作台让 Copilot 继续迁入");
+    expect(preparedText.split("\n").filter((l) => l.startsWith("## "))).toHaveLength(5);
+    expect(prepCommands.some((c) => /\bdate\b/.test(c))).toBe(false);
     const table = prepared.sources.find((s) => s.kind === "PDF 文件夹")?.sub ?? [];
     expect(table).toContain("2108.01234v2.pdf → 2108.01234");
     expect(table).toContain("scan_0042.pdf → 10.5555/ortiz.o5");
@@ -475,6 +531,9 @@ test.skipIf(!HAVE_SHELL_TOOLS)(
     const handoff = await newConversation(w);
     const h = await userTurn(w, handoff, ZH.resumeMessage);
     expect(h.status).toBe("completed");
+    const handoffText =
+      (await assistantTexts(handoff)).find((t) => t.includes("按准备好的清单")) ?? "";
+    expect(handoffText).toMatch(/\| 待定 \| 5 \|\n挂上 PDF：5（其中同文件已存在 0）/);
     const store = LibraryStore.load(libraryPaths(w.dataDir));
     for (const id of [
       "arxiv:2108.01234",
@@ -490,6 +549,10 @@ test.skipIf(!HAVE_SHELL_TOOLS)(
     // Work the import made is recorded for the user to delete
     expect(store.get("doi:10.5555/refd.r1")?.doc_ids ?? []).toHaveLength(0);
     expect(readFileSync(join(w.project, CHECKLIST), "utf8")).toMatch(/trap\.pdf.*文献库页面删除/);
+    // the Copilot that continues puts its own date (from its system prompt) in place of 日期未知
+    expect(readFileSync(join(w.project, CHECKLIST), "utf8")).toContain(
+      `- 最近更新：${FIXED_DATE}，Copilot`
+    );
     expect(snapshotTree(fx.root)).toEqual(beforeFixture);
   },
   240_000

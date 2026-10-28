@@ -100,6 +100,9 @@ export interface World {
 const choice = { provider: "openai", model: "gpt-4.1", thinking: null };
 const VIEW = randomUUID();
 const here = dirname(fileURLToPath(import.meta.url));
+/** The host's clock in every acceptance run: a day that is not today, so a date taken from the machine shows. */
+export const FIXED_NOW = new Date(2031, 2, 4, 9, 30);
+export const FIXED_DATE = "2031-03-04";
 export const SKILLS = bundledSkillsDir(join(here, "..", "..", "app", "dist", "bin.js"));
 
 export async function openWorld(
@@ -209,6 +212,7 @@ export async function openWorld(
   const runner = new JobRunner({ dir: join(root, "jobs") });
   const host = new CopilotHost(dataDir, settings, () => {});
   host.useSkillsDir(SKILLS);
+  host.useClock(() => FIXED_NOW);
   const pipelines = stubPipelines();
   const app = createApp({
     paths: libraryPaths(dataDir),

@@ -1,6 +1,6 @@
 ---
 name: argelander-project-intake
-description: Move a half-finished research project into an ArgelanderSpace Project by interview - ask what exists (ADS libraries, Zotero, .bib files, loose PDFs, servers, an Overleaf or local manuscript, a TODO file), bring the literature in with the library tool, turn the plan into Plans and Tasks, and keep progress in a checklist file in the Project folder. Use when the user says "migrate / import my existing project", "帮我迁入", "迁入已有项目", "continue the intake", or when the Project folder holds argelanderspace-intake.md. Also the preparation mode for an external agent that only gathers material and writes the checklist.
+description: Move a half-finished research project into an ArgelanderSpace Project by interview - ask what exists (ADS libraries, Zotero, .bib files, loose PDFs, servers, an Overleaf or local manuscript, a TODO file), bring the literature in with the library tool, turn the plan into Plans and Tasks, and keep progress in a checklist file in the Project folder. Use when the user says "migrate / import my existing project", "帮我迁入", "迁入已有项目", "continue the intake", "继续迁入", or when the Project folder holds argelanderspace-intake.md. Also the preparation mode for an external agent that only gathers material and writes the checklist.
 ---
 
 # argelander-project-intake
@@ -26,7 +26,10 @@ Interview the user and move their unfinished project into this Project. You ask,
 
 ## The checklist
 
-`argelanderspace-intake.md` in the Project folder root (outside the data folder). A plain file: the user edits it by hand, and when it differs from what you remember, the file wins. Update it after every step with `edit` or `write`. Write its content in the user's language; keep these five headings unchanged so any agent can find them.
+`argelanderspace-intake.md` in the Project folder root (outside the data folder). A plain file: the user edits it by hand, and when it differs from what you remember, the file wins. Update it after every step with `edit` or `write`. Write its content in the user's language. It has exactly these five `##` headings, unchanged, and never a sixth: what comes next goes into the 下一步 line under 状态, not into a new section.
+
+- **最近更新** is today's date, YYYY-MM-DD, taken from the date sentence of your system prompt ("Today's date on this machine ..."). Never run a command, the date command included, to learn it. If the system prompt has no date sentence, keep the date already in the file, or write 日期未知 in a new file, and tell the user.
+- **下一步** is one line, `- 下一步：…`, replaced on every update: the next source or step, or what the user still has to decide. Write it as a plan for the next session, never as something that happened. Do not write that a draft, a plan or a step was confirmed, agreed or checked with the user unless the user said so in this conversation (or the file already says it).
 
 ```markdown
 # 迁入清单 / Intake checklist
@@ -34,6 +37,7 @@ Interview the user and move their unfinished project into this Project. You ask,
 ## 状态
 - 状态：进行中            <!-- 进行中 | 已完成（用户宣布） -->
 - 最近更新：YYYY-MM-DD，<Copilot | 外部 agent>
+- 下一步：<one line, e.g. 继续 PDF 文件夹；或：等你确认 arXiv 正文要取哪几篇>
 
 ## 来源
 <!-- one line per source: kind, location, status (未开始 | 已带入 | 部分 | 跳过); a copy fetched into intake-inbox/ is named on its source's line -->
@@ -81,9 +85,16 @@ plan {"action":"add_task_link","expectedRev":2,"planId":"PLAN_ID","taskId":"TASK
 
 Work through the steps in order. Say what the step does before doing it.
 
+**Pace.** Within one source you chain the calls without asking: Zotero is the `.bib` import followed by attaching its PDFs; a PDF folder is `ls`, the first pages, then the imports and attaches; a source that comes in several batches (a long `.bib`) is imported batch after batch with no stop between them. Stop and wait for the user at each of these points:
+- after each source: show the summary table for the whole source (the rows summed over its batches), the lines after it, and one question;
+- before step 5 (arXiv full text) and before step 6 (Plans and Tasks): the only question is whether to start that step, with nothing of it done or drafted yet;
+- whenever a question is open.
+
+A stop message holds nothing from the next step: no draft, no command or request for the next source, no questions about what the next step needs (its deadlines included; step 6 asks for those after the user agrees to it). Do not decide on your own that a step can be skipped (for example "these are all arXiv papers"); put it to the user. Every time you stop, and when you wrap up, end the message with how to continue later: the 「继续迁入」 button at the intake entry of the workbench (in the English interface "Continue the move-in"), or tell the Copilot 「继续迁入」.
+
 ### 1. Open
 
-Read `argelanderspace-intake.md` if it exists. If it does: repeat where things stand in two or three lines and continue with the first unfinished source. If it does not: go to step 2.
+Read `argelanderspace-intake.md` if it exists. If it does: repeat where things stand in two or three lines (the 下一步 line first) and continue with the first unfinished source. If it does not: go to step 2.
 
 ### 2. The Project folder
 
@@ -142,7 +153,7 @@ for f in '<folder>'/*.[pP][dD][fF]; do printf '=== %s\n' "$f"; pdftotext -l 1 "$
 
 Each file's text follows its `=== <path>` line; 2000 bytes of a first page hold the header with its DOI or arXiv id. A single quote in the folder name is written `'\''` inside the quotes. The shell tool keeps only the last 2000 lines or 50 KB of output: when its answer says the output was truncated and names a file with the full output, `read` that file in windows as for a long `.bib`, so no PDF's text is lost. The exit code reports only the last file; judge each file by its own section. When `pdftotext` is not installed, work from the file names alone. On Windows the command tool is PowerShell, where the same loop reads `Get-ChildItem '<folder>' -Filter *.pdf | ForEach-Object { "=== $($_.FullName)"; pdftotext -l 1 $_.FullName - | Out-String | ForEach-Object { $_.Substring(0, [Math]::Min(2000, $_.Length)) } }`. The same loop reads a folder fetched into `intake-inbox/`. For each PDF:
 1. Find a DOI or arXiv id: in the file name, then in that first-page text. Take the id from the paper's own header, never from its reference list.
-2. Exact DOI or arXiv hit: `import_works` with `mode:"identifier"`, `batch:true` (an arXiv id as `arXiv:<id>`). The result has one entry: `results[0].ref` is the Work. Compare `ref.title` with the PDF's title; they match: `attach_local_pdf` onto that Work. They differ: the id was probably a cited paper's, so treat the file as unidentified (next item). When that import returned `status:"created"`, the Work now exists without a PDF: count it under 新建 in the table, name it in a line after the table ("《title》 may be a reference's DOI; if you do not need it, delete it on the Library page"), and record it under 待定与跳过 as well. An `exists` result leaves nothing extra behind; no such line. A Work that already exists is reused, and a byte-identical PDF already on it comes back `noop`. When the import itself comes back `error` (for example ADS or the network did not answer), the PDF goes to 待定 with the error text, and one retry later is fine. When it comes back `status:"rejected"` (the id would merge Works already in the library), the PDF goes to 待定; the Work ids are only in the `error` text, so quote it to the user and `read` those Works before explaining.
+2. Exact DOI or arXiv hit: `import_works` with `mode:"identifier"`, `batch:true` (an arXiv id as `arXiv:<id>`). The result has one entry: `results[0].ref` is the Work. Compare `ref.title` with the PDF's title; they match: `attach_local_pdf` onto that Work. They differ: the id was probably a cited paper's, so treat the file as unidentified (next item). When that import returned `status:"created"`, the Work now exists without a PDF: count it under 新建 in the table, name it in a line after the table ("《title》 may be a reference's DOI; if you do not need it, delete it on the Library page"), and record it under 待定与跳过 as well. An `exists` result leaves nothing extra behind; no such line. A Work that already exists is reused, and a byte-identical PDF already on it comes back `noop` (counted in the PDF line described under Summary tables). When the import itself comes back `error` (for example ADS or the network did not answer), the PDF goes to 待定 with the error text, and one retry later is fine. When it comes back `status:"rejected"` (the id would merge Works already in the library), the PDF goes to 待定; the Work ids are only in the `error` text, so quote it to the user and `read` those Works before explaining.
 3. No exact hit: put the file in the candidates list with the title guess and the closest Work if any. The summary table asks the user once for all of them. A paper the user confirms but that ADS cannot resolve: ask for title, authors, year and venue, write a BibTeX entry, import it with "Importing a .bib", then attach the PDF. A PDF the user cannot place goes to 待定.
 4. Unless `attach_local_pdf` returns `ok` or `noop`, act on the result:
    - `status:"pending"`: the upload is still running; check `read_jobs{refId}` and do not submit the file again.
@@ -161,7 +172,9 @@ Each file's text follows its `=== <path>` line; 2000 bytes of a first page hold 
 - Local: record the path. Import its `.bib` like any .bib file.
 - Overleaf: record the project link. Ask the user to download the source (Menu, Download, Source) and tell you the zip's path. Read the zip in place (`unzip -l`, `unzip -p`) and import its `.bib`. Then collect the keys in `\cite{...}`, `\citep{...}` and similar commands in the `.tex` files, compare them with the `.bib` keys in the zip. A cited key is in the library when its `.bib` entry's import result is `status:"created"` or `status:"exists"`; the `key` a result returns is not the test, because an existing Work answers with the library's own cite key. When no result carries an entry's key, `library` `read` with the entry's DOI, arXiv id or title decides whether the Work is there. Report the cited keys that have no `.bib` entry or whose entry came back `error`. If the project has Overleaf Git, give the user the `git clone` command to run themselves; you never handle the Overleaf token.
 
-**Summary tables.** After each batch, show the user a two-column table, 结果 | 数量, with all five rows (新建, 并入已有, 被拒, 失败, 待定) even when a count is 0; the Copilot panel is narrow, so put the reasons and the names of refused, failed and pending items in lines after the table, never in a third column. The rows count by the rules below, depending on the call. Say plainly what you did not do.
+**Summary tables.** After each batch, show the user a two-column table, 结果 | 数量, with all five rows (新建, 并入已有, 被拒, 失败, 待定) even when a count is 0; the Copilot panel is narrow, so put the reasons and the names of refused, failed and pending items in lines after the table, never in a third column. The rows count only the results of the import calls (`import_works`), by the rules below. A PDF that was attached successfully changes no row (it goes into the PDF line below). A PDF that was not attached (unidentified, over the limit, an attach error) is one item under 待定. A Work that was imported but whose file was not attached counts in 新建 or 并入已有 by its import result, and its file counts in 待定: they are different objects, so say both in the lines after the table. Say plainly what you did not do.
+
+After the table of every source in which you attach PDFs (Zotero, a PDF folder, a server copy, a `.bib` file with a PDF folder the user named), add one fixed line: `挂上 PDF：n（其中同文件已存在 m）`, with n the `attach_local_pdf` calls that returned `ok` or `noop` and m those that returned `noop`; write it with 0 when nothing was attached. ADS library batches attach nothing and have no such line.
 
 For a bibcode batch (`entries`):
 
@@ -171,7 +184,7 @@ For a bibcode batch (`entries`):
 | 并入已有 | `status:"exists"` and no `reason` |
 | 被拒 | `reason:"merge_refused"`; name the Works from `works`; `read` them first, then tell the user, who compares and merges them on the page, or the entry goes to 待定 |
 | 失败 | error entries other than `merge_refused` and `ads_unavailable`, each with its reason from the top-level `reasons` |
-| 待定 | `ads_unavailable` entries, unidentified PDFs, over-limit files, postponed items |
+| 待定 | `ads_unavailable` entries, unidentified PDFs, over-limit files, PDFs that could not be attached, postponed items |
 
 `repeated` and `same_paper_as_earlier` are listed apart and not counted as merged. Count each bibcode once, with the reason it got first.
 
@@ -179,15 +192,15 @@ For a bib import or a single identifier (`results`): 新建 = `status:"created"`
 
 ### 5. arXiv full text
 
-When every source is done, ask once: which Works should get their arXiv PDF? Recommend the Works that have an arXiv id and no local PDF. Then run `acquire_arxiv_pdf{refId}` one Work at a time; if a call comes back `pending`, check `read_jobs` before the next. Record the count under 已带入.
+When every source is done and the user has agreed to go on, ask once: which Works should get their arXiv PDF? Recommend the Works that have an arXiv id and no local PDF. Then run `acquire_arxiv_pdf{refId}` one Work at a time; if a call comes back `pending`, check `read_jobs` before the next. Record the count under 已带入.
 
 ### 6. Plans and Tasks
 
-Read the TODO or notes file the user named. Draft Plans and Tasks and show the draft. Every Task needs a deadline: ask for the ones the text does not give. After the user confirms, `plan` `read` for the current `rev`, then `create_plan{expectedRev, name, due}`, `create_task{expectedRev, planId, title, due}` and, for a Task that belongs to a Work in the library, `add_task_link{expectedRev, planId, taskId, docId}` with the Work's main Doc, the first id in `doc_ids` from `library` `read` (or the `docId` an `attach_local_pdf` returned). A Work without a Doc gets no link. Pass the newest `rev` into each call.
+Read the TODO or notes file the user named only after the user has agreed to this step. Draft Plans and Tasks and show the draft. Every Task needs a deadline: ask for the ones the text does not give. Turn relative dates ("next month", "end of term") into dates against the date in your system prompt and show the result in the draft. After the user confirms, `plan` `read` for the current `rev`, then `create_plan{expectedRev, name, due}`, `create_task{expectedRev, planId, title, due}` and, for a Task that belongs to a Work in the library, `add_task_link{expectedRev, planId, taskId, docId}` with the Work's main Doc, the first id in `doc_ids` from `library` `read` (or the `docId` an `attach_local_pdf` returned). A Work without a Doc gets no link. Pass the newest `rev` into each call.
 
 ### 7. Wrap up
 
-Make 留在原处的材料 complete, set 最近更新, and ask whether the user declares the intake finished. Only then write 已完成 into 状态. The file stays.
+Make 留在原处的材料 complete, set 最近更新 and 下一步, and ask whether the user declares the intake finished. Only then write 已完成 into 状态 (and 下一步 becomes 无). The file stays.
 
 ## Preparation mode
 
@@ -196,5 +209,7 @@ For an external agent without the `library` and `plan` tools. Gather and organis
 - Run no `argelanderspace` command that writes anything, and no command against the library at all: preparation needs none.
 - Write only `argelanderspace-intake.md` and `intake-inbox/` (copies fetched from servers). Everything else is read-only; an Overleaf zip is read where the user saved it (`unzip -l`, `unzip -p`) and is not copied.
 - Do steps 1 to 3 of the interview, then for each source collect what the Copilot will need and write it into the checklist, as indented lines under that source's line in 来源 (the five headings stay): for Zotero the export `.bib` path and the attachment folder, for 稿件 and .bib sources the paths, for the PDF folder a table of PDF path to the DOI or arXiv id you read from it (first pages by the one loop of the PDF folder step), for ADS libraries the names, and under 计划 the plan draft with deadlines. Fetch server material under the same rules.
+- The pace rules of the interview apply to the questions you ask; collecting material from the sources the user named is not a reason to stop between sources.
+- 最近更新: you have no system-prompt date sentence to count on. Use today's date only if your own context states it. If the checklist already has a real date, keep it. Only in a new file, or when the file has no date, write `日期未知，外部 agent` and tell the user; do not run a command for it. The Copilot sets the real date at its next update. 下一步 reads `- 下一步：在工作台让 Copilot 继续迁入`.
 - Never ask for tokens; do not read credentials.
-- Finish by telling the user: open the workbench, and ask the Copilot to continue the intake. It reads the checklist and picks up from there.
+- Finish by telling the user: open the workbench and press the 「继续迁入」 button at the intake entry (in the English interface "Continue the move-in"), or tell the Copilot 「继续迁入」. It reads the checklist and picks up from there.

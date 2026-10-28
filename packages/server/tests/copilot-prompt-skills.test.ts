@@ -25,7 +25,13 @@ import {
 import { loadSkillsFromDir } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createApp } from "../src/app.js";
-import { basePrompt, CopilotHost, DATA_RULES_PROMPT, filePrompt } from "../src/copilot.js";
+import {
+  basePrompt,
+  CopilotHost,
+  DATA_RULES_PROMPT,
+  filePrompt,
+  localDateOf,
+} from "../src/copilot.js";
 import {
   COPILOT_SKILL_NAMES,
   createApplicationResourceLoader,
@@ -460,4 +466,52 @@ test("a program without a skills folder lists no skill and still does not discov
   expect(ask.prompt).not.toContain("bundled skills listed below");
   expect(ask.prompt).not.toContain("DECOY");
   expect(ask.tools).toContain("bash");
+});
+
+// ---------------------------------------------------------------------------------------------- //
+// The date sentence (project intake ticket 13): the base prompt has no date of its own, so the model would not know the day
+// ---------------------------------------------------------------------------------------------- //
+
+test("the base prompt states the local date in one sentence when it is given one, before the file paragraph", () => {
+  const line = "Today's date on this machine (local time) is 2031-03-04.";
+  expect(basePrompt(false, false)).not.toContain("Today's date");
+  for (const permission of ["ask", "auto"] as const) {
+    const prompt = basePrompt(true, true, true, true, files(permission), "2031-03-04");
+    expect(prompt.split(line)).toHaveLength(2);
+    expect(prompt.indexOf(line)).toBeLessThan(prompt.indexOf(filePrompt(files(permission))));
+    expect(prompt.endsWith(filePrompt(files(permission)))).toBe(true);
+  }
+  expect(basePrompt(false, false, false, false, off, "2031-03-04")).toContain(line);
+});
+
+test("localDateOf is the machine's calendar date, not UTC", () => {
+  // built from local fields: the same on any machine, shortly before local midnight
+  expect(localDateOf(new Date(2031, 2, 4, 23, 59, 59))).toBe("2031-03-04");
+  expect(localDateOf(new Date(2031, 0, 5, 0, 0, 1))).toBe("2031-01-05");
+  // A date whose local calendar day (the 5th) differs from its UTC day (the 4th), as it does on a machine far east
+  // of UTC. The zone of the test machine cannot be relied on, so the two readings are told apart by construction:
+  // an implementation that reads UTC (toISOString, getUTC*) is red on any machine.
+  const far = {
+    getFullYear: () => 2031,
+    getMonth: () => 2,
+    getDate: () => 5,
+    getUTCFullYear: () => 2031,
+    getUTCMonth: () => 2,
+    getUTCDate: () => 4,
+    toISOString: () => "2031-03-04T12:00:00.000Z",
+  } as unknown as Date;
+  expect(localDateOf(far)).toBe("2031-03-05");
+});
+
+test("a run's system prompt carries the date of the injected clock, with and without the file tools", async () => {
+  host.useClock(() => new Date(2031, 2, 4, 23, 30));
+  setPermission("ask");
+  expect((await runOnce()).prompt).toContain(
+    "Today's date on this machine (local time) is 2031-03-04."
+  );
+  setPermission("off");
+  host.useClock(() => new Date(2033, 11, 9, 8, 0));
+  const second = (await runOnce()).prompt;
+  expect(second).toContain("Today's date on this machine (local time) is 2033-12-09.");
+  expect(second).not.toContain("2031-03-04");
 });
