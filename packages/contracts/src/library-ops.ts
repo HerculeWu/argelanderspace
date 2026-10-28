@@ -21,6 +21,8 @@
  *  - list_ads_libraries / read_ads_library: project intake's read of the user's own ADS libraries (contracts "项目迁入",
  *    "ADS libraries"): the libraries' names and counts, and one library's bibcodes a page at a time. Read-only on ADS and
  *    on the project; the token is read from the credential store by the service and never passes through the tool;
+ *  - search_ads: release-0.2's read-only ADS search by query string (`discovery.search_ads` of the operation catalog;
+ *    see `discovery-ops.ts`). Lists records, writes nothing; the token is read by the service;
  *  - read_jobs: the acquisition status lines (queued/running/failed jobs of a work) from the JobRunner table.
  *  - delete_doc: the Files tab "delete document" dialog (`DELETE /api/paper/:doc_id`), the global physical delete.
  *    It only ever waits for the real user's confirmation card (the dialog's own confirm); there is no "unlink from
@@ -454,6 +456,7 @@ export const LIBRARY_OPERATION_ACTIONS = [
   "attach_local_pdf",
   "list_ads_libraries",
   "read_ads_library",
+  "search_ads",
   "delete_doc",
   "read_jobs",
   "filter_library",

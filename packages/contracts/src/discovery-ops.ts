@@ -256,3 +256,58 @@ export const LibrarySaveCandidateSchema = z
   .object({ action: z.literal("save_candidate"), bibcode: Bibcode })
   .strict();
 export type LibrarySaveCandidate = z.infer<typeof LibrarySaveCandidateSchema>;
+
+/**
+ * The fields `search_ads` may return per record (`bibcode` is always there); the default leaves out the abstract and
+ * the arXiv id so a plain search stays small. Mirrors infra `ADS_SEARCH_FIELDS` (the server's handler passes one to
+ * the other, so a difference is a type error).
+ */
+export const DISCOVERY_SEARCH_FIELDS = [
+  "title",
+  "author",
+  "year",
+  "pub",
+  "citation_count",
+  "doi",
+  "arxiv_id",
+  "abstract",
+] as const;
+export const DISCOVERY_SEARCH_DEFAULT_FIELDS = [
+  "title",
+  "author",
+  "year",
+  "pub",
+  "citation_count",
+  "doi",
+] as const;
+export const DISCOVERY_SEARCH_MAX_LIMIT = 50;
+export const DISCOVERY_SEARCH_DEFAULT_LIMIT = 10;
+
+/** `fields` is one comma-separated string (a flat CLI option): each entry one of {@link DISCOVERY_SEARCH_FIELDS}. */
+export function parseDiscoverySearchFields(text: string): string[] | null {
+  const parts = text.split(",").map((part) => part.trim());
+  const known = new Set<string>(DISCOVERY_SEARCH_FIELDS);
+  if (parts.length === 0 || parts.some((part) => !known.has(part))) return null;
+  return [...new Set(parts)];
+}
+
+/**
+ * `search_ads`: a read-only ADS search by query string (the `discovery search-ads` operation of the catalog; the Copilot
+ * `library` tool carries it as this action, next to the exploration actions). Not the exploration graph: it lists
+ * records and saves nothing; adding a paper to the library stays the separate `import_works` / `save_candidate`.
+ */
+export const DiscoverySearchAdsSchema = z
+  .object({
+    action: z.literal("search_ads"),
+    query: z.string().min(1).max(500),
+    limit: z.number().int().min(1).max(DISCOVERY_SEARCH_MAX_LIMIT).optional(),
+    fields: z
+      .string()
+      .max(120)
+      .refine((text) => parseDiscoverySearchFields(text) !== null, {
+        message: `fields: comma-separated, each one of ${DISCOVERY_SEARCH_FIELDS.join(", ")}`,
+      })
+      .optional(),
+  })
+  .strict();
+export type DiscoverySearchAds = z.infer<typeof DiscoverySearchAdsSchema>;

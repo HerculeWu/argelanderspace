@@ -74,3 +74,21 @@ server 端用自己的运行时（`createApp` 里 Copilot 工具共用的那份 
 |---|---|---|---|
 | `library.read` | read | none | 页面自己的列表/搜索/详情数据 |
 | `library.set_main_doc` | write | none | Files 标签的「设为主 Doc」，带 `expectedMainDocId` 做冲突检查 |
+| `discovery.search_ads` | read | none | 只读 ADS 搜索（票 09），见下节 |
+| `discovery.explore` | read | none | 探索页对一个 seed 的请求，以数据返回（票 09），见下节 |
+
+## 探索领域与 ADS 只读搜索（票 09）
+
+条目在 `packages/contracts/src/discovery-catalog.ts`，处理器在 `packages/server/src/discovery-actions.ts`（`searchAds`、`exploreSeed`），都是只读、不入库、不拿库锁、不广播。
+
+**进目录的与不进的**：进的是业务操作——`search_ads`、`explore`。不进的：界面动作（`filter_discovery`、`search_discovery`、`set_discovery_display`、`select_candidate`、`set_discovery_tab`、`step_exploration`、`exit_exploration`、`discovery_graph_control` 等）与绑定视图的观测 `read_discovery`——它们只改变或报告某个浏览器标签正显示的东西，CLI 没有对应的「标签」。`save_candidate` 也留在 Copilot：它的前提是「候选必须是该标签打开的探索里的节点」，是页面绑定的规则；入库本身的目录路径是 Library 域的 `import_works`（票 06，bibcode 模式），那里才有本进程路径所需的导入流水线（`createLocalOperationRuntime` 目前没有 `importWorks`）。「保存候选不批量」的规则不变。
+
+**Copilot 与目录的对应**：探索动作原本就在 Copilot 的 `library` 工具里，没有 `discovery` 工具，所以目录领域 `discovery` 对应 CLI 组 `discovery`，而 Copilot 侧 `search_ads` 是 `library` 工具的一个动作（`copilot-library-tool.ts` 用 `parseCatalogCall("discovery", …)` 取参数、`runCatalogOperation` 执行，只接受 `discovery.search_ads`）。`explore` 在 Copilot 侧没有同名动作：Copilot 的 `explore_work`/`explore_candidate` 是让用户标签里的页面去探索（界面动作），不返回图给模型，与目录的数据形态不同。
+
+**`search_ads`**：参数 `query`（1–500 字符，ADS 查询串原样传给 ADS）、`limit`（1–50，默认 10）、`fields`（逗号分隔，取自 `title,author,year,pub,citation_count,doi,arxiv_id,abstract`，默认前六个；`bibcode` 总在）。结果 `{ok:true,status:"ok",query,numFound,returned,records:[…]}`；每条最多列 10 位作者并带真实 `authorCount`，摘要超 1500 字符截断并标 `abstractTruncated`。客户端 `AdsSearchClient`（`packages/infra/src/sources/ads-search.ts`）**只有一个 GET**（测试读源码断言），不写缓存、不写文件；token 每次由组合层从凭据库现读（`realAdsSearch`），只进 Authorization 头，不在结果、错误、日志里。失败是答案不是异常，原因可区分：`no_token`（不发请求）、`unauthorized`（401）、`rate_limited`（429，带 `retryAfter`）、`bad_query`（400，ADS 解析不了查询）、`timeout`、`unreachable`（网络失败或其他 HTTP 状态）、`invalid_response`；调用方取消（Copilot 的 Stop）为 `status:"interrupted"`；宿主没有搜索源为 `unsupported`/`unavailable`。不受 Discovery 的 ADS 开关约束（产品里没有只关 ADS 读取的开关，与 ADS libraries 同）。
+
+**`explore`**：参数 `bibcode`（与探索页路由同一个校验 `badDiscoveryBibcode`，现已搬到 `discovery-actions.ts`），结果 `{ok:true,status:"ok",graph}`（`DiscoveryGraph`，含库内成员态）或同形的失败（另有 `not_found`＝ADS 没有该 seed）。与页面共用 `discoverLiterature` 与同一个 ADS discovery 客户端，所以会写该客户端自己的 24 小时 provider 响应缓存（`library/cache/ads-discovery`，派生数据，见 [discovery](discovery.md)）；`search_ads` 没有缓存。
+
+**两条路径**：工作台运行时由它执行（`createApp` 里 `LibraryOpDeps` 的 `adsSearch`/`discoverySource`，即页面路由和 Copilot 共用的工厂，server 的 `makeAdsSearch` 默认 `realAdsSearch`）；未运行时 CLI 用 `createLocalOperationRuntime` 在本进程里用同样的 `realAdsSearch`/`realDiscoverySource`（它接受可选的 `AdapterWiring` 供测试注入 `adsToken` 与 `fetchImpl`；CLI 不传，token 从凭据库读）。两条路径的答案同形。测试：infra `ads-search.test.ts`，server `discovery-operations.test.ts`（本进程、工作台路由、Copilot 工具三条入口；断言只有 GET、token 只在头里、数据夹逐字节不变、每类错误），cli `discovery-operations.test.ts`（命令派生、参数错误退出 2、经工作台的退出码与输出；本进程路径不在 CLI 子进程里测，因为子进程会读测试机器真实的凭据库）。
+
+**窗口常量**：Copilot 的 `library` 工具多了动作 `search_ads`、参数 `fields`、说明一段与基础提示词一句，系统指令加工具 schema 的占用从 81053 增至 81949 字节（+896 B，×4/7＝+512 token），按 project-intake 02 的方法同步了 `copilot-batching.test.ts` 的 `WINDOW_BIG_DOC` 与 PDF 多窗口、`copilot-pdf`、`copilot`、`copilot-text-host` 的窗口、`copilot-argument-read-window` 的 GAP_WINDOW（45000→45512）、`copilot-transcription` 的上限。

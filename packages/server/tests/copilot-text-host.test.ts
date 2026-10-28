@@ -600,7 +600,7 @@ test("29b: an evicted text source part is replaced by a stand-in naming text rea
   const original = { contextWindow: model.contextWindow, maxTokens: model.maxTokens };
   // 64_000 + 1_710: the same room after the shelf tool (shelf ticket 07, footprint +2991 B; see WINDOW_BIG_DOC in copilot-batching.test.ts)
   // + 1_631: attach_local_pdf (+556, project intake ticket 01), list_ads_libraries / read_ads_library (+839, ticket 02) and its repair round (+236); footprint +973/+1469/+412 B x 4/7
-  model.contextWindow = 68_257; // + 120: ticket 04 repair round 2 (footprint +210 B); + 44: ticket 04 repair round (footprint +77 B); - 3: ticket 03 closing touch-up (footprint -6 B); + 317: ticket 03 fix round (footprint +555 B); + 63: ticket 02 second repair round (footprint +110 B); + 375: project intake ticket 03 (footprint +657 B)
+  model.contextWindow = 68_769; // + 512: release-0.2 ticket 09 search_ads (footprint +896 B); + 120: ticket 04 repair round 2 (footprint +210 B); + 44: ticket 04 repair round (footprint +77 B); - 3: ticket 03 closing touch-up (footprint -6 B); + 317: ticket 03 fix round (footprint +555 B); + 63: ticket 02 second repair round (footprint +110 B); + 375: project intake ticket 03 (footprint +657 B)
   model.maxTokens = 1024;
   try {
     type Batch = { from: number; to: number; total: number; status: string; version: string };

@@ -10,11 +10,14 @@ import {
   type OperationDef,
   type OperationId,
 } from "@argelanderspace/contracts";
+import { exploreSeed, searchAds } from "./discovery-actions.js";
 import { applyLibraryOperation, type LibraryOpDeps, readLibrary } from "./library-actions.js";
 
 /** What handlers may use. Domains add their deps here as the catalog grows. */
 export interface OperationRuntime {
   library: LibraryOpDeps;
+  /** Cancels a read that is waiting on ADS (the Copilot's Stop; a CLI request that was abandoned). */
+  signal?: AbortSignal | undefined;
 }
 
 type ParamsOf<Id extends OperationId> = Extract<CatalogOperation, { id: Id }>["params"]["_output"];
@@ -27,6 +30,8 @@ export const OPERATION_HANDLERS: OperationHandlers = {
   "library.read": (runtime, params) => readLibrary(runtime.library, { action: "read", ...params }),
   "library.set_main_doc": (runtime, params) =>
     applyLibraryOperation(runtime.library, { action: "set_main_doc", ...params }),
+  "discovery.search_ads": (runtime, params) => searchAds(runtime.library, params, runtime.signal),
+  "discovery.explore": (runtime, params) => exploreSeed(runtime.library, params, runtime.signal),
 };
 
 /** Run a cataloged operation with params already parsed by its catalog entry. */

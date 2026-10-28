@@ -557,7 +557,8 @@ test("the base instruction plus the tool schemas stay within the measured footpr
   // Ticket 03 closing touch-up: the `updated` parenthetical reworded, -6 B. Measured 80709.
   // Ticket 04 repair round: `batch` also for an identifier (parameter and import_works description reworded), +77 B. Measured 80786.
   // Ticket 04 repair round 2: bib refusals carry merge_refused / batch_refused (import_works description), +210 B. Measured 80996.
-  expect(footprint).toBeLessThan(80_996 + 300);
+  // Release-0.2 ticket 09 added search_ads (the action, the `fields` parameter, the description paragraph, one prompt sentence): measured 81053 at HEAD -> 81949 (+896 B).
+  expect(footprint).toBeLessThan(81_949 + 300);
   expect(Buffer.byteLength(instruction?.text ?? "")).toBeGreaterThan(3_000);
 });
 

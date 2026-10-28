@@ -28,7 +28,7 @@ ADS token（desktop-app 票 12）：用户在设置页「文献服务与凭据�
 3. 对**实际返回 related bibcodes 集**构造一阶 OR 查询，`useful(related-set)` top **6**。
 4. 归并节点、覆盖 Library 成员态、推导可见引用边。
 
-常量不暴露为 related/useful/depth/beam 参数。useful 不直接作用于 seed，不嵌套第二个 similar 来并行重复查询；小图串行延迟是已接受取舍，未有实证前不改变精确 related 集合语义。
+常量不暴露为 related/useful/depth/beam 参数。（2026-10-29，release-0.2 票 09：同一请求也以数据形态进了操作目录 `discovery.explore`，另有只读的 `discovery.search_ads`，见 [operation-catalog](operation-catalog.md)「探索领域与 ADS 只读搜索」；页面行为不变。）useful 不直接作用于 seed，不嵌套第二个 similar 来并行重复查询；小图串行延迟是已接受取舍，未有实证前不改变精确 related 集合语义。
 
 bibcode 是标识符，不是任意检索表达式：长度有界、拒空/控制字符，嵌入查询前转义/加引号；useful 每个 bibcode 分别转义再 OR。seed 身份缺失属 provider 失败，个别 related/useful 无合法 bibcode 可跳过。
 

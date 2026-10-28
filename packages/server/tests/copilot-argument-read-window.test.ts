@@ -237,8 +237,8 @@ describe("a Chinese graph in a real window", () => {
     });
     mkdirSync(dirname(fileOf()), { recursive: true });
     writeFileSync(fileOf(), JSON.stringify(graph, null, 2));
-    // 45 000 tokens: the instruction and tool schemas take almost all of it
-    await withWindow(Number(process.env.GAP_WINDOW ?? 45_000), async () => {
+    // 45 000 + 512 tokens (release-0.2 ticket 09: search_ads, footprint +896 B x 4/7): the instruction and tool schemas take almost all of it
+    await withWindow(Number(process.env.GAP_WINDOW ?? 45_512), async () => {
       const results: Loose[] = [];
       H.script = [
         () => ({ call: { action: "read", workId: WORK } }),

@@ -1506,6 +1506,7 @@
         "attach_local_pdf": "挂载本地 PDF",
         "list_ads_libraries": "列出 ADS libraries",
         "read_ads_library": "读取 ADS library",
+        "search_ads": "搜索 ADS",
         "read_jobs": "读取获取任务",
         "delete_doc": "删除文档",
         "read_discovery": "读取探索",

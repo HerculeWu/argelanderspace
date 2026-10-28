@@ -16,7 +16,21 @@ describe("operation catalog (ADR 0015)", () => {
     expect(new Set(ids).size).toBe(ids.length);
     for (const op of operationsOfDomain("library"))
       expect(LIBRARY_OPERATION_ACTIONS as readonly string[]).toContain(op.name);
-    expect(operationDomains()).toEqual(["library"]);
+    expect(operationDomains()).toEqual(["library", "discovery"]);
+    expect(operationsOfDomain("discovery").map((op) => op.id)).toEqual([
+      "discovery.search_ads",
+      "discovery.explore",
+    ]);
+    // The Copilot carries search_ads as an action of the library tool; the interface actions of the explore page are not cataloged.
+    expect(LIBRARY_OPERATION_ACTIONS as readonly string[]).toContain("search_ads");
+    for (const ui of [
+      "filter_discovery",
+      "set_discovery_tab",
+      "select_candidate",
+      "read_discovery",
+      "save_candidate",
+    ])
+      expect(ids).not.toContain(`discovery.${ui}`);
     const read = OPERATION_CATALOG.find((op) => op.id === "library.read");
     const write = OPERATION_CATALOG.find((op) => op.id === "library.set_main_doc");
     expect([read?.effect, read?.confirm, read?.navigates]).toEqual(["read", "none", false]);
@@ -46,6 +60,40 @@ describe("operation catalog (ADR 0015)", () => {
     expect(operationOptions(read).find((o) => o.param === "limit")).toMatchObject({
       min: 1,
       max: 200,
+    });
+  });
+
+  it("search_ads: flat CLI options, bounded limit, validated fields, strict", () => {
+    const search = OPERATION_CATALOG.find((op) => op.id === "discovery.search_ads");
+    expect(search && [search.effect, search.confirm, search.navigates]).toEqual([
+      "read",
+      "none",
+      false,
+    ]);
+    expect(search && operationOptions(search).map((o) => [o.flag, o.kind, o.required])).toEqual([
+      ["--query", "string", true],
+      ["--limit", "integer", false],
+      ["--fields", "string", false],
+    ]);
+    const call = (extra: Record<string, unknown>) =>
+      parseCatalogCall("discovery", { action: "search_ads", ...extra });
+    expect(call({ query: "black holes" })).toMatchObject({ match: true, success: true });
+    expect(call({ query: "x", limit: 50, fields: "title, abstract,arxiv_id" })).toMatchObject({
+      success: true,
+    });
+    for (const bad of [
+      {},
+      { query: "" },
+      { query: "x", limit: 51 },
+      { query: "x", limit: 0 },
+      { query: "x", fields: "title,password" },
+      { query: "x", fields: "" },
+      { query: "x", token: "t" },
+      { query: "x", url: "https://example.org" },
+    ])
+      expect(call(bad), JSON.stringify(bad)).toMatchObject({ match: true, success: false });
+    expect(parseCatalogCall("library", { action: "search_ads", query: "x" })).toEqual({
+      match: false,
     });
   });
 

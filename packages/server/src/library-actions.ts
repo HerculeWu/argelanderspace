@@ -28,6 +28,7 @@ import {
   summarizeLibraryRef,
 } from "@argelanderspace/contracts";
 import {
+  type AdsDiscoverySource,
   addManualBibcode,
   addManualBibcodes,
   addManualBibText,
@@ -47,6 +48,7 @@ import {
 import {
   type AdsLibrariesFailure,
   type AdsLibrariesSource,
+  type AdsSearchSource,
   explicitArxivId,
   looksLikeArxiv,
 } from "@argelanderspace/infra";
@@ -82,6 +84,16 @@ export interface LibraryOpDeps {
    * credential store then; the source never writes to ADS or to the project. Absent in hosts without it.
    */
   adsLibraries?: () => Promise<AdsLibrariesSource> | AdsLibrariesSource;
+  /**
+   * The read-only ADS search (release-0.2 ticket 09, `discovery.search_ads`). Called at each use so the token is read
+   * from the credential store then; the source only reads, and nothing it returns is stored. Absent in hosts without it.
+   */
+  adsSearch?: () => Promise<AdsSearchSource> | AdsSearchSource;
+  /**
+   * The ADS discovery source behind the explore page (`discovery.explore`); the same factory the page's route uses.
+   * Absent in hosts without it.
+   */
+  discoverySource?: () => Promise<AdsDiscoverySource> | AdsDiscoverySource;
 }
 
 export type LibraryOpOutcome =
