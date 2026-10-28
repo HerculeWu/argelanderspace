@@ -141,7 +141,7 @@ describe("the tutorial sample ids", () => {
     expect(withTools).toEqual([plan, writer]);
   });
 
-  // Chapter 9's preset move-in conversation (project-intake ticket 10 records it): `null` until then; once set, it is
+  // Chapter 9's preset move-in conversation (project-intake ticket 10 recorded it, ticket 15 re-recorded it): `null` until then; once set, it is
   // in the sample as a saved conversation whose session holds the two named replies as assistant messages. The recording runs with file permission on "ask",
   // so decided file-write confirmation cards may appear around them (the server's sample guard judges those).
   it("names the preset move-in conversation and its two replies, when the sample holds one", () => {
@@ -158,8 +158,13 @@ describe("the tutorial sample ids", () => {
     const textOf = (e: { message?: { content?: { type: string; text?: string }[] } } | undefined) =>
       (e?.message?.content ?? []).filter((part) => part.type === "text").map((part) => part.text ?? "").join("");
     const messages = entries.filter((e) => e.type === "message");
-    const firstUser = messages.findIndex((e) => e.message?.role === "user");
-    const interview = messages.slice(firstUser + 1).find((e) => e.message?.role === "assistant" && textOf(e).trim() !== "");
+    // the interview is the reply that ends the first turn: the last assistant text before the user's second message
+    // (an assistant line that only announces a tool call may come before it)
+    const users = messages.flatMap((e, i) => (e.message?.role === "user" ? [i] : []));
+    const firstTurn = messages
+      .slice(users[0] + 1, users[1])
+      .filter((e) => e.message?.role === "assistant" && textOf(e).trim() !== "");
+    const interview = firstTurn[firstTurn.length - 1];
     expect(SAMPLE_INTAKE_CONVERSATION.replies.interview).toBe(interview?.id);
     expect(textOf(interview)).toContain("项目文件夹");
     const summaryId = SAMPLE_INTAKE_CONVERSATION.replies.summary;

@@ -20,8 +20,8 @@ export const TUTORIAL_EXPECT = Object.freeze({
 
 /**
  * Files a package's tutorial/ must hold besides being loadable: the marker, the notice, the chapter 2 upload zip, and
- * the two preset Copilot conversations (chapter 8's and chapter 9's move-in conversation, project-intake ticket 10),
- * each a record and its Pi session file.
+ * the two preset Copilot conversations (chapter 8's and chapter 9's move-in conversation, project-intake ticket 10,
+ * re-recorded in ticket 15), each a record and its Pi session file.
  */
 const PRESENT = [
   "argelanderspace-tutorial.json",
@@ -29,8 +29,8 @@ const PRESENT = [
   "tutorial-assets/evans-oh-2022-source.zip",
   "literatures/copilot/conversations/85b4af77-56d0-4684-8a1c-b8926dec17d0.json",
   "literatures/copilot/sessions/42a3eeab-d759-46d1-aadd-c7d34cbe4ccc.jsonl",
-  "literatures/copilot/conversations/6f4116e9-be39-4f2e-891e-6e4c27e25e19.json",
-  "literatures/copilot/sessions/914795d0-d2a6-4a9e-9c15-2599ddc3ed73.jsonl",
+  "literatures/copilot/conversations/fee7ecc0-b8e9-49b0-9ac7-a582faaa984c.json",
+  "literatures/copilot/sessions/616ed294-6e52-48b3-894a-9fd1b8d09486.jsonl",
 ];
 
 /** `tutorial/<f> is missing` for each of those files `exists(relativePath)` says is not there. */

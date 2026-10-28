@@ -189,7 +189,7 @@ describe("the tutorial sample loads", () => {
     for (const work of store.works) expect(sources, work.id).toContain(work.cite_key);
   });
 
-  it("⑤ the preset Copilot conversations read back: chapter 8's has three questions, two operation cards, no confirmation; chapter 9's move-in conversation has five questions and only decided cards", async () => {
+  it("⑤ the preset Copilot conversations read back: chapter 8's has three questions, two operation cards, no confirmation; chapter 9's move-in conversation has six questions and only approved cards", async () => {
     const records = join(dataDir, "copilot", "conversations");
     expect(
       existsSync(records),
@@ -199,7 +199,7 @@ describe("the tutorial sample loads", () => {
     expect(names).toHaveLength(2);
     const parsed = names.map((n) => JSON.parse(readFileSync(join(records, n), "utf8")));
     const chapter8 = parsed.find((r) => r.id === "85b4af77-56d0-4684-8a1c-b8926dec17d0");
-    const intake = parsed.find((r) => r.id === "6f4116e9-be39-4f2e-891e-6e4c27e25e19");
+    const intake = parsed.find((r) => r.id === "fee7ecc0-b8e9-49b0-9ac7-a582faaa984c");
     expect(chapter8 && intake, `records: ${parsed.map((r) => r.id)}`).toBeTruthy();
     // one session per record, nothing else
     expect(readdirSync(join(dataDir, "copilot", "sessions")).sort()).toEqual(
@@ -227,19 +227,22 @@ describe("the tutorial sample loads", () => {
       expect(operations.some((o) => o.fileTool !== undefined)).toBe(false);
       expect(snapshot.confirmations).toEqual([]);
 
-      // the move-in conversation (recorded with file and command permission on "ask"): five user turns; every tool
-      // card is decided and none failed or was refused (the product's status "ok" or "declined" are all there are);
-      // the one declined card is the command the user refused; the file tools and the library calls are the work
+      // the move-in conversation (recorded with file and command permission on "ask", ticket 15): six user turns; every
+      // tool card is decided, approved and none failed or was refused (the product's status "ok" or "declined" are all
+      // there are); the file tools, one read-only command per step and the library calls are the work
       const move = await host.snapshot(intake.id);
       const turns = move.messages.filter((m) => m.role === "user" && m.kind !== "resume");
-      expect(turns).toHaveLength(5);
+      expect(turns).toHaveLength(6);
       expect(turns[0]?.text).toBe("开始迁入已有项目");
       expect(move.confirmations).toEqual([]);
       const cards = move.messages.flatMap((m) => m.operations ?? []);
-      expect(cards.filter((c) => c.status !== "ok" && c.status !== "declined")).toEqual([]);
-      const declined = cards.filter((c) => c.status === "declined");
-      expect(declined).toHaveLength(1);
-      expect(declined[0]?.fileTool?.kind).toBe("command");
+      expect(cards.filter((c) => c.status !== "ok")).toEqual([]);
+      // no command that only fetches the date: the system prompt states it (ticket 13)
+      const commands = cards.flatMap((c) =>
+        c.fileTool?.kind === "command" ? [c.fileTool.command ?? ""] : []
+      );
+      expect(commands.length).toBeGreaterThan(0);
+      expect(commands.filter((c) => /\bdate\b/.test(c))).toEqual([]);
       expect(cards.some((c) => c.fileTool?.kind === "write")).toBe(true);
       expect(cards.some((c) => c.tool === "library")).toBe(true);
     } finally {

@@ -88,11 +88,11 @@ describe("the replay: 'take me there' is the registered open_copilot carrying th
       expect(step(bare, id).requires?.test(panel(false))).toBe(false);
     }
   });
-  it("the registered chapter points at the recorded conversation's two replies (ticket 10)", () => {
-    expect(SAMPLE_INTAKE_CONVERSATION).toEqual({ id: "6f4116e9-be39-4f2e-891e-6e4c27e25e19", replies: { interview: "34c82213", summary: "8b2fa4da" } });
-    expect(shape(step(INTAKE, "intake.interview").anchors)).toEqual([["copilot-messages", null], ["copilot-message", "34c82213"]]);
-    expect(shape(step(INTAKE, "intake.summary").anchors)).toEqual([["copilot-messages", null], ["copilot-message", "8b2fa4da"]]);
-    expect(step(INTAKE, "intake.interview").requires?.takeMeThere).toEqual({ action: "open_copilot", conversationId: "6f4116e9-be39-4f2e-891e-6e4c27e25e19" });
+  it("the registered chapter points at the recorded conversation's two replies (ticket 15)", () => {
+    expect(SAMPLE_INTAKE_CONVERSATION).toEqual({ id: "fee7ecc0-b8e9-49b0-9ac7-a582faaa984c", replies: { interview: "f84833ef", summary: "af6c9a4f" } });
+    expect(shape(step(INTAKE, "intake.interview").anchors)).toEqual([["copilot-messages", null], ["copilot-message", "f84833ef"]]);
+    expect(shape(step(INTAKE, "intake.summary").anchors)).toEqual([["copilot-messages", null], ["copilot-message", "af6c9a4f"]]);
+    expect(step(INTAKE, "intake.interview").requires?.takeMeThere).toEqual({ action: "open_copilot", conversationId: "fee7ecc0-b8e9-49b0-9ac7-a582faaa984c" });
     expect(step(INTAKE, "intake.interview").bodyKey).toBeUndefined();
   });
 });
