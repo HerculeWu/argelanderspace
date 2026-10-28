@@ -27,6 +27,7 @@ import { manuscriptDeleteGuard } from "../writer/writer-context";
 import { WriterView } from "../writer/WriterView";
 import { createWriterPane } from "../writer/writer-pane";
 import { Copilot } from "../copilot/Copilot";
+import { ExternalRequestsChip, ExternalRequestsDock, useExternalRequestsModel } from "../external-requests/ExternalRequests";
 import type { ConversationRequest, IntakeKind, IntakeRequest } from "../copilot/intake";
 import type { ConfirmationGuards } from "../copilot/confirmations";
 import { MailNavItem } from "../mail/MailNavItem";
@@ -73,6 +74,8 @@ export function Shell() {
   // Opening the panel with its toggle puts the cursor in its input (the panel is after the whole page in tab order).
   const focusCopilotInput = useRef(false);
   const [copilotWaiting, setCopilotWaiting] = useState(false);
+  // Confirmation cards external agents raised through the CLI (release-0.2 ticket 04).
+  const externalRequests = useExternalRequestsModel();
   // This tab's Copilot view: stable across a reload, and its revision keeps counting upwards (view-identity.ts).
   const [identity] = useState(loadViewIdentity);
   const [viewId, setViewId] = useState(identity.viewId);
@@ -290,6 +293,7 @@ export function Shell() {
           </div>
           <div className="tb-center">{t("shell.tagline")}</div>
           <div className="tb-right" data-ui="titlebar-actions">
+            <ExternalRequestsChip model={externalRequests} />
             <ActionButton
               mode="icon"
               iconName="columns-2"
@@ -357,6 +361,7 @@ export function Shell() {
           </div>
 
           <div className="main">
+            <ExternalRequestsDock model={externalRequests} guards={confirmationGuards} openDocId={currentDoc} onDocDeleted={store.docDeleted} />
             <div className="panes" data-ui="workspace-panes" ref={panesRef}>
               {panes.map((p, i) => (
                 <PaneFragment

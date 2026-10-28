@@ -6,40 +6,73 @@
  */
 import {
   type CatalogOperation,
+  type ExternalRequestClient,
   OPERATION_CATALOG,
   type OperationDef,
   type OperationId,
 } from "@argelanderspace/contracts";
+import { runDeleteDocOperation } from "./doc-delete-operation.js";
+import type { ExternalAsk, ExternalCardFields } from "./external-requests.js";
 import { applyLibraryOperation, type LibraryOpDeps, readLibrary } from "./library-actions.js";
+
+/**
+ * Where an operation with `confirm: "card"` puts its card for the real user (release-0.2 ticket 04). Only the running
+ * workbench has one (the external requests queue); the in-process runtime of a CLI command has none, so such an
+ * operation refuses there instead of running unconfirmed.
+ */
+export interface OperationConfirmPort {
+  /** `null`: too many cards already wait. */
+  ask(input: {
+    card: ExternalCardFields;
+    client?: ExternalRequestClient | undefined;
+    signal?: AbortSignal | undefined;
+  }): Promise<ExternalAsk> | null;
+}
 
 /** What handlers may use. Domains add their deps here as the catalog grows. */
 export interface OperationRuntime {
   library: LibraryOpDeps;
+  /** Present in the running workbench only. */
+  confirm?: OperationConfirmPort;
+}
+
+/** Who asked and whether they are still there; given by the operation route, absent for a Copilot tool call. */
+export interface OperationCall {
+  client?: ExternalRequestClient | undefined;
+  /** Aborts when the asker leaves (the CLI's Ctrl-C, a lost connection, the workbench closing). */
+  signal?: AbortSignal | undefined;
 }
 
 type ParamsOf<Id extends OperationId> = Extract<CatalogOperation, { id: Id }>["params"]["_output"];
 
 export type OperationHandlers = {
-  [Id in OperationId]: (runtime: OperationRuntime, params: ParamsOf<Id>) => Promise<unknown>;
+  [Id in OperationId]: (
+    runtime: OperationRuntime,
+    params: ParamsOf<Id>,
+    call: OperationCall
+  ) => Promise<unknown>;
 };
 
 export const OPERATION_HANDLERS: OperationHandlers = {
   "library.read": (runtime, params) => readLibrary(runtime.library, { action: "read", ...params }),
   "library.set_main_doc": (runtime, params) =>
     applyLibraryOperation(runtime.library, { action: "set_main_doc", ...params }),
+  "library.delete_doc": (runtime, params, call) => runDeleteDocOperation(runtime, params, call),
 };
 
 /** Run a cataloged operation with params already parsed by its catalog entry. */
 export function runCatalogOperation(
   runtime: OperationRuntime,
   id: OperationId,
-  params: Record<string, unknown>
+  params: Record<string, unknown>,
+  call: OperationCall = {}
 ): Promise<unknown> {
   const handler = OPERATION_HANDLERS[id] as (
     runtime: OperationRuntime,
-    params: Record<string, unknown>
+    params: Record<string, unknown>,
+    call: OperationCall
   ) => Promise<unknown>;
-  return handler(runtime, params);
+  return handler(runtime, params, call);
 }
 
 /** The catalog entry of `id`, or undefined for an id that is not cataloged. */

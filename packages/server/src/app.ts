@@ -145,6 +145,8 @@ import { createDocDeletion } from "./doc-delete.js";
 import { badDocId, badFileName } from "./doc-id.js";
 import { DocMutationRegistry } from "./doc-mutations.js";
 import { environmentReport, mountEnvironmentRoutes } from "./environment.js";
+import { ExternalRequestQueue } from "./external-requests.js";
+import { mountExternalRequestRoutes } from "./external-routes.js";
 import { detail, pyRepr } from "./fastapi-parity.js";
 import { fileToolsDefault } from "./file-tools-default.js";
 import { type HostBridge, mountHostRoutes, switchJobOf } from "./host-routes.js";
@@ -856,8 +858,16 @@ export function createApp(deps: AppDeps): Hono {
     deletion: docDeletion,
     ...(deps.makeAdsLibraries ? { adsLibraries: deps.makeAdsLibraries } : {}),
   };
+  // Confirmation cards raised through the CLI (release-0.2 ticket 04): one queue, outside any Copilot conversation.
+  const externalRequests = new ExternalRequestQueue({
+    onChanged: () => broadcast({ type: "external-requests.changed", at: new Date().toISOString() }),
+  });
+  mountExternalRequestRoutes(app, externalRequests);
   if (deps.operations) {
-    mountOperationRoutes(app, { token: deps.operations.token, runtime: { library: libraryOps } });
+    mountOperationRoutes(app, {
+      token: deps.operations.token,
+      runtime: { library: libraryOps, confirm: externalRequests },
+    });
   }
   const readerOps: ReaderOpDeps = {
     write: async (op): Promise<ReaderWriteOutcome> => {

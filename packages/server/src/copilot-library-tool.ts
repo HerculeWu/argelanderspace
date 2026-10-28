@@ -14,7 +14,6 @@ import {
   LibraryAcquireArxivPdfSchema,
   LibraryAttachArxivSchema,
   LibraryAttachLocalPdfSchema,
-  LibraryDeleteDocSchema,
   LibraryImportWorksSchema,
   LibraryListAdsLibrariesSchema,
   LibraryReadAdsLibrarySchema,
@@ -37,6 +36,11 @@ import {
   type ToolHostContext,
 } from "./copilot-tool-kit.js";
 import { type ViewActionOutcome, viewOutcomeResult } from "./copilot-workspace-tool.js";
+import {
+  DOC_DELETE_UNAVAILABLE,
+  prepareDocDelete,
+  recheckDocDelete,
+} from "./doc-delete-operation.js";
 import {
   type AcquireOutcome,
   type AttachLocalPdfOutcome,
@@ -552,7 +556,7 @@ async function runDocDelete(input: {
       ...extra,
     });
   const port = context.library.deletion;
-  if (!port) return fail("unsupported", "deleting documents is not available in this host");
+  if (!port) return fail("unsupported", DOC_DELETE_UNAVAILABLE);
   return runOperation(
     context,
     {
@@ -568,32 +572,10 @@ async function runDocDelete(input: {
       named: { object: docObject, label: docId },
     },
     async (op) => {
-      // What the dialog would show, read without writing anything.
-      let described: Awaited<ReturnType<typeof port.describe>>;
-      try {
-        described = await port.describe(docId);
-      } catch {
-        return fail("error", "the document could not be checked; nothing was deleted");
-      }
-      if (described.kind !== "ready") {
-        if (described.kind === "error")
-          return fail("error", `${described.detail}; nothing was deleted`);
-        if (described.kind === "bad_id") return fail("rejected", "that is not a valid Doc id");
-        if (described.kind === "orphan")
-          return fail(
-            "rejected",
-            "no work lists this Doc, and the Files tab can only delete Docs a work lists, so it is not offered here either; nothing was deleted. Tell the user it has to be dealt with outside the application"
-          );
-        if (described.kind === "busy")
-          return fail(
-            "rejected",
-            "the document is busy (an upload or refresh is writing it, or it is being deleted); nothing was deleted and no confirmation was asked. Try again when the task finishes"
-          );
-        return fail(
-          "not_found",
-          "no such Doc (it may already have been deleted); nothing was deleted"
-        );
-      }
+      // What the dialog would show, read without writing anything (the catalog operation's own check).
+      const prepared = await prepareDocDelete(port, docId);
+      if (!prepared.ok) return fail(prepared.status, prepared.detail);
+      const described = prepared.described;
 
       const unavailable = confirmUnavailable(context, {
         tool: LIBRARY_TOOL_NAME,
@@ -626,17 +608,8 @@ async function runDocDelete(input: {
       });
       if (!answer.approved) return answer.result;
       // Approved. The same check the click made, now that the delete is about to run.
-      let again: Awaited<ReturnType<typeof port.describe>>;
-      try {
-        again = await port.describe(docId);
-      } catch {
-        return fail("error", "the document could not be checked again; nothing was deleted");
-      }
-      if (again.kind !== "ready" || again.digest !== described.digest)
-        return fail(
-          "expired",
-          "the Doc, the works that list it or its annotations changed after the user confirmed; nothing was deleted. Read again and ask only if it is still wanted"
-        );
+      const again = await recheckDocDelete(port, docId, described);
+      if (!again.ok) return fail(again.status, again.detail);
       // The click IS the commit, as on the page ("Delete permanently" deletes): a Stop after it does not undo it.
       if (!op.begin({ summary: `delete ${docId}` })) return op.notSaved("deleted");
       const outcome = await op.track(
@@ -781,14 +754,15 @@ export function createLibraryTool(context: LibraryToolContext) {
             : await listAdsLibraries(context.library, signal);
           return done(record(toolCallId, action, { status: outcome.status }), outcome);
         }
-        const deleteDoc = LibraryDeleteDocSchema.safeParse(rest);
-        if (deleteDoc.success)
+        // delete_doc is cataloged (confirm: "card"): its parameters come from the catalog; the card stays in this
+        // conversation and the wait and the records stay with this tool, the checks around them are the operation's.
+        if (cataloged.match && cataloged.op.id === "library.delete_doc" && cataloged.success)
           return await runDocDelete({
             context,
             rest,
             requestedId,
             toolCallId,
-            docId: deleteDoc.data.docId,
+            docId: (cataloged.params as { docId: string }).docId,
           });
         const pdfJob = LibraryAcquireArxivPdfSchema.safeParse(rest);
         const sourceJob = LibraryAttachArxivSchema.safeParse(rest);
@@ -826,21 +800,19 @@ export function createLibraryTool(context: LibraryToolContext) {
           const failure =
             rest.action === "import_works"
               ? importOp
-              : rest.action === "delete_doc"
-                ? deleteDoc
-                : rest.action === "read_ads_library"
-                  ? adsRead
-                  : rest.action === "attach_local_pdf"
-                    ? localPdf
-                    : rest.action === "acquire_arxiv_pdf"
-                      ? pdfJob
-                      : rest.action === "attach_arxiv"
-                        ? sourceJob
-                        : rest.action === "read_jobs"
-                          ? jobsRead
-                          : rest.action === "save_candidate"
-                            ? save
-                            : null;
+              : rest.action === "read_ads_library"
+                ? adsRead
+                : rest.action === "attach_local_pdf"
+                  ? localPdf
+                  : rest.action === "acquire_arxiv_pdf"
+                    ? pdfJob
+                    : rest.action === "attach_arxiv"
+                      ? sourceJob
+                      : rest.action === "read_jobs"
+                        ? jobsRead
+                        : rest.action === "save_candidate"
+                          ? save
+                          : null;
           const issues =
             cataloged.match && !cataloged.success
               ? cataloged.issues

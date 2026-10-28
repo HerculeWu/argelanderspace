@@ -6,6 +6,7 @@
 import { z } from "zod";
 import { LibraryRefSchema } from "./library.js";
 import {
+  LibraryDeleteDocSchema,
   LibraryReadOperationSchema,
   LibraryRefSummarySchema,
   LibrarySetMainDocSchema,
@@ -55,6 +56,52 @@ export const LibrarySetMainDocResultSchema = z.union([
     .strict(),
 ]);
 
+/**
+ * What a Doc delete answers. `declined` is the answer of a Copilot conversation's card, `denied` of the workbench's
+ * card for an external agent (the CLI exits 3 on it): the same refusal by the user, named by the channel that asked.
+ * `workbench_required` is the CLI's own refusal when no workbench runs for the data directory (nothing was shown or
+ * deleted); `interrupted` is what an operation answers when the asker left while it waited.
+ */
+export const LibraryDeleteDocResultSchema = z.union([
+  z
+    .object({
+      ok: z.literal(true),
+      status: z.literal("ok"),
+      docId: z.string(),
+      object: z.object({ kind: z.literal("doc"), id: z.string() }).passthrough(),
+      label: z.string(),
+      works: z.array(
+        z
+          .object({
+            id: z.string(),
+            title: z.string(),
+            /** The Docs the Work keeps; `remaining[0]` is its main Doc now. */
+            remaining: z.array(z.string()),
+          })
+          .strict()
+      ),
+      detail: z.string(),
+    })
+    .strict(),
+  z
+    .object({
+      ok: z.literal(false),
+      status: z.enum([
+        "not_found",
+        "rejected",
+        "error",
+        "expired",
+        "unsupported",
+        "declined",
+        "denied",
+        "workbench_required",
+        "interrupted",
+      ]),
+      detail: z.string(),
+    })
+    .strict(),
+]);
+
 export const LIBRARY_READ_OPERATION = defineOperation({
   domain: "library",
   name: "read",
@@ -77,4 +124,16 @@ export const LIBRARY_SET_MAIN_DOC_OPERATION = defineOperation({
   navigates: false,
   params: LibrarySetMainDocSchema.omit({ action: true }),
   result: LibrarySetMainDocResultSchema,
+});
+
+export const LIBRARY_DELETE_DOC_OPERATION = defineOperation({
+  domain: "library",
+  name: "delete_doc",
+  summary:
+    "Permanently delete a Doc everywhere (the Files tab's 'delete document'); the user must confirm on a card in the running workbench.",
+  effect: "write",
+  confirm: "card",
+  navigates: false,
+  params: LibraryDeleteDocSchema.omit({ action: true }),
+  result: LibraryDeleteDocResultSchema,
 });

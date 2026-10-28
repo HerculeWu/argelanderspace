@@ -15,13 +15,17 @@
  *     `400 { ok: false, status: "unsupported", detail }` unknown id, malformed body or invalid params (not run);
  *     `401 { ok: false, status: "unauthorized" }`;
  *     `500 { ok: false, status: "error", detail }` the handler threw (the operation may or may not have run).
- *   The response is held until the operation finishes. Tickets 04/05 build on that without changing the protocol: a
- *   confirmation operation simply does not answer until the card is decided (the request's `signal` aborts when the CLI
- *   leaves, which withdraws the card; the workbench closing drops the connection, which the CLI reports as interrupted),
- *   and `client` ({ pid, commandLine }) is what the card's source line shows. A navigation operation (05) is handed to
- *   the most recently active window by the route, again without a protocol change.
+ *   The response is held until the operation finishes. A confirmation operation (ticket 04) does not answer until its
+ *   card is decided: the request's `signal` aborts when the CLI leaves, which withdraws the card, and the workbench
+ *   closing drops the connection, which the CLI reports as interrupted. `client` ({ pid, commandLine }) is what the
+ *   card's source line shows. A navigation operation (05) is handed to the most recently active window by the route,
+ *   without a protocol change.
  */
 import { createHash, timingSafeEqual } from "node:crypto";
+import {
+  type ExternalRequestClient,
+  ExternalRequestClientSchema,
+} from "@argelanderspace/contracts";
 import type { Context } from "hono";
 import {
   findCatalogOperation,
@@ -42,6 +46,17 @@ export interface OperationRouteDeps {
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
+
+/** The `client` the CLI reports, as far as it is well formed; a long command line is cut, a malformed one is dropped. */
+function clientOf(raw: unknown): ExternalRequestClient | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const { pid, commandLine } = raw as { pid?: unknown; commandLine?: unknown };
+  const parsed = ExternalRequestClientSchema.safeParse({
+    pid,
+    commandLine: typeof commandLine === "string" ? commandLine.slice(0, 4000) : commandLine,
+  });
+  return parsed.success ? parsed.data : undefined;
+}
 
 const digest = (text: string): Buffer => createHash("sha256").update(text).digest();
 
@@ -74,7 +89,7 @@ export function mountOperationRoutes(app: ProtectedRoutes, deps: OperationRouteD
     } catch {
       return unsupported(c, "the request body is not valid JSON");
     }
-    const request = body as { id?: unknown; params?: unknown } | null;
+    const request = body as { id?: unknown; params?: unknown; client?: unknown } | null;
     if (typeof request !== "object" || request === null || typeof request.id !== "string")
       return unsupported(c, "the request needs an operation id");
     const op = findCatalogOperation(request.id);
@@ -85,7 +100,9 @@ export function mountOperationRoutes(app: ProtectedRoutes, deps: OperationRouteD
       const result = await runCatalogOperation(
         deps.runtime,
         op.id as Parameters<typeof runCatalogOperation>[1],
-        parsed.params
+        parsed.params,
+        // The request's signal aborts when the CLI leaves; a confirmation operation withdraws its card then.
+        { client: clientOf(request.client), signal: c.req.raw.signal }
       );
       return c.json(result as object, 200, NO_STORE);
     } catch (e) {

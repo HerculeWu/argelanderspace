@@ -120,6 +120,8 @@ function createRouter(send: (frame: object) => void) {
     "host.switch-confirmation": emit,
     // A tutorial entry the host took failed (in-app-tutorial ticket 25): only an explicit `on`.
     "host.tutorial-result": emit,
+    // The external requests queue changed (release-0.2 ticket 04): only an explicit `on` (the dock reads it again).
+    "external-requests.changed": emit,
     // Position notifications never navigate another tab; its reader remains
     // user-controlled. No built-in routing: only an explicit `on` sees it.
     "pdf-reading-position.changed": emit,

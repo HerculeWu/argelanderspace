@@ -96,3 +96,4 @@ export const onHostSwitchConfirmation = (cb: (msg: WsHostSwitchConfirmation) => 
 /** A tutorial entry the desktop host took failed (in-app-tutorial ticket 25): why, and the folder it was about. */
 export const onHostTutorialResult = (cb: (msg: WsHostTutorialResult) => void): (() => void) =>
   bus.on("host.tutorial-result", cb);
+

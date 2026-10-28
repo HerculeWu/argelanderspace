@@ -250,7 +250,7 @@ input, textarea { font-family: inherit; color: inherit; }
 .nav-icon-action:disabled:hover { background: none; color: var(--text-faint); }
 .act-label { font-size: 10px; font-weight: 500; }
 
-.main { flex: 1; min-width: 0; background: var(--bg); overflow: hidden; }
+.main { flex: 1; min-width: 0; background: var(--bg); overflow: hidden; position: relative; }
 .view-row { display: flex; height: 100%; min-height: 0; }
 
 .panes { display: flex; height: 100%; min-height: 0; }

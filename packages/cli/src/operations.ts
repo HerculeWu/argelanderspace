@@ -7,7 +7,11 @@
  * `<operation-name>` is the catalog name with `_` as `-`; each parameter is an option (`refId` -> `--ref-id`);
  * `--json` supplies the whole parameter object instead. The output is the operation's result as JSON on stdout, the
  * same object the Copilot tool returns. Exit codes: 0 the result is ok/noop (or a read), 1 the operation answered
- * `ok: false` or failed, 2 the parameters were not valid (nothing was run).
+ * `ok: false` or failed, 2 the parameters were not valid (nothing was run), 3 the user denied the confirmation card
+ * (`status: "denied"`), 4 an operation waiting for a confirmation card was interrupted (the workbench exited or
+ * stopped answering), 130 this command was interrupted (Ctrl-C) and withdrew its card. An operation with
+ * `confirm: "card"` needs a running workbench: without one the command answers `workbench_required` (exit 1) and
+ * runs nothing in this process. Exit codes are listed in `docs/operation-catalog.md`.
  *
  * Only the catalog's operations are registered here; the older commands (`ingest`, `library build`, `annot`, ...) are
  * not in the catalog and are not touched. A command first looks for a workbench running for the data directory and, if
@@ -36,6 +40,11 @@ import type { Command } from "commander";
 import { fail, resolveDataDir, withDataDir } from "./common.js";
 
 class ParamError extends Error {}
+
+/** Exit codes beyond 0/1/2 (documented in `docs/operation-catalog.md`). */
+export const EXIT_DENIED = 3;
+export const EXIT_INTERRUPTED = 4;
+export const EXIT_SIGINT = 130;
 
 function optionValue(option: OperationOption, raw: string | boolean): unknown {
   if (option.kind === "boolean") return raw === true || raw === "true";
@@ -123,6 +132,16 @@ async function runOperationCommand(op: OperationDef, cmd: Command): Promise<void
     await runViaWorkbench(workbench, op, params);
     return;
   }
+  // The card is the real user's confirmation: with no workbench to show it nothing is asked and nothing runs here.
+  if (op.confirm === "card") {
+    printResult({
+      ok: false,
+      status: "workbench_required",
+      detail: `${op.id} needs your confirmation on a card in the workbench, and no workbench is running for this data directory; open ArgelanderSpace on this project first. Nothing was done`,
+    });
+    process.exitCode = 1;
+    return;
+  }
   const runtime = createLocalOperationRuntime(libraryPaths(dataDir));
   let result: unknown;
   try {
@@ -142,27 +161,57 @@ async function runViaWorkbench(
   params: Record<string, unknown>
 ): Promise<void> {
   let answer: Awaited<ReturnType<typeof runOnWorkbench>>;
+  // A command that waits for a confirmation card is interrupted from the terminal: the request is aborted, which
+  // withdraws the card in the workbench.
+  const waits = op.confirm === "card";
+  const controller = new AbortController();
+  let interrupted = false;
+  const onSignal = () => {
+    interrupted = true;
+    controller.abort();
+  };
+  if (waits) {
+    process.once("SIGINT", onSignal);
+    process.once("SIGTERM", onSignal);
+  }
   try {
-    answer = await runOnWorkbench(workbench, {
-      id: op.id,
-      params,
-      client: {
-        pid: process.pid,
-        commandLine: ["argelanderspace", ...process.argv.slice(2)].join(" "),
+    answer = await runOnWorkbench(
+      workbench,
+      {
+        id: op.id,
+        params,
+        client: {
+          pid: process.pid,
+          commandLine: ["argelanderspace", ...process.argv.slice(2)].join(" "),
+        },
       },
-    });
-  } catch {
-    fail(
-      new Error(
-        `the workbench (port ${workbench.port}) stopped answering; the operation may or may not have run`
-      )
+      waits ? controller.signal : undefined
     );
+  } catch {
+    if (interrupted) {
+      console.error("error: interrupted; the request was withdrawn and nothing was done");
+      process.exitCode = EXIT_SIGINT;
+    } else if (waits) {
+      console.error(
+        `error: interrupted; the workbench (port ${workbench.port}) stopped answering before the request was decided. Nothing was done unless you had just approved it; read the object to check`
+      );
+      process.exitCode = EXIT_INTERRUPTED;
+    } else {
+      fail(
+        new Error(
+          `the workbench (port ${workbench.port}) stopped answering; the operation may or may not have run`
+        )
+      );
+    }
     return;
+  } finally {
+    process.off("SIGINT", onSignal);
+    process.off("SIGTERM", onSignal);
   }
   const body = answer.body as { ok?: boolean; status?: string; detail?: string } | null;
   if (answer.status === 200) {
     printResult(body);
-    if (body?.ok === false) process.exitCode = 1;
+    if (body?.ok === false) process.exitCode = body.status === "denied" ? EXIT_DENIED : 1;
   } else if (answer.status === 400) {
     printResult(body);
     process.exitCode = 2;

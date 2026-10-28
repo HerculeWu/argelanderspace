@@ -1,0 +1,43 @@
+/* External agents' confirmation cards (release-0.2 ticket 04): approved prototype 03, variant A. The card inside is
+   Copilot's own (.copilot-confirmation in copilot.css); this file only adds the dock, the source strip, the queue and
+   the withdrawn / result messages. Tokens come from argelander.css. */
+.external-requests-chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px 0 8px; border-radius: 13px; border: 1px solid color-mix(in oklch, var(--info) 55%, transparent); background: color-mix(in oklch, var(--info) 14%, transparent); color: var(--text); font-size: var(--fs-sm); font-weight: 600; cursor: pointer; }
+.external-requests-chip:hover { background: color-mix(in oklch, var(--info) 24%, transparent); }
+.external-requests-chip svg { width: 14px; height: 14px; color: var(--info); }
+
+.external-requests-dock { position: absolute; right: 16px; bottom: 16px; z-index: 20; width: 408px; max-width: calc(100% - 32px); max-height: calc(100% - 32px); overflow: auto; border-radius: 9px; background: var(--surface); box-shadow: var(--shadow-2); }
+.external-requests-dock.folded { width: auto; overflow: visible; }
+.external-requests-dock.result { border: 1px solid var(--border); }
+.external-request { --tone: var(--info); border: 1px solid var(--border); border-left: 3px solid var(--tone); border-radius: 9px; background: var(--surface); overflow: hidden; }
+.external-request.withdrawn { --tone: var(--warn); }
+.external-request-source { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: color-mix(in oklch, var(--info) 10%, var(--surface)); border-bottom: 1px solid var(--border-soft); font-size: var(--fs-sm); }
+.external-request.withdrawn .external-request-source { background: color-mix(in oklch, var(--warn) 10%, var(--surface)); }
+.external-request-source svg { width: 16px; height: 16px; flex: none; color: var(--info); }
+.external-request-source strong { font-weight: 600; color: var(--text); }
+.external-request-tag { font-family: var(--font-mono); font-size: var(--fs-xs); border: 1px solid var(--border); border-radius: 4px; padding: 0 6px; color: var(--text-dim); background: var(--surface-2); line-height: 1.6; }
+.external-request-grow { flex: 1; }
+.external-request-pager { font-size: var(--fs-sm); color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.external-request-command { margin: 10px 12px 0; padding: 7px 9px; border-radius: var(--radius-sm); background: var(--bg-deep); border: 1px solid var(--border-soft); font: var(--fs-sm)/1.5 var(--font-mono); color: var(--text-dim); overflow-wrap: anywhere; }
+.external-request-command::before { content: "$ "; color: var(--text-faint); }
+.external-request-wait { margin: 6px 12px 0; font-size: var(--fs-sm); color: var(--text-faint); }
+.external-request .copilot-confirmation { border: none; border-radius: 0; background: transparent; margin: 0; padding: 2px 12px 12px; }
+.external-request.withdrawn .copilot-confirmation { opacity: .55; pointer-events: none; }
+.external-request .copilot-confirmation-warn { margin-top: 8px; }
+.external-request-foot { display: flex; justify-content: flex-end; padding: 0 12px 12px; }
+.external-request-queue { border-top: 1px solid var(--border-soft); padding: 8px 12px 10px; background: var(--surface-2); }
+.external-request-queue h4 { margin: 0 0 4px; font-size: var(--fs-xs); font-weight: 600; letter-spacing: .04em; color: var(--text-faint); text-transform: uppercase; }
+.external-request-queued { display: flex; gap: 8px; align-items: baseline; font-size: var(--fs-sm); color: var(--text-dim); padding: 3px 0; }
+.external-request-queued .n { font-variant-numeric: tabular-nums; color: var(--text-faint); width: 14px; flex: none; }
+.external-request-queued .d { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.external-request-queued .w { color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.external-request-queued.gone .d { text-decoration: line-through; color: var(--text-faint); }
+.external-request-queued.note .d { color: var(--text-faint); }
+.external-request-message { display: flex; gap: 9px; align-items: flex-start; padding: 11px 12px; font-size: var(--fs-sm); line-height: 1.6; color: var(--text-dim); }
+.external-request-message svg { width: 16px; height: 16px; flex: none; margin-top: 2px; }
+.external-request-message.warn svg { color: var(--warn); }
+.external-request-message.ok svg { color: var(--ok); }
+.external-request-message strong { display: block; color: var(--text); font-weight: 600; }
+.external-requests-dock > .external-request-message { border-top: 1px solid var(--border-soft); }
+.external-request-bar { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; max-width: 440px; font-size: var(--fs-sm); border: 1px solid var(--border); border-left: 3px solid var(--info); border-radius: 9px; background: var(--surface); }
+.external-request-bar svg { width: 16px; height: 16px; flex: none; color: var(--info); }
+.external-request-bar-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }

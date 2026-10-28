@@ -21,6 +21,7 @@ import {
   WsCopilotSubscribedSchema,
   WsCopilotViewActionSchema,
 } from "./copilot.js";
+import { WsExternalRequestsChangedSchema } from "./external-requests.js";
 import { WsHostSwitchConfirmationSchema, WsHostTutorialResultSchema } from "./host-api.js";
 import { WsIntakeChangedSchema } from "./intake.js";
 import { JobKindSchema, JobStatusSchema } from "./job-status.js";
@@ -127,6 +128,7 @@ export const WsServerMessageSchema = z.discriminatedUnion("type", [
   WsShelfChangedSchema,
   WsHostSwitchConfirmationSchema,
   WsHostTutorialResultSchema,
+  WsExternalRequestsChangedSchema,
 ]);
 
 // ---- async upload (202) ------------------------------------------------------ //

@@ -312,6 +312,8 @@ const CREATE_APP_GUARDED: Array<[string, string]> = [
   ["GET", "/api/shelf/entries/:entry_id/annotations"],
   ["POST", "/api/shelf/entries/:entry_id/take/preview"],
   ["POST", "/api/shelf/entries/:entry_id/take"],
+  ["POST", "/api/external-requests/:id/decision"], // release-0.2 ticket 04: a page decides a CLI confirmation card
+  ["POST", "/api/external-requests/:id/dismiss"],
   ["PUT", "/api/paper/:doc_id/pdf/reading-position"], // user decision 1 (2026-10-20)
   ["PUT", "/api/paper/:doc_id/pdf/annotations"], // user decision 1 (2026-10-20)
   ["PUT", "/api/paper/:doc_id/annotations"],
