@@ -20,13 +20,11 @@ import {
   LibraryReadAdsLibrarySchema,
   LibraryReadDiscoverySchema,
   LibraryReadJobsSchema,
-  LibraryReadOperationSchema,
   LibrarySaveCandidateSchema,
-  type LibrarySetMainDoc,
-  LibrarySetMainDocSchema,
   type LibraryViewAction,
   LibraryViewActionSchema,
   type PageContext,
+  parseCatalogCall,
 } from "@argelanderspace/contracts";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
@@ -48,17 +46,17 @@ import {
   applyDocDelete,
   applyLibraryBibcodeImport,
   applyLibraryImport,
-  applyLibraryOperation,
   jobView,
   type LibraryImportOutcome,
   type LibraryOpDeps,
   type LibraryOpOutcome,
+  type LibraryReadOutcome,
   listAdsLibraries,
   prepareArxivRefresh,
   readAdsLibrary,
   readJobs,
-  readLibrary,
 } from "./library-actions.js";
+import { runCatalogOperation } from "./operation-catalog.js";
 
 export const LIBRARY_TOOL_NAME = "library";
 
@@ -696,11 +694,17 @@ export function createLibraryTool(context: LibraryToolContext) {
         });
       try {
         const { operationId: requestedId, ...rest } = params as Record<string, unknown>;
-        const read = LibraryReadOperationSchema.safeParse(rest);
-        if (read.success) {
-          let outcome: Awaited<ReturnType<typeof readLibrary>>;
+        // The cataloged actions (contracts operation catalog): parameters and execution come from the catalog.
+        const cataloged = parseCatalogCall(LIBRARY_TOOL_NAME, rest);
+        const read = cataloged.match && cataloged.op.id === "library.read" ? cataloged : null;
+        if (read?.success) {
+          let outcome: LibraryReadOutcome;
           try {
-            outcome = await readLibrary(context.library, read.data);
+            outcome = (await runCatalogOperation(
+              { library: context.library },
+              "library.read",
+              read.params
+            )) as LibraryReadOutcome;
           } catch {
             // An unreadable library is an error, never an empty one.
             return done(record(toolCallId, "read", { status: "error" }), {
@@ -813,7 +817,10 @@ export function createLibraryTool(context: LibraryToolContext) {
             path: localPdf.data.path,
           });
         const importOp = LibraryImportWorksSchema.safeParse(rest);
-        const write = LibrarySetMainDocSchema.safeParse(rest);
+        const write =
+          cataloged.match && cataloged.op.id === "library.set_main_doc" && cataloged.success
+            ? { success: true as const, data: cataloged.params as { refId: string } }
+            : { success: false as const };
         const save = LibrarySaveCandidateSchema.safeParse(rest);
         if (!importOp.success && !write.success && !save.success) {
           const failure =
@@ -833,14 +840,19 @@ export function createLibraryTool(context: LibraryToolContext) {
                           ? jobsRead
                           : rest.action === "save_candidate"
                             ? save
-                            : write;
+                            : null;
+          const issues =
+            cataloged.match && !cataloged.success
+              ? cataloged.issues
+              : (failure === null || failure.success ? [] : failure.error.issues).map((issue) => ({
+                  path: issue.path.join("."),
+                  message: issue.message,
+                }));
           return done(record(toolCallId, action, { status: "unsupported" }), {
             ok: false,
             status: "unsupported",
             detail: "unknown action or invalid parameters",
-            issues: (failure.success ? [] : failure.error.issues)
-              .slice(0, 5)
-              .map((issue) => ({ path: issue.path.join("."), message: issue.message })),
+            issues: issues.slice(0, 5),
           });
         }
         return await runOperation(
@@ -883,10 +895,11 @@ export function createLibraryTool(context: LibraryToolContext) {
                 ? applyLibraryImport(context.library, importOp.data)
                 : save.success
                   ? applyLibraryBibcodeImport(context.library, save.data.bibcode)
-                  : applyLibraryOperation(
-                      context.library,
-                      (write as { data: LibrarySetMainDoc }).data
-                    )
+                  : (runCatalogOperation(
+                      { library: context.library },
+                      "library.set_main_doc",
+                      (write as { data: Record<string, unknown> }).data
+                    ) as Promise<LibraryOpOutcome>)
             );
             const failedObject = write.success
               ? { object: { kind: "work" as const, id: write.data.refId } }

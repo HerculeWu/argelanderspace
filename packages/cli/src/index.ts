@@ -7,6 +7,7 @@ export * from "./agent.js";
 export * from "./argument.js";
 export * from "./common.js";
 export * from "./detect.js";
+export * from "./operations.js";
 export * from "./program.js";
 export * from "./summary.js";
 export * from "./tutorial.js";

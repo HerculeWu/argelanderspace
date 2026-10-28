@@ -49,6 +49,7 @@ import { DATA_DIR_HELP, fail, realpathOr, resolveDataDir, withDataDir } from "./
 import { detectSource } from "./detect.js";
 // The app package's version, written into the source at build time (scripts/app-version.mjs; desktop-app ticket 16).
 import { APP_VERSION } from "./generated/app-version.js";
+import { registerOperationCommands } from "./operations.js";
 import { formatPlanRow, formatTexIngestSummary, planSortKey } from "./summary.js";
 import { registerTutorialCommand } from "./tutorial.js";
 
@@ -496,6 +497,8 @@ export function buildProgram(): Command {
 
   // Argument-graph ticket 07: `argument get|put` + `pdf-path` (agent-facing, frozen on release)
   registerArgumentCommands(program);
+  // The operation catalog's subcommands (ADR 0015); the older commands above are not in it and stay as they are.
+  registerOperationCommands(program);
 
   return program;
 }

@@ -515,6 +515,7 @@ CLI + 仓库 `skills/argelander-*` 三件套（ingest/query-library/read-paper�
 
 - search/read/show/ref/note/label/list + 只读 annot，CLI 直读磁盘，不依赖 HTTP。论证图另有 `argument get` / `argument put`（整图读写，写入带 rev，覆盖非空图须 `--replace`）与只读的 `pdf-path <docId>`（只输出 PDF 原件路径），见 [argument-graph](argument-graph.md)「CLI」。
 - `skills/argelander-argument-graph` 读一篇已摄入文献并把论证图写入工作台（读正文走既有 `read`/`show`/`ref`，PDF Doc 经 `pdf-path` 取原件路径，写入走 `argument put`）；覆盖非空图前须问用户，不是第四个文献问答 skill。
+- 操作目录（ADR 0015，release-0.2 起）：`library read`、`library set-main-doc` 由目录派生（命令名、选项、`--json`、输出与退出码规则见 [operation-catalog](operation-catalog.md)）；这是增量，上述既有命令与冻结面不变。
 - 文献问答从项目根走 CLI/skills，不传 `--data-dir`，不读内部 JSON/源码替代文献接口。开发任务不受此源码禁读限制。
 - 仓库 CLI：`node packages/app/dist/bin.js`；全局安装后 `argelanderspace`。桌面应用里经设置页「命令行与 agent」安装同名的启动脚本（用户级可执行目录，运行包内的 Node 与 CLI，应用不改 PATH），随包 skills 经「显示 skills 文件夹」打开，由用户自己复制到 agent 的目录（票 24，见[桌面宿主](#桌面宿主desktop-app-票-17)「命令行工具与 skills 文件夹」）。
 - 深链接端口：config.toml `port` > 1859，不读环境变量；`serve` 用 `--port` 起在别的端口而 config 没写时，CLI 打印的链接仍指向 config 或默认端口。
