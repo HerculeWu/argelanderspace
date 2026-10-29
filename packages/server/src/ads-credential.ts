@@ -6,8 +6,8 @@
  * (the store is wrapped only for whether the keychain answered; the test request is logged by host and status).
  *
  * The import reads `~/.ads/dev_key` and saves its content; the file is opened for reading only and never written,
- * moved or removed (its bytes and modification time stay as they were). The find-papers skill keeps reading it on its
- * own: the two are separate copies from then on.
+ * moved or removed (its bytes and modification time stay as they were). Nothing reads the file afterwards (the
+ * find-papers skill searches with the saved token since release-0.2 ticket 12).
  */
 
 import { closeSync, constants, fstatSync, openSync, readSync, statSync } from "node:fs";

@@ -47,12 +47,15 @@ export const REQUIRED_FILES = [
   // the papers' licenses.
   "dist/tutorial/argelanderspace-tutorial.json",
   "dist/tutorial/NOTICE.md",
-  // The bundled skills (project-intake ticket 12): the README marker makes infra's bundledSkillsDir find them; the
-  // three SKILL.md are the Copilot's allow-list (copilot-resources.ts COPILOT_SKILL_NAMES).
+  // The bundled skills (project-intake ticket 12, release-0.2 ticket 12): the README marker makes infra's
+  // bundledSkillsDir find them; all six SKILL.md are loaded by the Copilot (no allow-list) and by external agents.
   "dist/skills/README.md",
-  "dist/skills/argelander-read-paper/SKILL.md",
-  "dist/skills/argelander-query-paper-library/SKILL.md",
+  "dist/skills/argelander-argument-graph/SKILL.md",
+  "dist/skills/argelander-find-papers/SKILL.md",
+  "dist/skills/argelander-paper-ingest/SKILL.md",
   "dist/skills/argelander-project-intake/SKILL.md",
+  "dist/skills/argelander-query-paper-library/SKILL.md",
+  "dist/skills/argelander-read-paper/SKILL.md",
   ...VENDORED_LICENSE_FILES,
 ];
 

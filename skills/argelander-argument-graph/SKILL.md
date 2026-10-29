@@ -1,15 +1,37 @@
 ---
 name: argelander-argument-graph
-description: Turn one paper in the ArgelanderSpace library into an argument graph (论证图) — Toulmin-model arguments (Claim, Grounds, Warrant, optional Backing/Qualifier/Rebuttal) linked by argument edges, with Native and End arguments marked and sources that jump into the paper — and write it into the workbench with `argument put`. Use whenever the user asks to "整理这篇的论证结构 / 论证图", "break down the logic of paper X", "map the argument of this paper", "explain paper X in detail as an argument graph", or "把这篇论文的论证写进工作台". Do NOT use for ordinary Q&A about a paper (use argelander-read-paper) or for ingesting one (use argelander-paper-ingest).
+description: Turn one paper in the ArgelanderSpace library into an argument graph (论证图) — Toulmin-model arguments (Claim, Grounds, Warrant, optional Backing/Qualifier/Rebuttal) linked by argument edges, with Native and End arguments marked and sources that jump into the paper — and write it into the workbench with `argument.replace`. Use whenever the user asks to "整理这篇的论证结构 / 论证图", "break down the logic of paper X", "map the argument of this paper", "explain paper X in detail as an argument graph", or "把这篇论文的论证写进工作台". Do NOT use for ordinary Q&A about a paper (use argelander-read-paper) or for ingesting one (use argelander-paper-ingest).
 ---
 
 # argelander-argument-graph
 
-Read one paper and write its **argument graph** into ArgelanderSpace, where the user sees it on the workbench canvas and can edit it. The process is a six-step Toulmin analysis; the last step is `argument put`. Everything goes through the `argelanderspace` CLI.
+Read one paper and write its **argument graph** into ArgelanderSpace, where the user sees it on the workbench canvas and can edit it. The process is a six-step Toulmin analysis; the last step writes the graph with `argument.replace`.
 
-## Non-negotiable: the CLI is the only interface
+## Two entries
 
-**Never read source code — not the ArgelanderSpace repo's, not any other project's — and never hand-read or hand-write files under `literatures/` (library.json, Document JSON, `argument-graphs/*.json`).** Read the paper with `read` / `show` / `ref`; read and write the graph with `argument get` / `argument put`. You may write only scratch files **outside the data dir** (a temp directory under your working directory, or `/tmp`): the graph JSON you pass to `argument put`, and CLI output you redirect to a file in order to read it in pieces (see "Practical reading"). Never write inside `literatures/`.
+This guide serves the Copilot (in the workbench) and external agents (a shell with the `argelanderspace` CLI). The analysis is the same; reading the paper and writing the graph are operations with two ways to call them. The CLI prints one JSON answer on stdout, the same one the Copilot's tool returns; `--json <file|->` takes all parameters as one object.
+
+| Step | Operation | Copilot (`argument` / `reader` / `library` tool, action) | External agent |
+|---|---|---|---|
+| Find the Work and its Docs | `library.read` | `library` `read` `{"query":…}` | `argelanderspace search` (work `id`, `doc_ids`; the first is the main Doc) |
+| Read the paper | `reader.read` | `reader` `read` `{"docId":…}` | `argelanderspace read <docId> --manifest refs`, `read <docId> --section <secId>`, `show`, `ref` (see `argelander-read-paper`) |
+| Read the existing graph | `argument.read` | `argument` `read` `{"workId":…}` | `argelanderspace argument read --work-id <workId>` |
+| Write the whole graph | `argument.replace` | `argument` `replace` `{"workId":…,"expectedRev":…,"graph":{"arguments":[…],"edges":[…]}}` | `argelanderspace argument replace --json /tmp/replace.json` |
+| Add or change one argument | `argument.create`, `argument.update` | `argument` `create` / `update` | `argelanderspace argument create --json …`, `argelanderspace argument update --json …` |
+| Delete / restore one argument | `argument.delete`, `argument.undo_delete` | `argument` `delete` / `undo_delete` | `argelanderspace argument delete --work-id <workId> --expected-rev <rev> --id <id>`, `argelanderspace argument undo-delete …` |
+| Edges | `argument.add_edge`, `argument.remove_edge` | `argument` `add_edge` / `remove_edge` | `argelanderspace argument add-edge --work-id <workId> --expected-rev <rev> --from <id> --to <id> --role grounds`, `argelanderspace argument remove-edge …` |
+| Empty the graph | `argument.clear` | `argument` `clear` | `argelanderspace argument clear --work-id <workId> --expected-rev <rev>` |
+| Show it to the user | `argument.open` (the tool's action is `open_argument_graph`) | `argument` `open_argument_graph` | `argelanderspace open argument-graph --work-id <workId>` (needs the workbench open) |
+
+Every write carries `expectedRev` (CLI `--expected-rev`): the `rev` you read last. A stale one answers `conflict` with the graph's latest state; write nothing from the stale picture, read the latest, decide again. Nested parameters (`argument`, `patch`, `graph`, `ids`) are JSON; give them with `--json`, where the object has the same keys the Copilot's call has (without `action`).
+
+The Copilot's `argument` tool also has a `guide` action, the tool's own summary of this method; when this guide is loaded, follow this one.
+
+CLI exit codes: 0 `ok`/`noop`; 1 the operation answered `ok:false` (`conflict`, `invalid`, `not_found`, `expired`, `workbench_required`, `error`) or failed; 2 invalid parameters, nothing ran; 3 the user refused the confirmation card (`denied`); 4 the workbench went away while the card was open (read the graph before retrying); 130 you interrupted it.
+
+## Non-negotiable: operations and the CLI are the only interface
+
+**Never read source code — not the ArgelanderSpace repo's, not any other project's — and never hand-read or hand-write files under `literatures/` (library.json, Document JSON, `argument-graphs/*.json`).** Read the paper and the graph with the operations above and write the graph only with them. An external agent may write scratch files **outside the data dir** (a temp directory under your working directory, or `/tmp`): the parameter file you pass to `argument replace`, and CLI output you redirect to a file in order to read it in pieces (see "Practical reading"). Never write inside `literatures/`.
 
 ## Vocabulary (use these words with the user)
 
@@ -28,41 +50,33 @@ Read one paper and write its **argument graph** into ArgelanderSpace, where the 
 
 Report in the user's language. Use the Chinese terms (论证图, 论证, 论证边, Native/End 论证, 出处, 论证审计) only when the user writes Chinese; for an English request use the English terms (argument graph, argument, argument edge, Native/End argument, source, audit). The JSON keys, `kind` values and edge roles are always the English ones. Argument text (claim, grounds, …) follows the paper's language unless the user asks otherwise.
 
-## Configuration
+## Configuration (external agents)
 
-Same as `argelander-read-paper`: CLI `argelanderspace` (or `node /path/to/repo/packages/app/dist/bin.js` by absolute path); **run from the project root** (the directory containing `literatures/`) and do not pass `--data-dir` unless the layout is unusual. Printed links use the port from config.toml `port` (default 1859); no environment variable changes it, so if the user's server runs on another port, rewrite the port when quoting a link (or have the user set `port` in config.toml). If you only have the `node /path/to/bin.js` form, write it out in full in every command or wrap it in a shell **function** (`argel() { node /path/to/bin.js "$@"; }`): storing the two words in an ordinary variable (`CLI="node /path/bin.js"`) does not word-split in zsh and fails with `command not found`.
+Same as `argelander-read-paper`: CLI `argelanderspace` (or `node /path/to/repo/packages/app/dist/bin.js` by absolute path); **run from the project root** (the directory containing `literatures/`) and do not pass `--data-dir` unless the layout is unusual. Printed links use the port from config.toml `port` (default 1859); if the user's server runs on another port, rewrite the port when quoting a link. If you only have the `node /path/to/bin.js` form, write it out in full in every command or wrap it in a shell **function** (`argel() { node /path/to/bin.js "$@"; }`): storing the two words in an ordinary variable (`CLI="node /path/bin.js"`) does not word-split in zsh and fails with `command not found`.
 
 Two id families — keep them straight:
 
-- **work id** (`arxiv:2501.17225`, `doi:…`): `argument get` / `argument put`, `search` rows' `id`.
-- **doc id** (`arxiv-2501.17225`, `pdf-<uuid>`): `read` / `show` / `ref` / `pdf-path`, and the `doc_id` inside a source target.
+- **work id** (`arxiv:2501.17225`, `doi:…`): the `argument` operations, `search` rows' `id`.
+- **doc id** (`arxiv-2501.17225`, `pdf-<uuid>`): `read` / `show` / `ref` / `reader`, and the `doc_id` inside a source target.
 
 ## Step 0: locate the Work, the Doc, and the existing graph
 
-1. **Work**: `argelanderspace search` prints every work as one JSON line on stdout (`id`, `title`, `doc_ids`, …; a `hint: …` line goes to stderr and is not part of the data). Pick the Work the user means; if several plausibly match, ask. The Work's `title` (from `search`) can differ from the Doc's title (shown by `list` and in the `read` header) — use both when matching what the user said. If it is not in the library, say so and offer `argelander-paper-ingest`.
+1. **Work**: `argelanderspace search` prints every work as one JSON line on stdout (`id`, `title`, `doc_ids`, …; a `hint: …` line goes to stderr and is not part of the data); the Copilot uses `library.read`. Pick the Work the user means; if several plausibly match, ask. The Work's `title` can differ from the Doc's title (shown by `list` and in the `read` header) — use both when matching what the user said. If it is not in the library, say so and offer `argelander-paper-ingest`.
 2. **Doc**: the row's `doc_ids` lists its Docs; **the first is the main Doc**, which you read by default. If the user names another Doc, use that. A Work with an empty `doc_ids` has no readable body — see "No body" below.
-3. **Kind of Doc**: `argelanderspace list` shows readable (shared-IR LaTeX) Docs as `doc: <id> | latex | sec=… | refs=…`. A PDF Doc shows `(unreadable doc JSON)` in `list`, and `read`/`show` on it fail with a schema dump — that is expected, not a broken library. For such a Doc run `argelanderspace pdf-path <docId>`: it prints the absolute path of the original PDF (stdout, one line); then read that PDF file yourself with your own file/PDF reading ability. (`pdf-path` on a LaTeX Doc answers `error: doc "<id>" is not a PDF doc` — that confirms it is the `read` kind.)
-4. **Existing graph**: `argelanderspace argument get <workId>` prints the whole graph as JSON (indent 2) with `version`, `rev`, `work_id`, `arguments`, `edges`. No graph is `rev: 0`, `arguments: []`, `edges: []` (exit 0). Remember `rev`; you will send it back. If the graph is **non-empty**, tell the user now and ask whether to replace it (see Step 6) — you may still do the analysis while waiting, but do not write without their yes. If `get` fails with `error: stored argument graph …`, the stored file is damaged; report it and stop (do not try to work around it by deleting or editing files).
+3. **Kind of Doc**: a LaTeX (shared-IR) Doc is read with `read` / `show` / `ref` or `reader.read`. A PDF Doc is read with `reader.read` (the pages' text; a page without a text layer only as an image, `reader.read_page_image`), or by `argelanderspace pdf-path <docId>` (stdout: the absolute path of the original PDF) and your own PDF reading ability. `read`/`show` on a PDF Doc fail with a schema dump — expected, not a broken library; `pdf-path` on a LaTeX Doc answers `error: doc "<id>" is not a PDF doc`.
+4. **Existing graph**: `argument.read` answers `rev`, `counts`, the workbench's own `audit` (`cycles`, `noPathToEnd`, `noEnd`, `endWithOutEdge`, `nativeWithInEdge`, `incomplete`), the arguments and the edges; a large graph comes in parts (`batch`, `edgesBatch`: follow the note, read the rest with `--offset` / `--edge-offset`, or particular arguments with `ids`). No graph is `rev: 0`, `counts` zero. Remember `rev`; you will send it back. If the graph is **non-empty**, tell the user now: writing a whole graph over it needs their confirmation on a card in the workbench (see Step 6). You may still do the analysis while waiting. (`argelanderspace argument get <workId>` is the older whole-graph read: the same graph as a JSON file shape, with `version`, `rev`, `work_id`; both work.)
 
 ## Reading the paper
 
-Same rules as `argelander-read-paper`; the short version:
+Read it as `argelander-read-paper` describes: the section and float map first, then the sections in order, floats with their full content, citations through the bibliography.
 
-```bash
-argelanderspace read <docId> --manifest refs      # JSONL map: every section (number, title) and float; stdout is pure JSONL (one `doc: …` line goes to stderr)
-argelanderspace read <docId> --section <secId>    # one section subtree as markdown
-argelanderspace read <docId>                      # the whole paper (fine when short)
-argelanderspace show <docId> <floatId>            # full equation / figure / table / algorithm
-argelanderspace ref  <docId> <refIdOrKey>         # a bibliography entry (cited work's identity, not this paper's claim)
-```
-
-- Read the prose, not just matches. Resolve each `[ref: eq-2 | …]` that matters with `show`; resolve important `[cite: ref-6 | …]` with `ref`. Metadata from `ref` describes the *cited* work — it is what makes a Native argument native, never something this paper demonstrated.
-- Conversion leaves visible gaps: `[ref: … | unresolved]`, bare `Fig. Z20`-style text, and author names cut short in `[cite: … | R\ 2019]` (an accent command swallowed the rest). For any citation that matters, run `ref` and take its **`raw`** field as the authority; never guess an author from context.
+- Read the prose, not just matches. Resolve each float that matters (equation `latex`, caption, table body); resolve important citations. Metadata of a reference describes the *cited* work — it is what makes a Native argument native, never something this paper demonstrated.
+- Conversion leaves visible gaps: unresolved cross-references, bare `Fig. Z20`-style text, and author names cut short in a citation label (an accent command swallowed the rest). For any citation that matters, take the reference's **`raw`** field as the authority; never guess an author from context.
 - Do not describe a cited method as this paper's contribution unless the text says so.
 - Never claim to have inspected a figure image you did not open; work from caption and prose.
-- Mention conversion gaps (unresolved `[cite: ?]`, missing titles) in your final report when they affected the graph.
+- Mention conversion gaps (unresolved citations, missing titles) in your final report when they affected the graph.
 
-### Practical reading
+### Practical reading (external agents)
 
 The whole paper (`read <docId>`) can be ~77 KB, more than fits in one tool output. Redirect to a temp file and read it in pieces with your file-reading tool, or go section by section:
 
@@ -71,7 +85,7 @@ mkdir -p /tmp/ag && argelanderspace read <docId> --manifest refs > /tmp/ag/manif
 argelanderspace read <docId> > /tmp/ag/paper.md          # then read it in line ranges
 ```
 
-Start with the manifest (sections, numbers, float ids), then read the sections in order. Streams: `read` (whole paper or `--section`), `show`, `ref`, `argument get` and `list` print their data on stdout; `read --manifest refs` prints a `doc: <id> | <title> | <link>` line and `search` prints a `hint: …` line on **stderr** — when you redirect only stdout, stderr still shows on screen, which is harmless; do not merge `2>&1` into a file you will parse as JSON.
+Start with the manifest (sections, numbers, float ids), then read the sections in order. `read`, `show`, `ref` and the catalog commands print their data on stdout; `read --manifest refs` prints a `doc: <id> | <title> | <link>` line and `search` prints a `hint: …` line on **stderr** — when you redirect only stdout, stderr still shows on screen, which is harmless; do not merge `2>&1` into a file you will parse as JSON.
 
 ### No body
 
@@ -95,7 +109,7 @@ Work bottom-up. Keep a running list of arguments (title + the six fields) and ed
    - **Do not invent** an argument the paper does not state (an extra "hub" claim) just to keep a headline result free of out-edges. A real intermediate product the paper states ("we release a catalogue of members") may be its own argument.
    - Never mark a used claim `end` to make it prominent. If the paper's own logic leaves no unused conclusion, leave the graph without an End and report it (Audit).
 5. **Audit** (see below) — for your report to the user.
-6. **Write** with `argument put` (see below). This replaces writing a canvas file: the graph lives in the workbench.
+6. **Write** with `argument.replace` (see below). This replaces writing a canvas file: the graph lives in the workbench.
 
 ### Completeness of each argument
 
@@ -125,7 +139,7 @@ Each argument lists where in the paper it comes from, as `sources`: `{text, targ
 
 ## The graph JSON
 
-Write this to a scratch file (or pipe it on stdin with `-`). Keys are strict: an unknown key is an error.
+This is the `graph` of `argument.replace`: the Copilot puts it in the call; an external agent writes it, inside `{"workId":…,"expectedRev":…,"graph":{…}}`, to a scratch file and gives that file to `--json`. Keys are strict: an unknown key is an error, and `graph` holds exactly `arguments` and `edges` (no `version`, `work_id` or `rev`).
 
 ```json
 {
@@ -178,12 +192,11 @@ Write this to a scratch file (or pipe it on stdin with `-`). Keys are strict: an
 - `kind`: `native`, `end` or `normal`.
 - `edges[*]`: `from` and `to` are argument `id`s, `role` is `grounds` | `warrant` | `backing` | `rebuttal`. **Direction: `from → to` means the Claim of `from` plays that role in `to`.** In the example, the CP method's Claim is Grounds of the tidal-tail argument (so that argument's `grounds` text may stay empty — the in-edge carries it), and the tidal-tail result is in turn Grounds of the S-shape argument, which is the unused one and therefore `end`.
 - No self-loops; at most one edge per (from, to, role); `id` ≤ 64 characters, unique; `title` ≤ 80 and not blank; each text field ≤ 20000 characters; ≤ 500 arguments, ≤ 5000 edges.
-- `version` and `work_id` may be left out. If you write `work_id` it must equal the command-line Work; if you write `version` it must be `1`. Any `rev` in the file is ignored — the `--rev` option decides.
 - Cycles and arguments that cannot reach an End are **not** write errors, and you must not change the paper's logic to avoid them (see Audit).
 
 ## Step 5: Audit (for your report)
 
-The CLI prints no audit; the workbench computes and shows one from the saved graph. You do your own pass so you can report. Check:
+`argument.read` answers the workbench's own audit of a saved graph; before you write, do your own pass so you can report. Check:
 
 1. **Cycles**: follow the edges; A depends on B depends on A. If the paper really argues in a circle, keep the cycle in the graph and report it as a finding about the paper. Do not delete edges or reshape arguments to make the graph acyclic.
 2. **No path to an End**: arguments from which no chain of edges reaches an End argument. Keep them; report them (they may be dead ends in the paper, or a sign you missed an edge — re-read once before concluding).
@@ -192,33 +205,37 @@ The CLI prints no audit; the workbench computes and shows one from the saved gra
 5. **Native with an in-edge**: a Native argument that depends on another argument of the paper.
 6. **Incomplete arguments**: empty Claim, or Grounds/Warrant with neither text nor an in-edge of that role (an inferred Warrant counts as written text; `warrant_implicit` is just its flag).
 
-Fix the items that are *your* mistakes (a missing edge, a mislabeled kind, an empty field you could fill from the paper). Leave the items that are the paper's logic.
+Fix the items that are *your* mistakes (a missing edge, a mislabeled kind, an empty field you could fill from the paper). Leave the items that are the paper's logic. After the write, `argument.read` returns the workbench's audit of what is saved: it should list exactly the findings you meant to report.
 
 ## Step 6: Write
 
-**There is no dry run.** `put` without `--replace` is **not** a trial run: if the target has no graph (or a zero-argument one) it really writes. Validate your scratch file yourself before the first `put`, in the order `put` itself checks: `--rev` given → the Work exists → file readable and valid JSON → `work_id` (if present) equals the command-line Work → every rule in "The graph JSON" (required keys, field names, `kind`/`role` values, lengths, unique ids, edges naming existing ids, no self-loop, no duplicate (from, to, role)) → then the stored graph, `rev` and `--replace` as below. While you wait for the user's answer you may prepare the graph and check it this way, but do not call `put`.
+**There is no dry run.** `argument.replace` really writes when the graph is empty. It checks, in this order: parameters → `expectedRev` against the stored `rev` → the whole graph against every rule in "The graph JSON" (required keys, field names, `kind`/`role` values, lengths, unique ids, edges naming existing ids, no self-loop, no duplicate (from, to, role)) → for a graph that already has arguments, the user's card. While you wait for the user's answer you may prepare and check the graph yourself; do not call `argument.replace` until you mean it.
 
-Preconditions: you have the `rev` from `argument get` (Step 0) and, if the graph was non-empty, the user's **explicit yes to replace it**.
+Preconditions: you have the `rev` from `argument.read` (Step 0) and, if the graph is non-empty, you have told the user what will be lost.
 
 ```bash
-argelanderspace argument put <workId> /tmp/graph.json --rev <rev>              # target has no graph (or a zero-argument one)
-argelanderspace argument put <workId> /tmp/graph.json --rev <rev> --replace    # only after the user agreed
-cat graph.json | argelanderspace argument put <workId> - --rev <rev>           # stdin; needs a pipe or redirect, not a terminal
+argelanderspace argument replace --json /tmp/replace.json
 ```
 
-- **Existing non-empty graph: ask first.** Say how many arguments it has, that `put` replaces the whole graph (not merge), and ask whether to replace. Without `--replace` the CLI refuses (`error: work "…" already has a graph with N arguments; pass --replace …`) and writes nothing. Never add `--replace` on your own to get past that error. If the user declines, do not write anything: leave the existing graph untouched, offer to show your result in the conversation (or save the scratch JSON to a path they name) instead of the workbench, and stop.
-- `--rev` is **required**; use exactly the value from the most recent `argument get`. `0` when there was no graph.
-- Success: one JSON line `{"work_id":…,"rev":<new>,"link":"http://localhost:<port>/#argument/<work id>"}`; the work id inside the link is URL-encoded (`arxiv%3A2501.17225`). Give the `link` to the user exactly as printed.
-- **Every failure writes nothing**; stdout is empty and stderr has `error: …`. Read it:
-  - **Validation**: first line `error: <file> is not a valid argument graph (N issues); nothing was written`, then one line per issue `  <location>: <sentence>`. The location is a JSON path with **0-based indexes**: `arguments[1].title` is the *second* argument's title; `edges[0].to` is the first edge's target; `arguments[0].sources[2].target.page` is the third source of the first argument. Sentences: `is required`, `must be at most 80 characters`, `must not be empty`, `must not be blank`, `must be one of native, end, normal`, `must be one of grounds, warrant, backing, rebuttal`, `unknown field "x"`, `must have exactly one of anchor or page`, `duplicate id "…"`, `refers to unknown argument "…"`, `connects argument "…" to itself`, `duplicate <role> edge from "…" to "…"`, … Fix every listed item in your scratch file, then run `put` again. Expect more than one round: when there are type errors (a wrong type, an unknown key) the structural rules (duplicate ids, dangling edges, self-loops, duplicate edges) are not checked in that round and may show up in the next one.
-  - **`rev mismatch: the stored graph … is at rev N, --rev M was given`**: someone (the user in the workbench, or another run) changed the graph since you read it. **Do not just retry with the new rev.** Run `argument get` again, look at what is there now, and decide: if the graph is now non-empty, treat it like the "existing graph" case and ask the user; if it is still empty, retry with the fresh `rev`.
-  - **`work_id in … does not match …`**: you wrote a `work_id` of another Work; fix or delete the key.
-  - **`unknown work …`**: the id is wrong; the message lists the closest works. Use a work id, not a doc id.
-  - **`error: --rev is required` / `must be a non-negative integer`**: fix the option.
-  - Anything with `could not be read`, `could not write`, `file system error`: report to the user verbatim and stop; do not touch the data dir to work around it.
-- After success, run `argelanderspace argument get <workId>` once and check the `arguments`/`edges` counts (and the Native/End counts) match what you meant to write.
+where `/tmp/replace.json` is `{"workId": "arxiv:2501.17225", "expectedRev": 0, "graph": {"arguments": […], "edges": […]}}`. (`--json -` reads the object from stdin.)
+
+- **Existing non-empty graph: it needs the user.** The answer comes only after the user decides on a card in the running workbench: approved → written (exit 0); refused → `denied`, nothing changed (exit 3); no workbench running → `workbench_required`, nothing written (exit 1: ask the user to open ArgelanderSpace on this project). Before the call say how many arguments the graph has, that `replace` replaces the whole graph (not a merge), and ask whether to go on. If the user declines, write nothing: leave the existing graph untouched, offer to show your result in the conversation (or save the scratch JSON to a path they name), and stop. The card replaces no question in the conversation; do both. Never try to get around a refused card, and never use `argument.clear` to empty the graph first (it needs a card too).
+- A graph without arguments is written at once, in the workbench or in the command's own process.
+- Success: `{"ok":true,"status":"ok","rev":<new>,"counts":{"arguments":N,"edges":M}}`. Show the user the graph with `argument.open` (`argelanderspace open argument-graph --work-id <workId>`; it needs the workbench open) or give the deep link `http://localhost:<port>/#argument/<url-encoded work id>`.
+- **Every failure writes nothing.** Read the answer:
+  - `status:"invalid"`: `issues` lists what is wrong, each with a `code` and the `argumentId` / `edge` / field it concerns (`title_blank`, a `message` for a type error). Fix every listed item, then call again with the same `expectedRev`. Expect more than one round: structural rules (duplicate ids, dangling edges, self-loops, duplicate edges) are checked after the type errors are gone.
+  - `status:"unsupported"` with `detail` such as `graph: Unrecognized key: "version"`: the parameters were wrong; fix them. (CLI exit 2.)
+  - `status:"conflict"`: someone (the user in the workbench, or another run) changed the graph since you read it; `latest` holds its present state. **Do not just retry with the new rev.** Look at what is there now and decide: if the graph is now non-empty, treat it as the "existing graph" case; if it is still empty, retry with the fresh `rev`.
+  - `status:"expired"`: the user approved the card but the graph changed meanwhile; nothing was written. Read again and ask again.
+  - `status:"not_found"`: the work id is wrong; use a work id (`search`), not a doc id.
+  - `status:"error"` or anything about reading or writing files: report it to the user verbatim and stop; do not touch the data dir to work around it.
+- After success, run `argument.read` once and check `counts` (and the Native/End counts, and `audit`) match what you meant to write.
+
+For a small change to a graph that is already there (rename a title, fix a Warrant, add one edge), do not replace the whole graph: use `argument.update` (`{"id":…,"patch":{…}}`), `argument.create`, `argument.add_edge`, `argument.remove_edge` or `argument.delete`, each with the latest `rev`. A deleted argument comes back with `argument.undo_delete` while the workbench that deleted it still runs and the graph is unchanged.
 
 The workbench may be open; it refreshes itself after the write. Do not write to the same Work's graph concurrently from two places.
+
+The older whole-graph commands `argelanderspace argument get <workId>` and `argelanderspace argument put <workId> <file|-> --rev <n> [--replace]` still exist and behave as before, but `put --replace` has no confirmation card; use `argument.replace`.
 
 ## Final report to the user
 
@@ -226,7 +243,7 @@ Short, in the user's language (see "Language"), referring to arguments only by t
 
 ### When the graph was written
 
-1. **The link** to the argument graph in the workbench (from `put`), and counts (N arguments, M edges, how many Native/End).
+1. **The link** to the argument graph in the workbench, and counts (N arguments, M edges, how many Native/End).
 2. **The End arguments** (titles, with the claim in a sentence).
 3. **The main chain(s)** leading to them: e.g. *Gaia DR3 sample* → *CP method* → *19 of 21 clusters have tails* → *4 of 19 tails are S-shaped, against theory* (name each hop's role if it is not Grounds).
 4. **Audit findings**: cycles, arguments with no path to an End, missing End, End used by others, Native with in-edges, incomplete arguments — each by title; or "none found". Say which are the paper's logic and not edited away. State that the workbench shows its own audit from the saved graph.
@@ -236,20 +253,20 @@ Short, in the user's language (see "Language"), referring to arguments only by t
 
 Nothing is written yet, so say so first, then:
 
-1. **What is there now**: the existing graph's number of arguments and edges and a few of its short titles (from `argument get`), and `rev`.
-2. **What a save does**: `put --replace` replaces the **whole** graph; it is not a merge, and the existing arguments are lost.
+1. **What is there now**: the existing graph's number of arguments and edges and a few of its short titles (from `argument.read`), and `rev`.
+2. **What a save does**: `argument.replace` replaces the **whole** graph; it is not a merge, and the existing arguments are lost. The user also approves a card in the workbench.
 3. **A yes/no question**: "Replace the existing graph with the one I prepared?" — nothing else bundled in.
 4. **What is prepared**: number of arguments/edges/Native/End, the End arguments, the main chain, audit findings and caveats as above, and where the draft JSON is (the scratch path), so the user can read it before deciding.
-5. After **yes**: run `get` again to confirm `rev` has not moved (if it has, ask again), then `put --rev <rev> --replace`, verify with `get`, and give the written-graph report. After **no**: write nothing, keep the draft where it is or show it, and stop.
+5. After **yes**: read the graph again to confirm `rev` has not moved (if it has, ask again), then call `argument.replace` with that `rev`, verify with `argument.read`, and give the written-graph report. After **no**: write nothing, keep the draft where it is or show it, and stop.
 
-## Minimal operating procedure
+## Minimal operating procedure (external agent)
 
 ```bash
 argelanderspace search                                     # work id + doc_ids (first = main Doc)
-argelanderspace argument get <workId>                      # rev; is there already a graph?
+argelanderspace argument read --work-id <workId>           # rev, audit; is there already a graph?
 argelanderspace read <docId> --manifest refs               # (PDF Doc: argelanderspace pdf-path <docId>, then read the file)
 argelanderspace read <docId> --section <secId>             # read; show/ref as needed
-# ... write /tmp/graph.json ...
-argelanderspace argument put <workId> /tmp/graph.json --rev <rev> [--replace after the user agreed]
-# validate the scratch file by hand first (there is no dry run); report in the user's language
+# ... write /tmp/replace.json: {"workId":…,"expectedRev":<rev>,"graph":{…}} ...
+argelanderspace argument replace --json /tmp/replace.json  # a non-empty graph: the user decides on a card in the workbench
+argelanderspace argument read --work-id <workId>           # check counts and audit; report in the user's language
 ```

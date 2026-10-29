@@ -7,9 +7,23 @@ description: Answer research questions using the user's ArgelanderSpace library 
 
 The entry point for question-driven reading: rank the library against the user's question, drive `argelander-read-paper` on the top candidates, and synthesize an answer with traceable evidence.
 
-## Non-negotiable: the CLI is the only interface
+## Two entries
 
-**Never read source code — not the ArgelanderSpace repo's, not any other project's — to answer a question about the user's library.** If you catch yourself opening `.ts`/`.py` files, grepping a repository, or hand-reading `literatures/library.json`, you are on the wrong path: stop and run the CLI instead. `search` is the library index; reading source is how wrong answers happen.
+This guide serves the Copilot (in the workbench) and external agents (a shell with the `argelanderspace` CLI).
+
+| Step | Operation | Copilot | External agent |
+|---|---|---|---|
+| Load the whole index, with notes | none (a plain CLI listing) | `argelanderspace search` with the command tool when it is on; otherwise `library.read` pages (below) | `argelanderspace search` |
+| Read one work in full (note, abstract, Docs) | `library.read` | `library` tool, action `read` `{"refId":…}` | `argelanderspace library read --ref-id <workId>` |
+| Page through the works | `library.read` | `library` tool, action `read` `{"offset":…,"limit":200}` | `argelanderspace library read --offset 0 --limit 200` |
+| Write a note | none | cannot: give the user the text and the command | `argelanderspace note <workId> <text>` |
+| Open a place for the user | `workspace.open_doc` | `workspace` tool, action `open_doc`; link the anchor in the answer | `argelanderspace open doc --doc-id <docId>` (needs a running workbench) |
+
+`library.read` rows carry title, authors, year, venue, tags, flags and `doc_ids`, but **not the note**; the note appears only when one work is read in full. `search` rows carry the note of every work, so use it when you can run commands, and read the shortlist's notes one by one when you cannot.
+
+## Non-negotiable: operations and the CLI are the only interface
+
+**Never read source code — not the ArgelanderSpace repo's, not any other project's — and never hand-read `literatures/library.json`** to answer a question about the user's library. If you catch yourself opening `.ts`/`.py` files, grepping a repository or reading files in the data folder, stop and use the operations above. `search` is the library index; reading source is how wrong answers happen.
 
 ## When to use vs. when NOT to use
 
@@ -22,9 +36,9 @@ The entry point for question-driven reading: rank the library against the user's
 - The user wants to add a paper → that's `argelander-paper-ingest`.
 - The library is empty (`search` prints nothing) → say so and suggest ingesting; stop.
 
-## Configuration
+## Configuration (external agents)
 
-`argelanderspace` CLI (or, when it's not on PATH, `node /path/to/repo/packages/app/dist/bin.js` by absolute path). **Run it from the project root** — the directory containing `literatures/` — and do **not** pass `--data-dir`: the default data dir is `./literatures` relative to the current working directory, with **no upward search**, so a wrong cwd silently queries an empty or wrong library. `cd` to the project root first; `--data-dir` remains only as an escape hatch for unusual layouts. The old `LITERATURE_LIBRARY` env var is dead.
+`argelanderspace` CLI (or, when it's not on PATH, `node /path/to/repo/packages/app/dist/bin.js` by absolute path). **Run it from the project root** — the directory containing `literatures/` — and do **not** pass `--data-dir`: the default data dir is `./literatures` relative to the current working directory, with **no upward search**, so a wrong cwd silently queries an empty or wrong library. `cd` to the project root first; `--data-dir` remains only as an escape hatch for unusual layouts.
 
 ## Why notes are the primary signal
 
@@ -39,6 +53,8 @@ When a paper was ingested, the user (with the ingest skill) wrote a **note**: "i
 ```bash
 argelanderspace search
 ```
+
+Without the command tool, page `library.read` instead (`offset` 0, 200, 400 … until `nextOffset` is absent); the rows then have no `note`.
 
 One JSON object per line, per work:
 
@@ -56,11 +72,13 @@ Read **every** row — the library is sized for tens-to-low-hundreds of papers, 
 hint: N/M works have empty notes
 ```
 
-Treat that hint — or empty/`null`/whitespace `note` fields you spot in the rows — as a required finding, not background noise: works with empty notes are nearly invisible to note-driven ranking (they can only match on title/tags). **Tell the user proactively**, before or alongside the shortlist: "N of M works have no note; they rank poorly by design." Then offer to backfill, using the same discipline as ingest: **you draft a suggested note** from the title (and, if a doc exists, a quick `read` of the abstract), the user confirms or edits, then:
+Treat that hint — or empty/`null`/whitespace `note` fields you spot in the rows (a `library.read` page cannot show them; read the shortlist works in full) — as a required finding, not background noise: works with empty notes are nearly invisible to note-driven ranking (they can only match on title/tags). **Tell the user proactively**, before or alongside the shortlist: "N of M works have no note; they rank poorly by design." Then offer to backfill, using the same discipline as ingest: **you draft a suggested note** from the title (and, if a doc exists, a quick read of the abstract), the user confirms or edits, then an external agent writes it:
 
 ```bash
 argelanderspace note <work_id> <confirmed text>
 ```
+
+The Copilot has no operation that writes a note: it gives the user the confirmed text together with this command to run themselves.
 
 Never silently write your own drafts as if they were the user's words — the note's value is that it's user-curated.
 
@@ -94,17 +112,17 @@ Then ask "Read all of these, or narrow further?" — unless the user's framing a
 
 ### Step 5 — Hand off to `argelander-read-paper` per pick
 
-For each chosen work, take a doc id from its `doc_ids` and invoke the **argelander-read-paper** skill with `(doc id, targeted sub-question)` — the specific aspect of the user's question you want answered *from that paper*. Don't replicate its reading logic here; it knows how to resolve refs/citations correctly. If the question decomposes ("compare how A and B handle X"), give each paper a different sub-question rather than one generic prompt.
+For each chosen work, take a doc id from its `doc_ids` (the first is the main Doc) and follow the **argelander-read-paper** skill with `(doc id, targeted sub-question)` — the specific aspect of the user's question you want answered *from that paper*. Don't replicate its reading logic here; it knows how to resolve refs/citations correctly. If the question decomposes ("compare how A and B handle X"), give each paper a different sub-question rather than one generic prompt.
 
 ### Step 6 — Synthesize across papers
 
 - Present per-paper findings briefly, each with its work id.
 - Then synthesize: **agreements, disagreements, complementary contributions, gaps**.
-- Cite work ids **and the deep links** the read skill produced (`http://localhost:<port>/doc/<docId>#<anchor>`) so every claim is one click from its evidence.
+- Cite work ids **and the deep links** the read skill produced (`http://localhost:<port>/doc/<docId>#<anchor>`) so every claim is one click from its evidence. In the Copilot, the user's own workbench is open: `workspace.open_doc` shows a Doc on request.
 - Papers disagree on a fact → surface the disagreement explicitly; never quietly pick one.
 - A top candidate that turns out irrelevant after reading → say so honestly and move on, or pull a replacement from the shortlist's tail.
 
-If the shortlist can't fully answer the question, say so and suggest: ingesting a specific missing paper (argelander-paper-ingest), loosening the ranking (weigh titles/tags more), or accepting that the library doesn't cover this aspect.
+If the shortlist can't fully answer the question, say so and suggest: ingesting a specific missing paper (`argelander-paper-ingest`, or `argelander-find-papers` for papers not collected yet), loosening the ranking (weigh titles/tags more), or accepting that the library doesn't cover this aspect.
 
 ## Practical notes
 
@@ -117,7 +135,7 @@ If the shortlist can't fully answer the question, say so and suggest: ingesting 
 User: "我想了解 CP 方法测潮汐尾的现状，我文献库里有相关的吗？"
 
 You:
-1. `search` → read all rows; if stderr printed `hint: N/M works have empty notes`, tell the user and offer to backfill (Step 2).
+1. `search` (Copilot without the command tool: `library.read` pages) → read all rows; if stderr printed `hint: N/M works have empty notes`, tell the user and offer to backfill (Step 2).
 2. Shortlist 3 works whose notes/tags mention tidal-tail detection, CP/CCP methods, or Gaia cluster mapping.
 3. Show the shortlist with one-line reasons; proceed (framing authorized it).
 4. Hand each doc id to argelander-read-paper with a targeted sub-question ("这篇如何用 CP 方法定义成员/尾巴？", "它的样本和完备性怎样？").

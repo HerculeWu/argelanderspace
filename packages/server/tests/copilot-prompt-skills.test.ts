@@ -32,11 +32,7 @@ import {
   filePrompt,
   localDateOf,
 } from "../src/copilot.js";
-import {
-  COPILOT_SKILL_NAMES,
-  createApplicationResourceLoader,
-  loadBundledSkills,
-} from "../src/copilot-resources.js";
+import { createApplicationResourceLoader, loadBundledSkills } from "../src/copilot-resources.js";
 import { fileToolsDefault } from "../src/file-tools-default.js";
 import { JobRunner } from "../src/jobs.js";
 import { ProviderSettings } from "../src/providers.js";
@@ -342,6 +338,16 @@ test("the file tools' budget: ask counts the tools' schemas, the closing paragra
 // Skills: one source
 // ---------------------------------------------------------------------------------------------- //
 
+/** The six operation guides that ship in `skills/` (release-0.2 ticket 12). */
+const SHIPPED = [
+  "argelander-argument-graph",
+  "argelander-find-papers",
+  "argelander-paper-ingest",
+  "argelander-project-intake",
+  "argelander-query-paper-library",
+  "argelander-read-paper",
+];
+
 const skillFile = (dir: string, name: string, marker: string) => {
   mkdirSync(join(dir, name), { recursive: true });
   writeFileSync(
@@ -359,33 +365,25 @@ test("the bundled skills folder is found the way the program finds it, and holds
   expect(loadBundledSkills(undefined).skills).toEqual([]);
 });
 
-test("the Copilot's skills are exactly the two read-only ones and the intake skill, whatever else is bundled", () => {
-  expect([...COPILOT_SKILL_NAMES].sort()).toEqual([
-    "argelander-project-intake",
-    "argelander-query-paper-library",
-    "argelander-read-paper",
-  ]);
+test("the Copilot loads every bundled skill: no allow-list, whatever the folder holds", () => {
+  const all = loadSkillsFromDir({ dir: BUNDLED as string, source: "all" }).skills.map(
+    (skill) => skill.name
+  );
+  expect(all.sort()).toEqual(SHIPPED);
   expect(
     loadBundledSkills(BUNDLED)
       .skills.map((skill) => skill.name)
       .sort()
-  ).toEqual([
-    "argelander-project-intake",
-    "argelander-query-paper-library",
-    "argelander-read-paper",
-  ]);
-  // the others are bundled (for external agents) and are not seen
-  const all = loadSkillsFromDir({ dir: BUNDLED as string, source: "all" }).skills.map(
-    (skill) => skill.name
-  );
-  for (const excluded of [
-    "argelander-paper-ingest",
-    "argelander-argument-graph",
-    "argelander-find-papers",
-  ]) {
-    expect(all).toContain(excluded);
-    expect(loadBundledSkills(BUNDLED).skills.map((skill) => skill.name)).not.toContain(excluded);
-  }
+  ).toEqual(SHIPPED);
+  // a seventh skill added to the folder is loaded too, with no list to edit
+  const extra = join(root, "extra-skills");
+  skillFile(extra, "argelander-extra", "EXTRA-MARKER");
+  for (const name of SHIPPED) skillFile(extra, name, `copy of ${name}`);
+  expect(
+    loadBundledSkills(extra)
+      .skills.map((skill) => skill.name)
+      .sort()
+  ).toEqual(["argelander-extra", ...SHIPPED].sort());
 });
 
 test("the loader lists exactly what the host gives it and discovers nothing", () => {
@@ -438,13 +436,9 @@ async function decoyRun(): Promise<void> {
   expect(ask.prompt).not.toContain("decoy-skill");
   expect(ask.prompt).not.toContain("DECOY");
   expect(ask.prompt).not.toContain("project_instructions");
-  // exactly the two read-only skills and the intake skill, none of the others that are bundled
+  // all six bundled skills, and nothing else
   const listed = [...ask.prompt.matchAll(/<name>([^<]+)<\/name>/g)].map((m) => m[1]).sort();
-  expect(listed).toEqual([
-    "argelander-project-intake",
-    "argelander-query-paper-library",
-    "argelander-read-paper",
-  ]);
+  expect(listed).toEqual(SHIPPED);
   // every skill location in the prompt is inside the bundled folder
   const locations = [...ask.prompt.matchAll(/<location>([^<]+)<\/location>/g)].map((m) => m[1]);
   expect(locations.length).toBeGreaterThan(0);

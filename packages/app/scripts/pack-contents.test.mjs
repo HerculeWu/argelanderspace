@@ -66,22 +66,29 @@ for (const forbidden of [
   });
 }
 
-test("the bundled skills ship in dist/skills: the marker and the Copilot's three allow-listed SKILL.md (project-intake ticket 12)", () => {
-  for (const f of [
-    "dist/skills/README.md",
-    "dist/skills/argelander-read-paper/SKILL.md",
-    "dist/skills/argelander-query-paper-library/SKILL.md",
-    "dist/skills/argelander-project-intake/SKILL.md",
-  ])
+test("the bundled skills ship in dist/skills: the marker and all six SKILL.md (release-0.2 ticket 12)", () => {
+  const six = [
+    "argelander-argument-graph",
+    "argelander-find-papers",
+    "argelander-paper-ingest",
+    "argelander-project-intake",
+    "argelander-query-paper-library",
+    "argelander-read-paper",
+  ];
+  for (const f of ["dist/skills/README.md", ...six.map((n) => `dist/skills/${n}/SKILL.md`)])
     assert.ok(REQUIRED_FILES.includes(f), f);
-  // The other skills may ship too (scripts included), but a skill's own test file may not.
-  assert.deepEqual(
-    checkPackContents([...good, "dist/skills/argelander-find-papers/scripts/ads.mjs"]),
-    []
-  );
+  // a pack without one of them is refused
+  for (const n of six) {
+    const without = good.filter((p) => p !== `dist/skills/${n}/SKILL.md`);
+    assert.ok(
+      checkPackContents(without).some((p) => p.includes(`dist/skills/${n}/SKILL.md`)),
+      n
+    );
+  }
+  // A skill's own test file may not ship.
   assert.ok(
-    checkPackContents([...good, "dist/skills/argelander-find-papers/scripts/ads.test.mjs"]).some(
-      (p) => p.includes("a test file")
+    checkPackContents([...good, "dist/skills/argelander-find-papers/ads.test.mjs"]).some((p) =>
+      p.includes("a test file")
     )
   );
 });

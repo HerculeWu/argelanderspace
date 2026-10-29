@@ -7,38 +7,36 @@ description: Find published papers on a topic through NASA ADS — search for se
 
 Turn a request like *"papers on tidal tails; start from a few that Pavel Kroupa co-authored, expand to 10–15"* into a ranked list of real papers, using NASA ADS as the only source.
 
-This skill is self-contained and read-only. It needs Node 18+ and an ADS API key in `~/.ads/dev_key`; it does not need the `argelanderspace` CLI, a library or a server, and it writes no files.
+The search is read-only: it saves nothing, touches no library and writes no file. Adding a found paper to the library is a separate step the user asks for (`argelander-paper-ingest`).
 
-`~/.ads/dev_key` and the ADS token saved in the workbench (entered on its settings page, or imported there by copying the file's content — the file itself is left as it is) are two separate copies: this skill reads only the file, the workbench and its CLI only their own saved token. Changing or removing one does not change the other.
+## Two entries
 
-## Non-negotiable: every paper comes from the script's output
+This guide serves the Copilot (in the workbench) and external agents (a shell with the `argelanderspace` CLI). One operation, two ways to call it:
 
-List only papers that `ads.mjs` returned in this session, with the bibcode it printed. Never add a paper from memory, never guess or repair a bibcode, and never fall back to web search when ADS fails — a list that mixes real and remembered papers is worse than a short one.
+| Operation | Copilot | External agent |
+|---|---|---|
+| `discovery.search_ads` | `library` tool, action `search_ads` `{"query":…,"limit":…,"fields":…}` | `argelanderspace discovery search-ads --query '<ADS query>' --limit 20 --fields title,author,year,pub,citation_count,doi,abstract` |
+| `discovery.explore` | no such action | `argelanderspace discovery explore --bibcode <bibcode>` (optional) |
 
-## The script
+Both answer the same JSON. The CLI prints it on stdout; `--json <file|->` takes the parameters as one object instead of options.
 
-`scripts/ads.mjs` sits next to this file. Call it by absolute path:
+The ADS token is the one saved in the workbench (Settings, literature services and credentials). Neither entry reads `~/.ads/dev_key` or any environment variable, and the token never appears in a command, an answer or a file. If the answer is `no_token`, the user saves the key on the settings page; never ask for it in the conversation.
 
-```bash
-node <skill-dir>/scripts/ads.mjs search '<ADS query>' [--rows N]    # default 20
-node <skill-dir>/scripts/ads.mjs similar <bibcode>... [--rows N]    # default 18
-node <skill-dir>/scripts/ads.mjs useful <bibcode>... [--rows N]     # default 6
-```
+## Non-negotiable: every paper comes from an ADS answer
 
-- `search` sends your ADS query string as is. Single-quote it for the shell. Useful fields: `author:"Kroupa, P"`, `first_author:"…"`, `abs:"tidal tails"` (title, abstract and keywords), `title:"…"`, `year:2015-2025`, `property:refereed`.
-- `similar` returns papers whose text ADS ranks as similar to the given paper or papers.
-- `useful` returns the references most often cited by the given papers. Expect well-known background works (textbooks, methods papers) rather than papers on the narrow topic.
-- `--rows` is 1–50. Results always come in ADS relevance order.
+List only papers that `search_ads` returned in this session, with the bibcode it printed. Never add a paper from memory, never guess or repair a bibcode, and never fall back to web search when ADS fails — a list that mixes real and remembered papers is worse than a short one.
 
-Each stdout line is one paper:
+## The search
 
-```json
-{"rank":1,"bibcode":"2024ApJ...970...94K","title":"Open Star Clusters and Their Asymmetrical Tidal Tails","authors":["Kroupa, Pavel","Pflamm-Altenburg, Jan"],"author_count":9,"year":2024,"pub":"The Astrophysical Journal","citation_count":25,"doi":"10.3847/…","score":40.46,"abstract":"…"}
-```
+`query` is an ADS query string, sent as is (single-quote it for the shell). Useful fields: `author:"Kroupa, P"`, `first_author:"…"`, `abs:"tidal tails"` (title, abstract and keywords), `title:"…"`, `year:2015-2025`, `property:refereed`.
 
-`authors` holds at most the first 10 names; `author_count` is the full count. `rank` and `score` are only comparable within one call — a score from `similar` and a score from `search` are on different scales.
+- `limit` is 1–50 (default 10); `fields` picks from `title,author,year,pub,citation_count,doi,arxiv_id,abstract` (`bibcode` is always there). Ask for `abstract` when you must judge relevance; it is cut at 1500 characters.
+- Records come in ADS's own order. Each carries at most 10 authors and the real `authorCount`.
+- **Expansion uses the same operation with ADS operators in the query**: `similar(bibcode:"2024ApJ...970...94K")` lists papers ADS ranks as similar to that one; `useful(bibcode:"A" OR bibcode:"B")` lists the references most often cited by those papers — expect well-known background works (textbooks, methods papers) rather than the narrow topic.
+- Result: `{"ok":true,"status":"ok","query":…,"numFound":…,"returned":…,"records":[{"bibcode":…,"title":…,"authors":[…],"authorCount":…,"year":…,"venue":…,"citationCount":…,"doi":…}]}`.
+- A failed search is an answer, not a crash: `{"ok":false,"status":"error","reason":…,"detail":…}`. The CLI exits 1 for it (2 for invalid parameters, nothing sent).
 
-Failures print `error: <reason>` on stderr and exit non-zero (1 for a failed request, 2 for a wrong invocation). An empty result exits 0 with nothing on stdout and a `note:` on stderr.
+`discovery.explore` is what the workbench's exploration page asks ADS for one seed: the seed, its top 18 similar papers, the 6 most useful references of those, and the citations among them, each marked with the library work it already is. Use it when the user wants to see how a seed relates to their library; it is not needed for a reading list.
 
 ## Workflow
 
@@ -48,21 +46,21 @@ Pull out the topic, any seed constraint (an author, a named paper, a year range)
 
 ### 2. Find the seeds
 
-Run `search` with a query that encodes the user's constraints, then read the titles and abstracts and pick the few (typically 2–5) that are really about the topic. A co-author constraint is `author:`, not `first_author:`.
+Run `discovery.search_ads` with a query that encodes the user's constraints, read the titles and abstracts, and pick the few (typically 2–5) that are really about the topic. A co-author constraint is `author:`, not `first_author:`.
 
-If the user named seed papers, look each one up with `search` to get its bibcode rather than choosing your own.
+If the user named seed papers, look each one up to get its bibcode rather than choosing your own.
 
 If nothing fits, say so and stop. Do not quietly drop a constraint (for example the author) to get results; offer that as an option instead.
 
 ### 3. Expand
 
-Call `similar` from the seeds — once per seed, on the whole seed set, or both; choose what serves the request. Per-seed calls show which seed led to which paper. Add `useful` only when the user wants background or foundational reading as well.
+Search `similar(bibcode:"…")` from the seeds — once per seed, on the whole seed set, or both; choose what serves the request. Per-seed searches show which seed led to which paper. Add `useful(…)` only when the user wants background or foundational reading as well.
 
 Expand from seeds only. Do not expand again from an expanded paper unless the user asks for it.
 
 ### 4. Rank and trim
 
-Merge by bibcode. The ranking is your judgement, with the ADS ranks as evidence: a paper that ranks high, or that several seeds lead to, is a strong candidate; read the abstract before keeping it, and drop papers that are off-topic however well they rank.
+Merge by bibcode. The ranking is your judgement, with the ADS order as evidence: a paper that ranks high, or that several seeds lead to, is a strong candidate; read the abstract before keeping it, and drop papers that are off-topic however well they rank. Scores and ranks are only comparable within one search.
 
 - Seeds are always kept, listed first, and count toward the target size.
 - More candidates than the target: keep the most relevant.
@@ -78,16 +76,19 @@ Answer in the conversation with one table, seeds first:
 - Authors: first author, plus "et al." when there are more.
 - Bibcode: link it to `https://ui.adsabs.harvard.edu/abs/<bibcode>/abstract`.
 - Role: `seed`, `similar` or `useful`.
-- Found via: the query for a seed; for the others, which seed or seeds and at what rank.
+- Found via: the query for a seed; for the others, which seed or seeds and at what position.
 
 Below the table, say in a few sentences why these seeds were chosen, what you dropped as off-topic, where you departed from the ADS order, and whether the list is shorter than asked for and why.
 
+Saving a paper from the list into the library is `library.import_works` with `mode: "bibcode"` (see `argelander-paper-ingest`), and only for the papers the user names.
+
 ## When ADS fails
 
-Report the script's error message and stop.
+Report the answer's `reason` and `detail` and stop.
 
-- `no ADS token` — the user must put their key (from the ADS account settings page) in `~/.ads/dev_key`; a token saved in the workbench's settings does not count here. Do not ask them to paste it into the conversation.
-- `rejected the token` — the key is wrong or expired.
-- `rate limit exceeded` — wait for the stated time; do not retry in a loop.
-- `ADS HTTP 400` — your query is malformed; fix the syntax and rerun.
-- `cannot reach ADS` — no network access from this environment; retry once, then report.
+- `no_token` — the user must save their ADS key in the workbench's settings; nothing was sent.
+- `unauthorized` — the saved key is wrong or expired; the user checks it in Settings.
+- `rate_limited` — wait for `retryAfter`; do not retry in a loop.
+- `bad_query` — your query is malformed; fix the syntax and search again.
+- `timeout`, `unreachable` — ADS did not answer; retry once, then report.
+- `interrupted` — the user pressed Stop; do not retry unless asked.

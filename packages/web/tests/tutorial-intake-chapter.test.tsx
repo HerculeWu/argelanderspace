@@ -187,7 +187,7 @@ describe("in the layer", () => {
   it("the agent card 9.A has the prompt and skill of the intake skill, as agent cards do", async () => {
     setup(CHAPTERS, "intake.agent", open(false));
     await tick(16);
-    expect(card()?.textContent).toContain("外部 agent 帮你准备");
+    expect(card()?.textContent).toContain("外部 agent 也能迁入");
     expect(card()?.textContent).toContain("argelander-project-intake");
     expect(card()?.textContent).toContain("3/3");
   });
@@ -253,22 +253,22 @@ describe("chapter 9 copy", () => {
     expect(en.intake!.interview!.bodyNoReplay).toContain("intake checklist");
     expect(en.intake!.interview!.bodyNoReplay).toContain("never moves, edits or deletes");
   });
-  it("9.A: the Copilot writes, an external agent only prepares (ADR 0014); it names the real skill and the real checklist file", () => {
+  it("9.A: an external agent moves the literature in, the Copilot creates Plans and Tasks (ADR 0014, revised by ADR 0015); it names the real skill and the real checklist file", () => {
     for (const steps of [zh, en]) {
       expect(steps.intake!.agent!.skill).toBe("argelander-project-intake");
       expect(steps.intake!.agent!.prompt).toContain("argelanderspace-intake.md");
     }
-    expect(zh.intake!.agent!.intro).toContain("写入由 Copilot 完成");
-    expect(en.intake!.agent!.intro).toContain("Copilot does the writing");
+    expect(zh.intake!.agent!.intro).toContain("计划和任务由 Copilot");
+    expect(en.intake!.agent!.intro).toContain("The Copilot creates the Plans and Tasks");
   });
-  it("0.A and 8.A (ruling 10): the intake skill only prepares there, the Copilot writes; 8.A no longer hands 'adding literature' to the external agent", () => {
-    expect(zh.prepare!.agent!.intro).toContain("写入由工作台里的 Copilot 完成");
-    expect(zh.prepare!.agent!.introBrowser).toContain("写入交给工作台里的 Copilot");
-    expect(en.prepare!.agent!.intro).toContain("the Copilot in the workbench does the writing");
-    expect(en.prepare!.agent!.introBrowser).toContain("the Copilot in the workbench does the writing");
-    expect(zh.copilot!.agent!.intro).toContain("迁入的文献和计划由它写进 Project");
+  it("0.A and 8.A (ruling 10, revised in release-0.2 ticket 12): the same guides serve both entries; in a move-in the agent brings the literature in and the Plans and Tasks stay with the Copilot", () => {
+    expect(zh.prepare!.agent!.intro).toContain("agent 用命令行，Copilot 用工具");
+    expect(zh.prepare!.agent!.introBrowser).toContain("agent 用命令行，Copilot 用工具");
+    expect(en.prepare!.agent!.intro).toContain("your agent uses the command line, the Copilot uses its tools");
+    expect(en.prepare!.agent!.introBrowser).toContain("your agent uses the command line, the Copilot uses its tools");
+    expect(zh.copilot!.agent!.intro).toContain("计划和任务仍由 Copilot 创建");
     expect(zh.copilot!.agent!.intro).not.toContain("添加文献");
-    expect(en.copilot!.agent!.intro).toContain("it writes the moved-in literature and plans into the Project");
+    expect(en.copilot!.agent!.intro).toContain("the Plans and Tasks stay with the Copilot");
     expect(en.copilot!.agent!.intro).not.toMatch(/Adding literature/);
   });
   it("the finish page names the empty library's button as the product does, in both languages", () => {
@@ -280,11 +280,10 @@ describe("chapter 9 copy", () => {
     expect(finish(en).openOwnBrowser).toContain(`“${label("en.json")}”`);
     expect(finish(en).openOwnBrowser).toContain("`argelanderspace serve`");
   });
-  it("the card says 'three skills' and the Copilot allow-list has three", () => {
+  it("the card says all six skills, and the Copilot has no allow-list (release-0.2 ticket 12)", () => {
     const resources = readFileSync(fileURLToPath(new NodeURL("../../server/src/copilot-resources.ts", import.meta.url)), "utf8");
-    const allowed = [...(resources.match(/COPILOT_SKILL_NAMES[^=]*=\s*\[([^\]]*)\]/)?.[1] ?? "").matchAll(/"([^"]+)"/g)];
-    expect(allowed).toHaveLength(3);
-    expect(zh.copilot!.agent!.intro).toContain("三个 skill");
-    expect(en.copilot!.agent!.intro).toContain("three skills");
+    expect(resources).not.toContain("COPILOT_SKILL_NAMES");
+    expect(zh.copilot!.agent!.intro).toContain("全部六个 skill");
+    expect(en.copilot!.agent!.intro).toContain("all six skills");
   });
 });

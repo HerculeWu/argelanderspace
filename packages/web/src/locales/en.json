@@ -3137,10 +3137,10 @@
         },
         "agent": {
           "title": "Give your agent the skills",
-          "intro": "Under “Command line & agents”, install the command-line tool, open the skills folder, and copy the six skills to your agent. With the intake skill the agent only helps you prepare the checklist; the Copilot in the workbench does the writing.",
+          "intro": "Under “Command line & agents”, install the command-line tool, open the skills folder, and copy the six skills to your agent. The same guides serve the Copilot: your agent uses the command line, the Copilot uses its tools, and both do the same operations.",
           "prompt": "Read through the ArgelanderSpace skills folder and tell me what each skill can do",
           "skill": "argelander-paper-ingest · argelander-read-paper · argelander-find-papers · argelander-query-paper-library · argelander-argument-graph · argelander-project-intake",
-          "introBrowser": "You already use the command-line tool: `argelanderspace tutorial` is it. The skills are in the repository; clone or download it, then copy them into your agent's skills folder. With the intake skill the agent only prepares; the Copilot in the workbench does the writing.",
+          "introBrowser": "You already use the command-line tool: `argelanderspace tutorial` is it. The skills are in the repository; clone or download it, then copy them into your agent's skills folder. The same guides serve the Copilot: your agent uses the command line, the Copilot uses its tools, and both do the same operations.",
           "promptBrowser": "https://github.com/HerculeWu/argelanderspace/tree/main/skills"
         }
       },
@@ -3372,9 +3372,9 @@
         },
         "agent": {
           "title": "The Copilot and external agents",
-          "intro": "The Copilot has three skills built in: reading one paper, searching across the library, and moving an existing project in; it writes the moved-in literature and plans into the Project. Ingesting single papers, finding papers and curating argument graphs go to an external agent with the bundled skills (through the command line); in a move-in it only prepares. “File and command permission” in the “Copilot” group of Settings decides whether the Copilot may read and write files and run commands.",
+          "intro": "The Copilot has all six skills built in: finding papers, ingesting, reading, searching across the library, argument graphs, and moving an existing project in. An external agent with the bundled skills (through the command line) does the same operations; in a move-in it can bring all the literature in, and the Plans and Tasks stay with the Copilot. “File and command permission” in the “Copilot” group of Settings decides whether the Copilot may read and write files and run commands.",
           "prompt": "Read the current paper and summarize its End arguments",
-          "skill": "argelander-read-paper · argelander-query-paper-library · argelander-project-intake"
+          "skill": "argelander-paper-ingest · argelander-read-paper · argelander-find-papers · argelander-query-paper-library · argelander-argument-graph · argelander-project-intake"
         }
       },
       "intake": {
@@ -3388,9 +3388,9 @@
           "body": "After each batch of literature the Copilot gives a summary table: created, merged into existing, rejected, failed, pending. An entry that would merge two existing Works is rejected on its own, for you to compare on the Library page; only an exact DOI or arXiv match makes it call two records the same paper, and it lists candidates for the rest."
         },
         "agent": {
-          "title": "An external agent can prepare",
-          "intro": "The Copilot does the writing of a move-in. An external agent with the bundled skills can prepare first: look through material on this machine and your servers, and put .bib files, PDF paths and a plan draft into the intake checklist. When it is ready, come back to the workbench and let the Copilot continue.",
-          "prompt": "Help me prepare a move-in: follow the preparation mode of argelander-project-intake, ask where my project material is, write what you find into argelanderspace-intake.md in the project root, and do not change my original files",
+          "title": "An external agent can move in too",
+          "intro": "An external agent with the bundled skills can do the literature part of a move-in itself: look through material on this machine and your servers, bring .bib files, PDFs and ADS libraries into the library through the command line, and keep progress in the intake checklist. The Copilot creates the Plans and Tasks from the plan draft in the checklist: come back to the workbench and let it continue.",
+          "prompt": "Help me move in: follow the external agent part of argelander-project-intake, ask where my project material is, bring the literature into the library with the command line, keep progress in argelanderspace-intake.md in the project root, and do not change my original files",
           "skill": "argelander-project-intake"
         }
       },
@@ -3485,7 +3485,7 @@
           "title": "An agent can search too",
           "intro": "Finding papers needs the network and an ADS token; try it outside the tutorial. Send this to your agent:",
           "prompt": "Use argelander-find-papers to find 10 related papers starting from Röser 2019",
-          "skill": "argelander-find-papers (reads the ADS key from `~/.ads/dev_key`, not the token saved in the workbench)"
+          "skill": "argelander-find-papers (`argelanderspace discovery search-ads`, using the ADS token saved in the workbench, not `~/.ads/dev_key`)"
         }
       }
     }

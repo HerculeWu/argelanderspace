@@ -3137,10 +3137,10 @@
         },
         "agent": {
           "title": "给你的 agent 装上 skills",
-          "intro": "在「命令行与 agent」里装命令行工具、打开 skills 文件夹，把六个 skill 复制给你的 agent。迁入那个 skill 里，agent 只帮你准备迁入清单，写入由工作台里的 Copilot 完成。",
+          "intro": "在「命令行与 agent」里装命令行工具、打开 skills 文件夹，把六个 skill 复制给你的 agent。同一份 skill 也是 Copilot 在用的：agent 用命令行，Copilot 用工具，做的是同样的操作。",
           "prompt": "读一遍 ArgelanderSpace 的 skills 目录，告诉我每个 skill 能做什么",
           "skill": "argelander-paper-ingest · argelander-read-paper · argelander-find-papers · argelander-query-paper-library · argelander-argument-graph · argelander-project-intake",
-          "introBrowser": "命令行工具你已经在用：`argelanderspace tutorial` 就是它。skills 在仓库里，克隆或下载后复制到你的 agent 的 skills 目录。迁入那个 skill 里，agent 只做准备，写入交给工作台里的 Copilot。",
+          "introBrowser": "命令行工具你已经在用：`argelanderspace tutorial` 就是它。skills 在仓库里，克隆或下载后复制到你的 agent 的 skills 目录。同一份 skill 也是 Copilot 在用的：agent 用命令行，Copilot 用工具，做的是同样的操作。",
           "promptBrowser": "https://github.com/HerculeWu/argelanderspace/tree/main/skills"
         }
       },
@@ -3372,9 +3372,9 @@
         },
         "agent": {
           "title": "Copilot 与外部 agent",
-          "intro": "Copilot 内置三个 skill：读一篇论文、跨库检索、迁入已有项目；迁入的文献和计划由它写进 Project。摄入单篇论文、找论文、整理论证图交给装了随包 skills 的外部 agent（用命令行），它在迁入里只做准备。设置页「Copilot」组的「文件与命令权限」决定 Copilot 能否读写文件、跑命令。",
+          "intro": "Copilot 内置全部六个 skill：找论文、摄入、阅读、跨库检索、整理论证图、迁入已有项目。装了随包 skills 的外部 agent（用命令行）做的是同样的操作；迁入里它能把文献全部带进来，计划和任务仍由 Copilot 创建。设置页「Copilot」组的「文件与命令权限」决定 Copilot 能否读写文件、跑命令。",
           "prompt": "读一下当前这篇，总结它的 End 论证",
-          "skill": "argelander-read-paper · argelander-query-paper-library · argelander-project-intake"
+          "skill": "argelander-paper-ingest · argelander-read-paper · argelander-find-papers · argelander-query-paper-library · argelander-argument-graph · argelander-project-intake"
         }
       },
       "intake": {
@@ -3388,9 +3388,9 @@
           "body": "每带入一批文献，Copilot 给一张汇总表：新建、并入已有、被拒、失败、待定。会合并两个已有 Work 的条目会被单独拒绝，由你在文献页比较处理；只有 DOI 或 arXiv 精确命中，它才自己认定是同一篇，其余列出候选等你确认。"
         },
         "agent": {
-          "title": "外部 agent 帮你准备",
-          "intro": "迁入的写入由 Copilot 完成。装了随包 skills 的外部 agent 可以先帮你准备：在本机和服务器上翻找材料，把 .bib、PDF 路径和计划草案整理进迁入清单。准备好后回到工作台，让 Copilot 继续迁入。",
-          "prompt": "帮我准备迁入：按 argelander-project-intake 的准备模式，问我项目材料在哪里，把整理结果写进项目根目录的 argelanderspace-intake.md，不要改动我的原文件",
+          "title": "外部 agent 也能迁入",
+          "intro": "装了随包 skills 的外部 agent 可以自己完成迁入的文献部分：在本机和服务器上翻找材料，经命令行把 .bib、PDF 和 ADS libraries 带进文献库，进度记进迁入清单。计划和任务由 Copilot 按清单里的计划草案创建：回到工作台，让它继续迁入。",
+          "prompt": "帮我迁入：按 argelander-project-intake 的外部 agent 部分，问我项目材料在哪里，用命令行把文献带进文献库，进度写进项目根目录的 argelanderspace-intake.md，不要改动我的原文件",
           "skill": "argelander-project-intake"
         }
       },
@@ -3485,7 +3485,7 @@
           "title": "也可以让 agent 找",
           "intro": "找论文要联网和 ADS token，教程之外再试。把这句话发给你的 agent：",
           "prompt": "用 argelander-find-papers 从 Röser 2019 出发找 10 篇相关论文",
-          "skill": "argelander-find-papers（ADS key 从 `~/.ads/dev_key` 读取，不读工作台里保存的 token）"
+          "skill": "argelander-find-papers（`argelanderspace discovery search-ads`，用工作台里保存的 ADS token，不读 `~/.ads/dev_key`）"
         }
       }
     }

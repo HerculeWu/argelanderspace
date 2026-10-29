@@ -184,14 +184,11 @@ describe("the agent cards name the skills the repository ships", () => {
         for (const m of prompt.matchAll(/argelander-[a-z-]+/g)) expect(skill, id).toContain(m[0]);
       }
     });
-    it(`0.A lists all six shipped skills; 8.A the Copilot's three (${locale})`, () => {
+    it(`0.A lists all six shipped skills; 8.A the Copilot's, which is all six (${locale})`, () => {
       const steps = stepsOf(locale);
       expect(new Set(card(steps, "prepare.agent").skill?.match(/argelander-[a-z-]+/g))).toEqual(SHIPPED);
-      // The Copilot's allow-list is the server's COPILOT_SKILL_NAMES (read as text: the web package does not import the server).
-      const resources = readFileSync(fileURLToPath(new NodeURL("../../server/src/copilot-resources.ts", import.meta.url)), "utf8");
-      const allowed = [...(resources.match(/COPILOT_SKILL_NAMES[^=]*=\s*\[([^\]]*)\]/)?.[1] ?? "").matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-      expect(allowed).toEqual(["argelander-read-paper", "argelander-query-paper-library", "argelander-project-intake"]);
-      expect(card(steps, "copilot.agent").skill?.match(/argelander-[a-z-]+/g)).toEqual(allowed);
+      // The Copilot loads every bundled skill (no allow-list since release-0.2 ticket 12), so its card lists the same six.
+      expect(new Set(card(steps, "copilot.agent").skill?.match(/argelander-[a-z-]+/g))).toEqual(SHIPPED);
     });
   }
   it("8.1 warns that sending really calls a model and spends tokens, in both languages", () => {
@@ -217,15 +214,18 @@ describe("chapter 8 and the agent cards say what the page and the skills really 
   });
   it("2.A: the command line ingest is followed by library build (skills/README.md: required after ingest)", () => {
     const readme = readFileSync(`${SKILLS_DIR}/README.md`, "utf8");
-    expect(readme).toContain("`library build [--offline]`");
+    expect(readme).toContain("`argelanderspace library build [--offline]`");
     for (const steps of [zh, en]) {
       expect(card(steps, "library.agent").skill).toContain("argelanderspace ingest arXiv:2202.06973");
       expect(card(steps, "library.agent").skill).toContain("argelanderspace library build");
     }
   });
-  it("4.A: find-papers reads its ADS key from ~/.ads/dev_key, not the workbench's saved token (its SKILL.md)", () => {
+  it("4.A: find-papers searches with `discovery search-ads` and the workbench's saved ADS token, not ~/.ads/dev_key (release-0.2 ticket 12)", () => {
     const skill = readFileSync(`${SKILLS_DIR}/argelander-find-papers/SKILL.md`, "utf8");
-    expect(skill).toContain("`~/.ads/dev_key`");
-    for (const steps of [zh, en]) expect(card(steps, "discovery.agent").skill).toContain("~/.ads/dev_key");
+    expect(skill).toContain("argelanderspace discovery search-ads");
+    for (const steps of [zh, en]) {
+      expect(card(steps, "discovery.agent").skill).toContain("argelanderspace discovery search-ads");
+      expect(card(steps, "discovery.agent").skill).toMatch(/(不读|not) `~\/\.ads\/dev_key`/);
+    }
   });
 });

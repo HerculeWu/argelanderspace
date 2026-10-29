@@ -41,8 +41,8 @@
 //      is the data dir of the installed server (`--data-dir <copy>/literatures`, own temp HOME/XDG), which lists the
 //      five Works and gives Jerabkova's three annotations without archiving them; NOTICE.md and the upload zip are
 //      there; its size is reported, not gated (tutorial-smoke-lib.mjs).
-//   6. the installed package's dist/skills (project-intake ticket 12) is what the Copilot lists: exactly the three
-//      allow-listed bundled skills, read from the installed dist/skills, while a decoy <project>/skills beside
+//   6. the installed package's dist/skills (project-intake ticket 12) is what the Copilot lists: exactly the six
+//      bundled skills (no allow-list), read from the installed dist/skills, while a decoy <project>/skills beside
 //      node_modules (README marker and a decoy-skill) is not taken for them.
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
@@ -357,7 +357,7 @@ const decoyRoots = new Set([
   join(realpathSync(pkgDir), "..", ".."), // <real>/node_modules/argelanderspace -> the folder holding node_modules
 ]);
 for (const root of decoyRoots) {
-  // a decoy of an allow-listed name too, which the allow-list alone would not filter out
+  // a decoy of a bundled skill's name too, which a lookup by name alone would not tell from the application's
   mkdirSync(join(root, "skills/argelander-project-intake"), { recursive: true });
   writeFileSync(
     join(root, "skills/argelander-project-intake/SKILL.md"),
@@ -1040,7 +1040,8 @@ try {
   );
   const allBodies = JSON.stringify(seen.map((s) => s.body));
   // The bundled skills (project-intake ticket 12): the installed package carries dist/skills, infra's bundledSkillsDir
-  // finds it in the npm layout, and the Copilot lists exactly the three allow-listed skills, from that folder.
+  // finds it in the npm layout, and the Copilot lists all six bundled skills (no allow-list since release-0.2 ticket 12),
+  // from that folder.
   {
     const skillsDir = join(pkgDir, "dist/skills");
     check(
@@ -1048,9 +1049,12 @@ try {
       "the installed package has dist/skills/README.md"
     );
     const listedSkills = [
-      "argelander-read-paper",
-      "argelander-query-paper-library",
+      "argelander-argument-graph",
+      "argelander-find-papers",
+      "argelander-paper-ingest",
       "argelander-project-intake",
+      "argelander-query-paper-library",
+      "argelander-read-paper",
     ];
     // JSON-escaped backslashes (Windows paths) folded to "/" so one comparison serves both.
     const system = JSON.stringify(
@@ -1065,7 +1069,7 @@ try {
       .size;
     check(
       listedSkills.every(listed) && skillEntries === listedSkills.length,
-      "the Copilot (ask) lists exactly the three allow-listed skills, read from the installed dist/skills",
+      "the Copilot (ask) lists exactly the six bundled skills, read from the installed dist/skills",
       `${listedSkills.map((n) => `${n}:${listed(n)}`).join(",")} entries=${skillEntries}`
     );
     check(

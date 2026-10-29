@@ -20,29 +20,14 @@ import {
 import { PDF_TRANSCRIPTION_INSTRUCTION } from "./copilot-transcription-instruction.js";
 
 /**
- * The only bundled skills the Copilot sees (copilot ticket 58, user decision 2026-10-17): the read-only ones, and since
- * 2026-10-26 the project intake skill (ADR 0011's revision, ADR 0014), which teaches business tools, file tools and
- * shell commands only and no write through the command-line tool. The others stay in the bundle for external agents but are not for
- * the Copilot: `argelander-paper-ingest` and
- * `argelander-argument-graph` write through the command-line tool (the Copilot writes only through its business tools),
- * and `argelander-find-papers` is the free ADS search that the Copilot does not do (spec §19, "not doing").
- * `argelander-query-paper-library` has one `note` write; the prompt rule "a write with no business tool is something you
- * cannot do" covers it.
+ * The Copilot's skills from the folder that ships with the application: every bundled skill, nothing from any other
+ * place. (Until release-0.2 an allow-list kept three of the six: the guides now describe each step as an operation with
+ * its Copilot tool action beside the CLI command for external agents, so one guide serves both entries, ADR 0015's
+ * revision of ADR 0011. Plan, Writer, Mail and the shelf have no guide; the Copilot uses those tools as before.)
  */
-export const COPILOT_SKILL_NAMES: readonly string[] = [
-  "argelander-read-paper",
-  "argelander-query-paper-library",
-  "argelander-project-intake",
-];
-
-/** The Copilot's skills from the folder that ships with the application: the allow-list above, nothing from any other place. */
 export function loadBundledSkills(dir: string | null | undefined): LoadSkillsResult {
   if (!dir) return { skills: [], diagnostics: [] };
-  const loaded = loadSkillsFromDir({ dir, source: "bundled" });
-  return {
-    skills: loaded.skills.filter((skill) => COPILOT_SKILL_NAMES.includes(skill.name)),
-    diagnostics: loaded.diagnostics,
-  };
+  return loadSkillsFromDir({ dir, source: "bundled" });
 }
 
 export interface AppInstruction {

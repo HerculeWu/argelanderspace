@@ -232,3 +232,9 @@ CLI 不对导航操作设 Ctrl-C 撤回；命令被中断时连接断开，serve
 
 **测试。** server `reader-operations.test.ts`（本进程、工作台路由与 Copilot 工具三个入口答案和文件逐一相同；三态各分支与系统错误〔IR 不是 JSON、IR 不合 schema、current 损坏、资产丢失、归档写不进〕；读取不写盘；PDF 的增改删与页图；插图；文本源）；cli `annotation-operations.test.ts`（真实 `bin.js`，工作台未运行与运行两条路径各一遍：读、增改删、冻结的 `annot` 在其后仍列出并保持键序、三态、参数错误退出 2、`--json`、PDF）；contracts `operation-catalog.test.ts`（条目、CLI 位置、JSON 选项、PDF 校验仍在）。冻结的 `annot` golden（`agent.test.ts`）未改全过。
 
+
+## 操作说明（票 12）
+
+六份随包说明（`skills/argelander-*`）和 `skills/README.md` 用操作名写步骤：每步给出 Copilot 的工具动作与外部 agent 的 CLI 命令，一份服务两个入口。Copilot 载入全部六份（`COPILOT_SKILL_NAMES` 白名单已删，`loadBundledSkills` 载入目录里的全部）。Plan、Writer、Mail、文献仓不写说明。没有操作可用的事，说明里明说：Copilot 不能写 note/tags/标记、不能 `ingest` 本机 LaTeX 源（把命令交给用户），外部 agent 不能创建 Plan 与 Task（迁入里只写计划草案，由 Copilot 创建）。说明里仍有几处不经目录的旧命令（`search`、`list`、`read`、`show`、`ref`、`annot`、`pdf-path`、`ingest`、`library build`、`note`、`label`），都是冻结面或没有对应操作的命令。
+
+**防漂移**：`packages/cli/src/skill-commands.ts` 从 Markdown 里提取每条 `argelanderspace …` 命令（围栏代码块逐行、`\` 续行、`#` 注释、`|`/`&&`/`;` 结束，或行内代码）与反引号里的操作名（`library.read_jobs`），`checkSkillCommand` / `checkSkillGuide` 对照 `buildProgram()` 与目录断言：子命令、选项、选项的固定取值、参数个数存在；操作名在目录里；同一行只提一个操作时，不得紧挨着另一个操作的命令。测试是 `packages/cli/tests/skill-commands.test.ts`（进 `-r test`）。提取结果带 `argv` 与行号，票 15 的 e2e 用同一个模块取出命令、填好占位符（`isPlaceholder`）后实际执行。说明里先于实现写到的命令（`agent-plugin`，票 14）在该测试的 `PLANNED` 里登记，命令落地后测试会要求删掉登记。

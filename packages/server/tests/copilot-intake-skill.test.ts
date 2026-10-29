@@ -28,7 +28,7 @@ import { expect, test } from "vitest";
 import { basePrompt } from "../src/copilot.js";
 import { LIBRARY_TOOL_NAME } from "../src/copilot-library-tool.js";
 import { PLAN_TOOL_NAME } from "../src/copilot-plan-tool.js";
-import { COPILOT_SKILL_NAMES } from "../src/copilot-resources.js";
+import { loadBundledSkills } from "../src/copilot-resources.js";
 import { ADS_FAILURE_TEXT, LOCAL_PDF_REASONS } from "../src/library-actions.js";
 
 const file = fileURLToPath(
@@ -64,7 +64,10 @@ const calls = [...skill.matchAll(/^([a-z]+) (\{.*\})$/gm)].map((m) => ({
 }));
 
 test("the skill is on the Copilot's list and has the frontmatter Pi needs", () => {
-  expect(COPILOT_SKILL_NAMES).toContain("argelander-project-intake");
+  const bundled = fileURLToPath(new URL("../../../skills", import.meta.url));
+  expect(loadBundledSkills(bundled).skills.map((s) => s.name)).toContain(
+    "argelander-project-intake"
+  );
   expect(skill).toMatch(/^---\nname: argelander-project-intake\ndescription: .{40,}\n---\n/);
 });
 
@@ -128,9 +131,11 @@ test("every snake_case name the skill puts in code is a real action, reason or r
     ...ManualBibcodeReasonSchema.options,
     ...Object.keys(ADS_FAILURE_TEXT),
     ...LOCAL_PDF_REASONS,
+    // the answer a command gives when it needs the user's card and no workbench runs (operation-catalog.md)
+    "workbench_required",
   ]);
   const fields = new Set<string>(Object.keys(LibraryRefSummarySchema.shape));
-  const prose = skill.replace(/^(library|plan) \{.*\}$/gm, "");
+  const prose = proseOf(skill);
   const names = new Set(
     [
       ...prose.matchAll(/`"?([a-z]+(?:_[a-z]+)+)\b/g),
@@ -156,14 +161,28 @@ test("every snake_case name the skill puts in code is a real action, reason or r
   expect(skill).toMatch(/`data_dir` in config\.toml, default `literatures\/`/);
 });
 
-test("the skill teaches no command-line write and no ingest, label or note", () => {
+// The external agent's commands (release-0.2 ticket 12) are the catalog's `argelanderspace library …` forms, in code
+// spans that start with the program name; they are checked against the real CLI by the CLI package's drift test, so
+// here they are taken out before the prose is read for names.
+function proseOf(text: string): string {
+  return text.replace(/^(library|plan) \{.*\}$/gm, "").replace(/`argelanderspace [^`]*`/g, "");
+}
+
+test("the skill teaches only the catalog's commands: no older direct writer, no ingest, label or note", () => {
+  const prose = proseOf(skill);
+  const commands = [...skill.matchAll(/`argelanderspace ([^`]*)`/g)].map((m) => m[1] as string);
+  expect(commands.length).toBeGreaterThanOrEqual(9);
+  for (const command of commands)
+    expect(command, command).toMatch(
+      /^library( …$| (read|list-ads|read-ads|import-works|attach-local-pdf|acquire-arxiv-pdf|read-jobs))/
+    );
   expect(skill).not.toMatch(/library build/);
   expect(skill).not.toMatch(/argument put/);
-  expect(skill).not.toMatch(/\bingest(ed|ion)?\b/i);
-  expect(skill).not.toMatch(/\bnote\b/);
-  expect(skill).not.toMatch(/\blabel\b/);
+  expect(prose).not.toMatch(/\bingest(ed|ion)?\b/i);
+  expect(prose).not.toMatch(/\bnote\b/);
+  expect(prose).not.toMatch(/\blabel\b/);
   // `acquire` the command: only `acquire_arxiv_pdf` (the tool action) may appear
-  expect(skill).not.toMatch(/\bacquire\b(?!_arxiv_pdf)/);
+  expect(prose).not.toMatch(/\bacquire\b(?!_arxiv_pdf)/);
   expect(skill).not.toMatch(/--dry-run/);
   // no file-size figure of its own for reading a .bib: Pi's read window decides
   expect(skill).not.toMatch(/800,000|1 MB/);
@@ -178,7 +197,8 @@ test("the checklist template keeps the five fixed sections in order, and credent
   expect(skill).toContain("argelanderspace-intake.md");
   expect(skill).toContain("intake-inbox/");
   expect(skill).toMatch(/never enter the conversation, a command line or the checklist/);
-  expect(skill).toContain("## Preparation mode");
+  expect(skill).toContain("## External agent");
+  expect(skill).not.toContain("Preparation mode");
 });
 
 const actionsSource = readFileSync(
@@ -188,7 +208,7 @@ const actionsSource = readFileSync(
 const inSource = (word: string) => new RegExp(`\\b${word}\\b`).test(actionsSource);
 
 test("the single-word names in code (camelCase result fields, status values, reasons) are real", () => {
-  const prose = skill.replace(/^(library|plan) \{.*\}$/gm, "");
+  const prose = proseOf(skill);
   const words = new Set([...prose.matchAll(/`([A-Za-z]+)(?=[`{])/g)].map((m) => m[1] as string));
   // result fields the tools return: all but the schema's own are looked up in the code that builds them
   const resultFields = [
@@ -228,6 +248,8 @@ test("the single-word names in code (camelCase result fields, status values, rea
     "file",
     ...["argelanderspace", "cp", "edit", "ls", "library", "plan", "pdftotext", "read"],
     ...["rsync", "scp", "unzip", "write"],
+    // an operation's answer when it refused (the exit-code line of the CLI forms)
+    "rejected",
   ]);
   for (const word of words) expect(known.has(word), `unknown name \`${word}\``).toBe(true);
   for (const word of [
@@ -263,8 +285,8 @@ test("the PDF folder step reads every first page with one loop, the command the 
 
 /** The checklist template: the one ```markdown block of the skill. */
 const template = /```markdown\n([\s\S]*?)\n```/.exec(skill)?.[1] ?? "";
-const preparation = skill.slice(skill.indexOf("## Preparation mode"));
-const intakeMode = skill.slice(0, skill.indexOf("## Preparation mode"));
+const externalAgent = skill.slice(skill.indexOf("## External agent"));
+const intakeMode = skill.slice(0, skill.indexOf("## External agent"));
 
 test("the date comes from the system prompt's own line, never from a command", () => {
   // the sentence the skill quotes is the one the Copilot's base prompt really carries
@@ -310,17 +332,20 @@ test("the PDF line, the stops and the way to continue are written down", () => {
   expect(skill).toMatch(/holds nothing from the next step: no draft/);
   expect(skill).toMatch(/Do not decide on your own that a step can be skipped/);
   // the way to continue: the button of the entry, or telling the Copilot, at every stop and at the end
-  for (const part of [intakeMode, preparation]) {
+  for (const part of [intakeMode, externalAgent]) {
     expect(part).toContain("「继续迁入」");
     expect(part).toMatch(/button/);
   }
   expect(intakeMode).toMatch(/Every time you stop, and when you wrap up/);
 });
 
-test("preparation mode has no system-prompt date to count on and still gives the next step", () => {
-  expect(preparation).toContain("日期未知，外部 agent");
-  expect(preparation).toMatch(/do not run a command for it/);
-  expect(preparation).toContain("- 下一步：在工作台让 Copilot 继续迁入");
+test("an external agent has no system-prompt date to count on and still gives the next step", () => {
+  expect(externalAgent).toContain("日期未知，外部 agent");
+  expect(externalAgent).toMatch(/do not run a command for it/);
+  expect(externalAgent).toContain("- 下一步：在工作台让 Copilot 创建计划和任务");
+  // the literature is brought in by the agent itself; only Plans and Tasks wait for the Copilot
+  expect(externalAgent).toMatch(/you need not hand it to the Copilot/);
+  expect(externalAgent).toMatch(/Plans and Tasks cannot be created from a command in this release/);
 });
 
 test("the button the skill names is the one the entry shows, in both interface languages", () => {
