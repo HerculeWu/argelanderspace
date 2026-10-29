@@ -130,7 +130,7 @@ import {
 import { readArgumentGraph, writeArgumentGraph } from "./argument-graph-actions.js";
 import { logWriterCompileFailure } from "./compile-failure-log.js";
 import { CopilotHost } from "./copilot.js";
-import { ArgumentUndoRegistry } from "./copilot-argument-tool.js";
+import { type ArgumentOpDeps, ArgumentUndoRegistry } from "./copilot-argument-tool.js";
 import { type AnnotationWrite, planAnnotationWrite } from "./copilot-reader-annotations.js";
 import type {
   AssetImageOutcome,
@@ -854,6 +854,24 @@ export function createApp(deps: AppDeps): Hono {
     ...(deps.makeAdsSearch ? { adsSearch: deps.makeAdsSearch } : {}),
     ...(deps.makeDiscoverySource ? { discoverySource: deps.makeDiscoverySource } : {}),
   };
+  // The argument graph store that the Copilot tool, the page's PUT and the catalog operations (release-0.2 ticket 08)
+  // share: one lock, one Work lookup, one change notice and one undo memory.
+  const argumentOps: ArgumentOpDeps = {
+    dataDir: paths.dataDir,
+    lock: argumentGraphLock,
+    onChanged: argumentGraphChanged,
+    work: (workId) => {
+      try {
+        const found = LibraryStore.load(paths).get(workId);
+        return found
+          ? { id: found.id, title: found.title, docIds: [...(found.doc_ids ?? [])] }
+          : null;
+      } catch {
+        return "error";
+      }
+    },
+    undo: new ArgumentUndoRegistry(),
+  };
   // Confirmation cards raised through the CLI (release-0.2 ticket 04): one queue, outside any Copilot conversation.
   const externalRequests = new ExternalRequestQueue({
     onChanged: () => broadcast({ type: "external-requests.changed", at: new Date().toISOString() }),
@@ -864,6 +882,7 @@ export function createApp(deps: AppDeps): Hono {
       token: deps.operations.token,
       runtime: {
         library: libraryOps,
+        argument: argumentOps,
         confirm: externalRequests,
         ...(deps.navigation ? { navigate: deps.navigation } : {}),
       },
@@ -1107,22 +1126,7 @@ export function createApp(deps: AppDeps): Hono {
     writer: writerOps,
     mail: mailOps,
     // The argument graph tool (ticket 09): the page's PUT writes through the same store, lock, Work check and broadcast.
-    argument: {
-      dataDir: paths.dataDir,
-      lock: argumentGraphLock,
-      onChanged: argumentGraphChanged,
-      work: (workId) => {
-        try {
-          const found = LibraryStore.load(paths).get(workId);
-          return found
-            ? { id: found.id, title: found.title, docIds: [...(found.doc_ids ?? [])] }
-            : null;
-        } catch {
-          return "error";
-        }
-      },
-      undo: new ArgumentUndoRegistry(),
-    },
+    argument: argumentOps,
     // The Shelf tool (shelf ticket 07): the routes' own writer, take and list.
     shelf: {
       writer: shelfWriter,

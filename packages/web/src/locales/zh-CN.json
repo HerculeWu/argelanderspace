@@ -2963,7 +2963,15 @@
     "staleBody": "命令行已离开，或请求已被处理；没有改动任何内容。",
     "notDoneTitle": "没有删除",
     "failedTitle": "没能提交你的决定",
-    "failedBody": "请再试一次；命令行仍在等待。"
+    "failedBody": "请再试一次；命令行仍在等待。",
+    "summaryReplaceArgument": "替换「{{title}}」的论证图",
+    "summaryClearArgument": "清空「{{title}}」的论证图",
+    "doneTitleReplaceArgument": "论证图已替换",
+    "doneTitleClearArgument": "论证图已清空",
+    "doneBodyArgument": "结果已返回命令行。",
+    "deniedBodyArgument": "命令行收到错误码 denied；论证图没有改变。",
+    "withdrawnBodyArgument": "论证图没有改变。",
+    "notDoneTitleArgument": "论证图没有改变"
   },
   "tutorial": {
     "ui": {

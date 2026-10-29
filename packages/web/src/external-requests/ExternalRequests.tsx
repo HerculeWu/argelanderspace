@@ -76,7 +76,21 @@ const waited = (since: string, now: number) => {
 
 /** One line naming what a request asks, for the queue and the folded bar. */
 function summaryOf(t: TFunction, card: CopilotConfirmation): string {
-  return card.action === "delete_doc" ? t("copilot.confirmation.deleteDoc", { id: card.object.id }) : card.action;
+  if (card.action === "delete_doc") return t("copilot.confirmation.deleteDoc", { id: card.object.id });
+  if (card.action === "replace_argument_graph") return t(card.mode === "clear" ? "externalRequests.summaryClearArgument" : "externalRequests.summaryReplaceArgument", { title: card.label });
+  return card.action;
+}
+
+/** The words of an outcome for this card: the Doc delete's own, or the argument graph's (release-0.2 ticket 08). */
+function outcomeText(t: TFunction, card: CopilotConfirmation, key: "doneTitle" | "doneBody" | "deniedBody" | "withdrawnBody" | "notDoneTitle"): string {
+  if (card.action !== "replace_argument_graph") return t(`externalRequests.${key}`);
+  switch (key) {
+    case "doneTitle": return card.mode === "clear" ? t("externalRequests.doneTitleClearArgument") : t("externalRequests.doneTitleReplaceArgument");
+    case "doneBody": return t("externalRequests.doneBodyArgument");
+    case "deniedBody": return t("externalRequests.deniedBodyArgument");
+    case "withdrawnBody": return t("externalRequests.withdrawnBodyArgument");
+    case "notDoneTitle": return t("externalRequests.notDoneTitleArgument");
+  }
 }
 
 export function ExternalRequestsDock({ model, guards, openDocId, onDocDeleted }: { model: ExternalRequestsModel & { refresh: () => Promise<void>; dismiss: (id: string) => Promise<void> }; guards: ConfirmationGuards; openDocId: string | null; onDocDeleted: (docId: string, remaining: string[]) => void }) {
@@ -124,14 +138,14 @@ export function ExternalRequestsDock({ model, guards, openDocId, onDocDeleted }:
       const outcome = await decideExternalRequest(request.id, decision);
       if (!alive.current) return;
       if (outcome.state === "stale") show({ tone: "warn", title: t("externalRequests.staleTitle"), body: t("externalRequests.staleBody") });
-      else if (outcome.state === "denied") show({ tone: "ok", title: t("externalRequests.deniedTitle"), body: t("externalRequests.deniedBody") });
+      else if (outcome.state === "denied") show({ tone: "ok", title: t("externalRequests.deniedTitle"), body: outcomeText(t, request.card, "deniedBody") });
       else {
         const answer = outcome.result as { ok?: boolean; detail?: string; docId?: string; works?: { remaining: string[] }[] } | null;
         if (answer?.ok === true) {
           // The Shell's three-state update of the open Doc, as after a delete from the Library page or Copilot's card.
           if (request.card.action === "delete_doc") onDocDeleted(request.card.object.id, answer.works?.find((work) => work.remaining.length > 0)?.remaining ?? []);
-          show({ tone: "ok", title: t("externalRequests.doneTitle"), body: t("externalRequests.doneBody") });
-        } else show({ tone: "warn", title: t("externalRequests.notDoneTitle"), body: answer?.detail ?? "" });
+          show({ tone: "ok", title: outcomeText(t, request.card, "doneTitle"), body: outcomeText(t, request.card, "doneBody") });
+        } else show({ tone: "warn", title: outcomeText(t, request.card, "notDoneTitle"), body: answer?.detail ?? "" });
       }
     } catch {
       if (alive.current) show({ tone: "warn", title: t("externalRequests.failedTitle"), body: t("externalRequests.failedBody") });
@@ -165,7 +179,7 @@ export function ExternalRequestsDock({ model, guards, openDocId, onDocDeleted }:
         {!withdrawn && <Button data-ui="external-requests-toggle" onClick={() => setCollapsed(true)}>{t("externalRequests.collapse")}</Button>}
       </div>
       {withdrawn
-        ? <div className="external-request-message warn" role="status" data-ui="external-request-withdrawn"><Icon name="triangle-alert" /><div><strong>{t("externalRequests.withdrawnTitle")}</strong>{t("externalRequests.withdrawnBody")}</div></div>
+        ? <div className="external-request-message warn" role="status" data-ui="external-request-withdrawn"><Icon name="triangle-alert" /><div><strong>{t("externalRequests.withdrawnTitle")}</strong>{outcomeText(t, front.card, "withdrawnBody")}</div></div>
         : <>
           {front.client && <div className="external-request-command" data-ui="external-request-command">{front.client.commandLine}</div>}
           <div className="external-request-wait" data-ui="external-request-wait">{t("externalRequests.wait", { time: waited(front.receivedAt, now) })}</div>

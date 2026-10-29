@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  ARGUMENT_TOOL_ACTIONS,
+  ARGUMENT_TOOL_WRITE_ACTIONS,
   LIBRARY_OPERATION_ACTIONS,
   OPERATION_CATALOG,
   operationCliGroups,
   operationCliName,
   operationDomains,
+  operationJsonOnlyParams,
   operationOptionFlag,
   operationOptions,
   operationsOfCliGroup,
@@ -137,4 +140,94 @@ describe("operation catalog (ADR 0015)", () => {
     expect(parseCatalogCall("library", { action: "import_works" })).toEqual({ match: false });
     expect(parseCatalogCall("reader", { action: "read" })).toEqual({ match: false });
   });
+
+  it("argument entries: the Copilot tool's business actions, parameters from the one action schema, no interface actions", () => {
+    const entries = operationsOfDomain("argument");
+    expect(entries.map((op) => op.name)).toEqual([
+      "open",
+      "read",
+      "create",
+      "update",
+      "delete",
+      "undo_delete",
+      "add_edge",
+      "remove_edge",
+      "replace",
+      "clear",
+    ]);
+    // the Copilot actions that are not business operations stay out
+    for (const out of ["select", "exit", "guide"])
+      expect(entries.map((op) => op.name)).not.toContain(out);
+    // every entry other than the navigation one is a tool action, and the writes are the tool's write actions
+    for (const op of entries.filter((entry) => !entry.navigates))
+      expect(ARGUMENT_TOOL_ACTIONS as readonly string[]).toContain(op.name);
+    expect(entries.filter((op) => op.effect === "write").map((op) => op.name)).toEqual([
+      ...ARGUMENT_TOOL_WRITE_ACTIONS,
+    ]);
+    // only replace and clear may wait for a card (when the graph has arguments)
+    expect(
+      entries.filter((op) => op.confirm !== "none").map((op) => [op.name, op.confirm])
+    ).toEqual([
+      ["replace", "conditional"],
+      ["clear", "conditional"],
+    ]);
+    // the CLI group is the domain, so they sit next to the frozen `argument get` / `put`; `open` goes to `open`
+    expect(operationsOfCliGroup("argument").map((op) => op.name)).toEqual(
+      entries.filter((op) => !op.navigates).map((op) => op.name)
+    );
+    for (const frozen of ["get", "put"])
+      expect(operationsOfCliGroup("argument").map((op) => operationCliName(op.name))).not.toContain(
+        frozen
+      );
+    // a Copilot call parses to the same parameters the CLI validates
+    expect(
+      parseCatalogCall("argument", {
+        action: "add_edge",
+        workId: "w",
+        expectedRev: 3,
+        from: "a",
+        to: "b",
+        role: "grounds",
+      })
+    ).toMatchObject({
+      match: true,
+      success: true,
+      params: { workId: "w", expectedRev: 3, role: "grounds" },
+    });
+    expect(parseCatalogCall("argument", { action: "read", workId: "w", extra: 1 })).toMatchObject({
+      match: true,
+      success: false,
+    });
+    expect(parseCatalogCall("argument", { action: "select", workId: "w" })).toEqual({
+      match: false,
+    });
+  });
+
+  it("flat parameters become options; array and object parameters are --json only", () => {
+    const by = (name: string) => entry(`argument.${name}`);
+    expect(operationOptions(by("add_edge")).map((o) => [o.flag, o.kind])).toEqual([
+      ["--work-id", "string"],
+      ["--expected-rev", "integer"],
+      ["--from", "string"],
+      ["--to", "string"],
+      ["--role", "enum"],
+    ]);
+    expect(operationJsonOnlyParams(by("add_edge"))).toEqual([]);
+    expect(operationJsonOnlyParams(by("create"))).toEqual(["argument"]);
+    expect(operationJsonOnlyParams(by("update"))).toEqual(["patch"]);
+    expect(operationJsonOnlyParams(by("replace"))).toEqual(["graph"]);
+    expect(operationJsonOnlyParams(by("read"))).toEqual(["ids"]);
+    expect(operationOptions(by("read")).map((o) => o.flag)).toEqual([
+      "--work-id",
+      "--offset",
+      "--edge-offset",
+      "--field",
+    ]);
+  });
 });
+
+function entry(id: string) {
+  const found = OPERATION_CATALOG.find((op) => op.id === id);
+  if (!found) throw new Error(`no catalog entry ${id}`);
+  return found;
+}

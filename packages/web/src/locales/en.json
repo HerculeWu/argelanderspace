@@ -2963,7 +2963,15 @@
     "staleBody": "The command left, or the request was already handled; nothing was changed.",
     "notDoneTitle": "Nothing was deleted",
     "failedTitle": "Your decision could not be sent",
-    "failedBody": "Try again; the command is still waiting."
+    "failedBody": "Try again; the command is still waiting.",
+    "summaryReplaceArgument": "Replace the argument graph of “{{title}}”",
+    "summaryClearArgument": "Clear the argument graph of “{{title}}”",
+    "doneTitleReplaceArgument": "Argument graph replaced",
+    "doneTitleClearArgument": "Argument graph cleared",
+    "doneBodyArgument": "The result went back to the command line.",
+    "deniedBodyArgument": "The command received error code denied; the argument graph was not changed.",
+    "withdrawnBodyArgument": "The argument graph was not changed.",
+    "notDoneTitleArgument": "The argument graph was not changed"
   },
   "tutorial": {
     "ui": {

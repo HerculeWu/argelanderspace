@@ -25,7 +25,6 @@ import {
   ArgumentGraphSchema,
   type ArgumentGraphSize,
   type ArgumentToolRead,
-  ArgumentToolReadSchema,
   type ArgumentToolWrite,
   ArgumentToolWriteSchema,
   type ArgumentViewAction,
@@ -141,7 +140,7 @@ export function loadForTool(deps: ArgumentOpDeps, workId: string): Loaded {
   }
 }
 
-const sizeOf = (graph: ArgumentGraph): ArgumentGraphSize => ({
+export const sizeOf = (graph: ArgumentGraph): ArgumentGraphSize => ({
   arguments: graph.arguments.length,
   edges: graph.edges.length,
 });
@@ -668,7 +667,7 @@ type Committed<T extends object> =
  * Applies one pure edit to the stored graph and writes it with the same function the page's PUT uses. `begin` runs
  * after every refusal that needs no write and before the write itself.
  */
-async function commitEdit<T extends object>(
+export async function commitEdit<T extends object>(
   deps: ArgumentOpDeps,
   workId: string,
   expectedRev: number,
@@ -717,6 +716,9 @@ async function write<T extends object>(
     return { kind: "unknown" };
   }
 }
+
+/** The catalog handlers' entrance to the one write path (`argument-operations.ts`); the tool's own calls use `write`. */
+export { write as writeArgumentProposal };
 
 // ---- The tool -------------------------------------------------------------------------------------------------- //
 
@@ -785,17 +787,31 @@ export function createArgumentTool(context: ArgumentToolContext) {
         if (action === "read") return await read(context, toolCallId, rest);
         if (action === "open" || action === "select" || action === "exit")
           return await navigate(context, toolCallId, action, rest);
-        const parsed = ArgumentToolWriteSchema.safeParse(rest);
-        if (!parsed.success)
+        // The writes are cataloged (release-0.2 ticket 08): their parameters come from the catalog entry, the one
+        // `argelanderspace argument <op>` is derived from. A call the catalog does not accept is reported with the
+        // issues of the action schemas the entries are made from, as before.
+        const cataloged = parseCatalogCall(ARGUMENT_TOOL_NAME, rest);
+        let write: ArgumentToolWrite;
+        if (
+          cataloged.match &&
+          cataloged.success &&
+          !cataloged.op.navigates &&
+          cataloged.op.effect === "write"
+        )
+          write = { action: cataloged.op.name, ...cataloged.params } as ArgumentToolWrite;
+        else {
+          const parsed = ArgumentToolWriteSchema.safeParse(rest);
           return done(record(toolCallId, action, { status: "unsupported" }), {
             ok: false,
             status: "unsupported",
             detail: "unknown action or invalid parameters",
-            issues: parsed.error.issues
-              .slice(0, 5)
-              .map((issue) => ({ path: issue.path.join("."), message: issue.message })),
+            issues: parsed.success
+              ? []
+              : parsed.error.issues
+                  .slice(0, 5)
+                  .map((issue) => ({ path: issue.path.join("."), message: issue.message })),
           });
-        const write = parsed.data;
+        }
         return await runOperation(
           context,
           {
@@ -827,30 +843,54 @@ export function createArgumentTool(context: ArgumentToolContext) {
 
 const work = (id: string) => ({ kind: "work" as const, id });
 
+/** A state in which nothing could be done: the Work is gone, the library or the graph file cannot be read. */
+export type UnavailableState =
+  | { kind: "no_work" }
+  | { kind: "library_error" }
+  | { kind: "unreadable"; problem: string };
+
+/** What every operation answers when it meets such a state: the status (as recorded) and the payload (as returned). */
+export function unavailableAnswer(state: UnavailableState): {
+  status: "not_found" | "error";
+  payload: { ok: false; status: "not_found" | "error"; detail: string };
+} {
+  if (state.kind === "no_work")
+    return {
+      status: "not_found",
+      payload: {
+        ok: false,
+        status: "not_found",
+        detail: "no such Work in the library; nothing was changed",
+      },
+    };
+  return {
+    status: "error",
+    payload: {
+      ok: false,
+      status: "error",
+      detail:
+        state.kind === "library_error"
+          ? "the library could not be read; nothing was changed"
+          : state.problem === "unsafe_id"
+            ? // the page's route says the same (400): this id cannot name a graph file
+              "work id cannot be used for an argument graph; nothing was changed"
+            : `the Work's argument graph file is unreadable (${state.problem}); it is not an empty graph and nothing was changed. Tell the user; do not try to work around it`,
+    },
+  };
+}
+
 /** The result for a state in which nothing could be done, shared by every operation. */
 function unavailable(
   toolCallId: string,
   action: string,
   workId: string,
-  state: { kind: "no_work" } | { kind: "library_error" } | { kind: "unreadable"; problem: string }
+  state: UnavailableState
 ): ToolResult {
-  if (state.kind === "no_work")
-    return done(record(toolCallId, action, { status: "not_found", object: work(workId) }), {
-      ok: false,
-      status: "not_found",
-      detail: "no such Work in the library; nothing was changed",
-    });
-  return done(record(toolCallId, action, { status: "error", object: work(workId) }), {
-    ok: false,
-    status: "error",
-    detail:
-      state.kind === "library_error"
-        ? "the library could not be read; nothing was changed"
-        : state.problem === "unsafe_id"
-          ? // the page's route says the same (400): this id cannot name a graph file
-            "work id cannot be used for an argument graph; nothing was changed"
-          : `the Work's argument graph file is unreadable (${state.problem}); it is not an empty graph and nothing was changed. Tell the user; do not try to work around it`,
-  });
+  const answer = unavailableAnswer(state);
+  return done(
+    record(toolCallId, action, { status: answer.status, object: work(workId) }),
+    answer.payload
+  );
 }
 
 async function read(
@@ -858,14 +898,20 @@ async function read(
   toolCallId: string,
   rest: Record<string, unknown>
 ) {
-  const parsed = ArgumentToolReadSchema.safeParse(rest);
-  if (!parsed.success)
+  // `read` is cataloged (release-0.2 ticket 08): its parameters are the catalog entry's, the CLI's `argument read` too.
+  const cataloged = parseCatalogCall(ARGUMENT_TOOL_NAME, { ...rest, action: "read" });
+  if (!cataloged.match || !cataloged.success)
     return done(record(toolCallId, "read", { status: "unsupported" }), {
       ok: false,
       status: "unsupported",
-      detail: unsupportedRead(rest, parsed.error.issues),
+      detail: unsupportedRead(
+        rest,
+        cataloged.match && !cataloged.success
+          ? cataloged.issues.map((issue) => ({ path: issue.path.split("."), code: "" }))
+          : []
+      ),
     });
-  const request: ArgumentToolRead = parsed.data;
+  const request = { action: "read", ...cataloged.params } as ArgumentToolRead;
   if (request.field !== undefined && request.ids?.length !== 1)
     return done(record(toolCallId, "read", { status: "unsupported" }), {
       ok: false,
@@ -937,7 +983,7 @@ function gapResult(toolCallId: string, object: { kind: "work"; id: string }, gap
 }
 
 /** Why a read request was refused, in words that say what to change (the schema's own messages are for programs). */
-function unsupportedRead(
+export function unsupportedRead(
   rest: Record<string, unknown>,
   issues: readonly { path: PropertyKey[]; code: string }[]
 ): string {
@@ -1039,6 +1085,22 @@ function latestOf(info: ArgumentWork, latest: ArgumentGraph, room: number | unde
       };
 }
 
+/** The answer of a conflict: the stored graph as it is now, so the asker decides again from it. */
+export function conflictAnswer(
+  latest: ArgumentGraph | null,
+  info: ArgumentWork,
+  room: number | undefined
+) {
+  return {
+    ok: false as const,
+    status: "conflict" as const,
+    ...(latest ? { currentRev: latest.rev } : {}),
+    detail:
+      "the graph changed since you read it (the user may have edited it); nothing was written. Its latest state is below: look at it, form a new edit from it, never resend the stale one",
+    ...(latest ? latestOf(info, latest, room) : {}),
+  };
+}
+
 /** The result of a conflict: the stored graph as it is now, so the model decides again from it. */
 function conflict(
   toolCallId: string,
@@ -1054,15 +1116,20 @@ function conflict(
       ...(latest ? { rev: latest.rev } : {}),
       object: work(workId),
     }),
-    {
-      ok: false,
-      status: "conflict",
-      ...(latest ? { currentRev: latest.rev } : {}),
-      detail:
-        "the graph changed since you read it (the user may have edited it); nothing was written. Its latest state is below: look at it, form a new edit from it, never resend the stale one",
-      ...(latest ? latestOf(info, latest, room) : {}),
-    }
+    conflictAnswer(latest, info, room)
   );
+}
+
+/** The answer to an edit the pure operation refused (nothing was written). */
+export function refusedAnswer(rev: number | undefined, rejection: ArgumentEditRejection) {
+  const why = reject(rejection);
+  return {
+    ok: false as const,
+    status: why.status,
+    detail: why.detail,
+    ...(why.issues ? { issues: why.issues } : {}),
+    ...(rev !== undefined ? { currentRev: rev } : {}),
+  };
 }
 
 /** The result of an edit the pure operation refused (nothing was written). */
@@ -1073,22 +1140,73 @@ function refused(
   rev: number | undefined,
   rejection: ArgumentEditRejection
 ) {
-  const why = reject(rejection);
   return done(
     record(toolCallId, action, {
-      status: why.status,
+      status: reject(rejection).status,
       ...(rev !== undefined ? { rev } : {}),
       object: work(workId),
     }),
-    {
-      ok: false,
-      status: why.status,
-      detail: why.detail,
-      ...(why.issues ? { issues: why.issues } : {}),
-      ...(rev !== undefined ? { currentRev: rev } : {}),
-    }
+    refusedAnswer(rev, rejection)
   );
 }
+
+/** The answer to an edit that was written; `id` is the new argument of a create, `deleted` what a delete removed. */
+export function editedAnswer(
+  saved: ArgumentGraph,
+  id: string | undefined,
+  deleted: RemovedArgument | undefined
+) {
+  return {
+    ok: true as const,
+    status: "ok" as const,
+    rev: saved.rev,
+    counts: sizeOf(saved),
+    ...(id !== undefined ? { id } : {}),
+    ...(deleted
+      ? {
+          removed: {
+            id: deleted.argument.id,
+            title: deleted.argument.title,
+            edges: deleted.edges.length,
+          },
+          note: "undo_delete {id, expectedRev: rev} puts it back with its edges while the graph is unchanged",
+        }
+      : {}),
+  };
+}
+
+/** The pure edit of every write but replace and clear, applied to the stored graph. */
+export function applyEditRequest(
+  deps: ArgumentOpDeps,
+  request: Exclude<ArgumentToolWrite, { action: "replace" | "clear" }>,
+  graph: ArgumentGraph,
+  onDeleted: (removed: RemovedArgument) => void
+): ArgumentEditResult<object> {
+  switch (request.action) {
+    case "create":
+      return createArgument(graph, request.argument as ArgumentDraft, request.id);
+    case "update":
+      return updateArgument(graph, request.id, request.patch as Partial<ArgumentDraft>);
+    case "delete": {
+      const result = deleteArgument(graph, request.id);
+      if (result.ok) onDeleted(result.removed);
+      return result;
+    }
+    case "undo_delete": {
+      const entry = deps.undo.take(request.workId, request.id);
+      if (!entry) return { ok: false, rejection: { code: "not_found", id: request.id } };
+      return restoreArgument(graph, entry.removed);
+    }
+    case "add_edge":
+      return addEdge(graph, { from: request.from, to: request.to, role: request.role });
+    case "remove_edge":
+      return removeEdge(graph, { from: request.from, to: request.to, role: request.role });
+  }
+}
+
+/** The answer to an undo_delete with nothing of the asker's to undo. */
+export const NOTHING_TO_UNDO =
+  "nothing of yours to undo for that argument (not deleted by you since the service started, or already put back)";
 
 async function edit(
   context: ArgumentToolContext,
@@ -1106,8 +1224,7 @@ async function edit(
       return done(record(toolCallId, action, { status: "not_found", object: work(workId) }), {
         ok: false,
         status: "not_found",
-        detail:
-          "nothing of yours to undo for that argument (not deleted by you since the service started, or already put back)",
+        detail: NOTHING_TO_UNDO,
       });
     if (entry.rev !== expectedRev) {
       const latest = loadForTool(deps, workId);
@@ -1122,28 +1239,10 @@ async function edit(
       deps,
       workId,
       expectedRev,
-      (graph): ArgumentEditResult<object> => {
-        switch (request.action) {
-          case "create":
-            return createArgument(graph, request.argument as ArgumentDraft, request.id);
-          case "update":
-            return updateArgument(graph, request.id, request.patch as Partial<ArgumentDraft>);
-          case "delete": {
-            const result = deleteArgument(graph, request.id);
-            if (result.ok) deleted = result.removed;
-            return result;
-          }
-          case "undo_delete": {
-            const entry = deps.undo.take(workId, request.id);
-            if (!entry) return { ok: false, rejection: { code: "not_found", id: request.id } };
-            return restoreArgument(graph, entry.removed);
-          }
-          case "add_edge":
-            return addEdge(graph, { from: request.from, to: request.to, role: request.role });
-          case "remove_edge":
-            return removeEdge(graph, { from: request.from, to: request.to, role: request.role });
-        }
-      },
+      (graph) =>
+        applyEditRequest(deps, request, graph, (removed) => {
+          deleted = removed;
+        }),
       () => op.begin({ workId }, expectedRev)
     )
   );
@@ -1174,23 +1273,11 @@ async function edit(
       context.wrote?.(workId, saved.rev);
       if (deleted) deps.undo.remember(workId, deleted, saved.rev);
       if (request.action === "undo_delete") deps.undo.forget(workId, request.id);
-      const payload = {
-        ok: true,
-        status: "ok",
-        rev: saved.rev,
-        counts: sizeOf(saved),
-        ...(request.action === "create" ? { id: extra.id } : {}),
-        ...(deleted
-          ? {
-              removed: {
-                id: deleted.argument.id,
-                title: deleted.argument.title,
-                edges: deleted.edges.length,
-              },
-              note: "undo_delete {id, expectedRev: rev} puts it back with its edges while the graph is unchanged",
-            }
-          : {}),
-      };
+      const payload = editedAnswer(
+        saved,
+        request.action === "create" ? extra.id : undefined,
+        deleted
+      );
       return op.finish(
         done(
           record(toolCallId, action, {
@@ -1205,6 +1292,40 @@ async function edit(
     }
   }
 }
+
+/** The graph a replace or clear would write, checked the way every write is (nothing is written, no card is asked). */
+export function proposedGraph(
+  current: ArgumentGraph,
+  request: Extract<ArgumentToolWrite, { action: "replace" | "clear" }>
+): { ok: true; graph: ArgumentGraph } | { ok: false; rejection: ArgumentEditRejection } {
+  if (request.action === "clear") {
+    const cleared = clearArgumentGraph(current);
+    return cleared.ok ? { ok: true, graph: cleared.graph } : cleared;
+  }
+  const body = { version: 1, rev: current.rev, work_id: request.workId, ...request.graph };
+  const built = ArgumentGraphSchema.safeParse(body);
+  if (built.success) return { ok: true, graph: built.data };
+  return { ok: false, rejection: { code: "invalid", issues: checkArgumentGraphForWrite(body) } };
+}
+
+/** The answer to a clear of a graph with nothing in it. */
+export function alreadyEmptyAnswer(current: ArgumentGraph) {
+  return {
+    ok: true as const,
+    status: "noop" as const,
+    rev: current.rev,
+    counts: sizeOf(current),
+    detail: "the graph is already empty",
+  };
+}
+
+/** The answer when the graph is not the one the card showed any more. */
+export const GRAPH_CHANGED_ANSWER = {
+  ok: false as const,
+  status: "expired" as const,
+  detail:
+    "the argument graph changed before the write ran; nothing was written. Read again and ask only if it is still wanted",
+};
 
 /** Replace the whole graph, or clear it: a card first when the stored graph has arguments. */
 async function replaceOrClear(
@@ -1221,29 +1342,9 @@ async function replaceOrClear(
   if (current.rev !== expectedRev)
     return op.finish(conflict(toolCallId, action, workId, current, info, context.budget?.()));
   // The proposed graph, checked the way every write is checked, before the user is bothered with it.
-  let proposed: ArgumentGraph;
-  if (request.action === "clear") {
-    const cleared = clearArgumentGraph(current);
-    if (!cleared.ok) return refused(toolCallId, action, workId, current.rev, cleared.rejection);
-    proposed = cleared.graph;
-  } else {
-    const built = ArgumentGraphSchema.safeParse({
-      version: 1,
-      rev: current.rev,
-      work_id: workId,
-      ...request.graph,
-    });
-    if (!built.success) {
-      const issues = checkArgumentGraphForWrite({
-        version: 1,
-        rev: current.rev,
-        work_id: workId,
-        ...request.graph,
-      });
-      return refused(toolCallId, action, workId, current.rev, { code: "invalid", issues });
-    }
-    proposed = built.data;
-  }
+  const built = proposedGraph(current, request);
+  if (!built.ok) return refused(toolCallId, action, workId, current.rev, built.rejection);
+  const proposed = built.graph;
   if (current.arguments.length === 0 && request.action === "clear")
     return op.finish(
       done(
@@ -1253,13 +1354,7 @@ async function replaceOrClear(
           object: work(workId),
           label: info.title,
         }),
-        {
-          ok: true,
-          status: "noop",
-          rev: current.rev,
-          counts: sizeOf(current),
-          detail: "the graph is already empty",
-        }
+        alreadyEmptyAnswer(current)
       )
     );
   let baseRev = current.rev;
@@ -1303,12 +1398,10 @@ async function replaceOrClear(
     // Approved. From here it is a submitted write; check once more that it is the graph the card showed.
     const again = describeArgumentTarget(deps, workId);
     if (!again || again.rev !== baseRev || again.objectDigest !== described.objectDigest)
-      return done(record(toolCallId, action, { status: "expired", object: work(workId), label }), {
-        ok: false,
-        status: "expired",
-        detail:
-          "the argument graph changed before the write ran; nothing was written. Read again and ask only if it is still wanted",
-      });
+      return done(
+        record(toolCallId, action, { status: "expired", object: work(workId), label }),
+        GRAPH_CHANGED_ANSWER
+      );
   }
   const outcome = await op.track(
     write(deps, workId, info, baseRev, proposed, {}, () => op.begin({ workId }, baseRev))
@@ -1331,12 +1424,10 @@ async function replaceOrClear(
     case "conflict":
       return op.finish(
         current.arguments.length > 0
-          ? done(record(toolCallId, action, { status: "expired", object: work(workId), label }), {
-              ok: false,
-              status: "expired",
-              detail:
-                "the argument graph changed before the write ran; nothing was written. Read again and ask only if it is still wanted",
-            })
+          ? done(
+              record(toolCallId, action, { status: "expired", object: work(workId), label }),
+              GRAPH_CHANGED_ANSWER
+            )
           : conflict(toolCallId, action, workId, outcome.latest, outcome.work, context.budget?.())
       );
     case "rejected":

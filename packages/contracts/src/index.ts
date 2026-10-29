@@ -2,6 +2,7 @@ export * from "./ads-credential-api.js";
 export * from "./annotation-targets.js";
 export * from "./annotations.js";
 export * from "./api.js";
+export * from "./argument-catalog.js";
 export * from "./argument-copilot.js";
 export * from "./argument-edit.js";
 export * from "./argument-graph.js";

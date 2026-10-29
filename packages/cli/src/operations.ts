@@ -11,7 +11,9 @@
  * (`status: "denied"`), 4 an operation waiting for a confirmation card was interrupted (the workbench exited or
  * stopped answering), 130 this command was interrupted (Ctrl-C) and withdrew its card. An operation with
  * `confirm: "card"` and every navigation operation (`argelanderspace open doc|work|argument-graph`, ticket 05) need
- * a running workbench: without one the command answers `workbench_required` (exit 1) and runs nothing in this process. Exit codes are listed in `docs/operation-catalog.md`.
+ * a running workbench: without one the command answers `workbench_required` (exit 1) and runs nothing in this process. A
+ * `confirm: "conditional"` operation (replacing or clearing an argument graph that has arguments, ticket 08) runs in this
+ * process when it needs no card and decides itself to answer `workbench_required` when it does. Exit codes are listed in `docs/operation-catalog.md`.
  *
  * Only the catalog's operations are registered here; the older commands (`ingest`, `library build`, `annot`, ...) are
  * not in the catalog and are not touched. A command first looks for a workbench running for the data directory and, if
@@ -25,6 +27,7 @@ import {
   type OperationOption,
   operationCliGroups,
   operationCliName,
+  operationJsonOnlyParams,
   operationOptions,
   operationsOfCliGroup,
 } from "@argelanderspace/contracts";
@@ -163,7 +166,7 @@ async function runViaWorkbench(
   let answer: Awaited<ReturnType<typeof runOnWorkbench>>;
   // A command that waits for a confirmation card is interrupted from the terminal: the request is aborted, which
   // withdraws the card in the workbench.
-  const waits = op.confirm === "card";
+  const waits = op.confirm !== "none";
   const controller = new AbortController();
   let interrupted = false;
   const onSignal = () => {
@@ -232,9 +235,13 @@ function registerOperation(group: Command, op: OperationDef): void {
     const required = option.required ? " (required)" : "";
     command.option(`${option.flag}${value}`, `parameter ${option.param}${required}`);
   }
+  // Array and object parameters have no option of their own (argument operations, ticket 08): only --json carries them.
+  const jsonOnly = operationJsonOnlyParams(op);
   command.option(
     "--json <file|->",
-    "parameters as a JSON object from a file or stdin, instead of options"
+    jsonOnly.length > 0
+      ? `parameters as a JSON object from a file or stdin, instead of options (the only way to give ${jsonOnly.join(", ")})`
+      : "parameters as a JSON object from a file or stdin, instead of options"
   );
   command.action(async (_opts: unknown, cmd: Command) => {
     await runOperationCommand(op, cmd);

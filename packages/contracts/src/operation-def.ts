@@ -13,8 +13,13 @@ import { z } from "zod";
 
 /** `read`: leaves the Project as it was. `write`: changes Project data (ADR 0015's single-writer rule applies). */
 export type OperationEffect = "read" | "write";
-/** `none`: runs at once. `card`: waits for the real user's confirmation card (Copilot) / the workbench (CLI). */
-export type OperationConfirm = "none" | "card";
+/**
+ * `none`: runs at once. `card`: waits for the real user's confirmation card (Copilot) / the workbench (CLI); with no
+ * workbench running the CLI refuses it. `conditional`: needs a card only for some data (replacing a graph that has
+ * arguments, release-0.2 ticket 08); the handler decides, and itself answers `workbench_required` when it needs a card
+ * and there is no workbench, so the CLI otherwise runs it in-process like a plain write.
+ */
+export type OperationConfirm = "none" | "card" | "conditional";
 
 export interface OperationDef<
   Domain extends string = string,
@@ -136,44 +141,72 @@ interface JsonSchemaNode {
   required?: string[];
 }
 
-/** The options of an operation, in the order its parameters are declared. Only flat parameters are mapped. */
-export function operationOptions(op: OperationDef): OperationOption[] {
+/** The flat form of a parameter, or null when it has none (an array, an object, a union of several shapes). */
+function flatOption(
+  param: string,
+  node: JsonSchemaNode,
+  requiredNames: ReadonlySet<string>
+): OperationOption | null {
+  let nullable = false;
+  let inner = node;
+  if (node.anyOf) {
+    const live = node.anyOf.filter((branch) => branch.type !== "null");
+    nullable = live.length !== node.anyOf.length;
+    if (live.length !== 1) return null;
+    inner = live[0] as JsonSchemaNode;
+  }
+  const kind = inner.enum
+    ? "enum"
+    : inner.type === "boolean"
+      ? "boolean"
+      : inner.type === "integer"
+        ? "integer"
+        : inner.type === "number"
+          ? "number"
+          : inner.type === "string"
+            ? "string"
+            : null;
+  if (kind === null) return null;
+  return {
+    param,
+    flag: operationOptionFlag(param),
+    kind,
+    required: requiredNames.has(param),
+    nullable,
+    ...(inner.enum ? { choices: inner.enum } : {}),
+    ...(inner.minimum !== undefined ? { min: inner.minimum } : {}),
+    ...(inner.maximum !== undefined ? { max: inner.maximum } : {}),
+  };
+}
+
+function parameterNodes(op: OperationDef): {
+  entries: [string, JsonSchemaNode][];
+  required: Set<string>;
+} {
   const schema = z.toJSONSchema(op.params, { io: "input" }) as JsonSchemaNode;
-  const required = new Set(schema.required ?? []);
-  return Object.entries(schema.properties ?? {}).map(([param, node]) => {
-    let nullable = false;
-    let inner = node;
-    if (node.anyOf) {
-      const live = node.anyOf.filter((branch) => branch.type !== "null");
-      nullable = live.length !== node.anyOf.length;
-      if (live.length !== 1)
-        throw new Error(
-          `operation ${op.id}: parameter ${param} has no flat CLI mapping; use --json`
-        );
-      inner = live[0] as JsonSchemaNode;
-    }
-    const kind = inner.enum
-      ? "enum"
-      : inner.type === "boolean"
-        ? "boolean"
-        : inner.type === "integer"
-          ? "integer"
-          : inner.type === "number"
-            ? "number"
-            : inner.type === "string"
-              ? "string"
-              : null;
-    if (kind === null)
-      throw new Error(`operation ${op.id}: parameter ${param} has no flat CLI mapping; use --json`);
-    return {
-      param,
-      flag: operationOptionFlag(param),
-      kind,
-      required: required.has(param),
-      nullable,
-      ...(inner.enum ? { choices: inner.enum } : {}),
-      ...(inner.minimum !== undefined ? { min: inner.minimum } : {}),
-      ...(inner.maximum !== undefined ? { max: inner.maximum } : {}),
-    };
+  return {
+    entries: Object.entries(schema.properties ?? {}),
+    required: new Set(schema.required ?? []),
+  };
+}
+
+/**
+ * The options of an operation, in the order its parameters are declared. Only flat parameters are mapped; an array or
+ * object parameter (the argument operations' `argument`, `patch`, `graph`, `ids`) has no option and is given with
+ * `--json` ({@link operationJsonOnlyParams}).
+ */
+export function operationOptions(op: OperationDef): OperationOption[] {
+  const { entries, required } = parameterNodes(op);
+  return entries.flatMap(([param, node]) => {
+    const option = flatOption(param, node, required);
+    return option ? [option] : [];
   });
+}
+
+/** The parameters with no flat CLI option: only `--json` can carry them. */
+export function operationJsonOnlyParams(op: OperationDef): string[] {
+  const { entries, required } = parameterNodes(op);
+  return entries
+    .filter(([param, node]) => flatOption(param, node, required) === null)
+    .map(([param]) => param);
 }

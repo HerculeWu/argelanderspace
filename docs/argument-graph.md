@@ -75,6 +75,8 @@ schema 内（`checkArgumentGraphStructure`，zod `superRefine`）：论证 id �
 
 **并发**：工作台可能在运行。`rev` 检查挡住基于旧读取的写入，server 的 watcher 发现文件变化后通知页面刷新。读 rev 与写入之间没有跨进程锁：两个进程在同一瞬间写同一张图不支持，也不加文件锁（contracts I013）。CLI 写图与 server 端的 Work 合并（`followWorkFolds` 在库锁内移动图）之间同样没有跨进程互斥，这个竞态属于 I013 的边界：合并期间不要同时用 CLI 写入该 Work 的图。
 
+**操作目录命令（票 08）**：`argument` 组里除冻结的 `get` / `put` 外还有 `read`、`create`、`update`、`delete`、`undo-delete`、`add-edge`、`remove-edge`、`replace`、`clear`，由操作目录派生、与 Copilot 工具同一套编辑与写入，见 [operation-catalog](operation-catalog.md)「论证图领域」；它们不改变下面的冻结面。
+
 **冻结**：命令的 stdout / stderr / exit code、JSON 字段与键序有 golden 测试（`packages/cli/tests/argument.test.ts`），完整清单见 [contracts](contracts.md)「CLI 论证图命令冻结契约」，该节自 2026-10-13 生效。既有命令（`search` / `read` / `show` / `ref` / `note` / `label` / `list` / `annot`）输出不变。
 
 ## WebSocket
