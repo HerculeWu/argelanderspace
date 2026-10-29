@@ -647,7 +647,8 @@ test("a PDF image larger than the room left in the window is refused whole with 
   // - 3 for the ticket 03 closing touch-up (footprint -6 B)
   // + 44 for the ticket 04 repair round (`batch` also for an identifier: footprint +77 B)
   // + 120 for the ticket 04 repair round 2 (bib refusal reasons in the import_works description: footprint +210 B)
-  model.contextWindow = 45_697;
+  // + 512 for search_ads (release-0.2 ticket 09: footprint +896 B)
+  model.contextWindow = 46_209;
   model.maxTokens = 1024;
   try {
     script = [

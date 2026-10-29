@@ -62,6 +62,7 @@ import { ingestFailureLog, sweepIngestPartials } from "./compile-failure-log.js"
 import { CopilotHost } from "./copilot.js";
 import {
   realAdsLibraries,
+  realAdsSearch,
   realDiscoverySource,
   realPipelines,
   realSources,
@@ -125,7 +126,12 @@ export interface ServerOptions {
   deps?: Partial<
     Pick<
       AppDeps,
-      "makeSources" | "makeDiscoverySource" | "makeAdsLibraries" | "fetchArxivPdf" | "pipelines"
+      | "makeSources"
+      | "makeDiscoverySource"
+      | "makeAdsLibraries"
+      | "makeAdsSearch"
+      | "fetchArxivPdf"
+      | "pipelines"
     >
   >;
   /**
@@ -303,6 +309,7 @@ export function createServer(opts: ServerOptions): RunningServer {
     makeDiscoverySource:
       opts.deps?.makeDiscoverySource ?? (() => realDiscoverySource(paths, wiring)),
     makeAdsLibraries: opts.deps?.makeAdsLibraries ?? (() => realAdsLibraries(wiring)),
+    makeAdsSearch: opts.deps?.makeAdsSearch ?? (() => realAdsSearch(wiring)),
     pipelines: opts.deps?.pipelines ?? realPipelines(paths, wiring),
     // The real pipelines keep a failed compile's complete latexmk log beside the job's record.
     ...(opts.deps?.pipelines === undefined

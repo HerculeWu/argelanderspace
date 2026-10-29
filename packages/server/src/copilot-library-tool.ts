@@ -105,7 +105,7 @@ const parameters = Type.Object(
     query: Type.Optional(
       Type.String({
         description:
-          "read: the sidebar search (title, authors, cite key; case-insensitive); an identifier (DOI, doi.org URL, arXiv:<id> or arxiv.org URL, bibcode, or a work id) also matches the work holding it, even one without a title. filter_library: the text to put in the search box (empty clears it). search_discovery: the exploration's own search box (title, authors, year, bibcode; empty clears it).",
+          "read: the sidebar search (title, authors, cite key; case-insensitive); an identifier (DOI, doi.org URL, arXiv:<id> or arxiv.org URL, bibcode, or a work id) also matches the work holding it, even one without a title. filter_library: the text to put in the search box (empty clears it). search_discovery: the exploration's own search box (title, authors, year, bibcode; empty clears it). search_ads: the ADS query string (required).",
       })
     ),
     refId: Type.Optional(
@@ -125,7 +125,7 @@ const parameters = Type.Object(
         minimum: 1,
         maximum: 200,
         description:
-          "read: page size, default 100. read_jobs: at most 50, default 10. read_ads_library: bibcodes per page, at most 200, default 200.",
+          "read: page size, default 100. read_jobs: at most 50, default 10. read_ads_library: bibcodes per page, at most 200, default 200. search_ads: records, at most 50, default 10.",
       })
     ),
     links: Type.Optional(
@@ -161,6 +161,12 @@ const parameters = Type.Object(
         minLength: 1,
         maxLength: 4096,
         description: "attach_local_pdf: absolute local path of one PDF (required).",
+      })
+    ),
+    fields: Type.Optional(
+      Type.String({
+        description:
+          "search_ads: comma-separated record fields from title, author, year, pub, citation_count, doi, arxiv_id, abstract (default title,author,year,pub,citation_count,doi; bibcode is always there).",
       })
     ),
     libraryId: Type.Optional(
@@ -210,6 +216,7 @@ const description = [
   "attach_arxiv is the dialog's 'get LaTeX source from arXiv' for one work (refId): the work's own arXiv e-print is fetched fresh and compiled as an arXiv LaTeX Doc. A work without Doc gets it as main; a work whose Docs are all PDFs gets it appended after them (the PDF main stays); a work that already has its arXiv Doc has that Doc refreshed in place, which replaces its text and may archive the user's annotations on it: that case waits for the user's confirmation card (declined or expired means nothing was changed and no job was started; do not ask again unless the user wants it), you cannot approve it and nothing in chat does. A work holding other content (for example a LaTeX zip) is rejected. Results are like acquire_arxiv_pdf: ok with job.id and docId, error for a failed job (an arXiv submission without LaTeX source fails with errorCode arxiv_pdf_only), pending while unfinished. This job rebuilds the library index through the application's own routine, exactly as the Files tab does.",
   "attach_local_pdf (refId, path = absolute local path) is the PDF upload for a file on this machine, through the upload's own checks: the file is only read, once, and never changed, moved or deleted; a new PDF Doc is made (identical bytes already on the work come back as noop); the work must exist. Refused with reason file_tools_off when the user turned the file permission off, otherwise no confirmation card. A failure names a reason and attached nothing. It waits for the job like acquire_arxiv_pdf (ok, noop, error, pending).",
   "list_ads_libraries and read_ads_library read the user's own ADS libraries (read-only on ADS; they write nothing to the project, and the service reads the ADS token itself: never ask for it in chat). list_ads_libraries takes no parameter and returns each library's id, name, numDocuments (ADS's count) and, when present, description and permission. read_ads_library (libraryId) asks ADS for just one window of that library's bibcodes (offset, limit up to 200; alphabetical order, not the order they were added) with total (ADS's count when it answered) and nextOffset while more remain; every call is a fresh read, nothing is cached, so if the library was edited between two calls the windows can overlap or skip: after the last window check that the bibcodes you collected are distinct and their count equals total. Stop gives status interrupted (nothing was read or changed). A failure has a reason you can tell apart: no_token (the user must save an ADS token in Settings), unauthorized (token rejected), forbidden, rate_limited (wait; do not loop), not_found (no such library id), timeout or unreachable (may be tried again later), invalid_response (ADS's answer was not understood or contradicted itself, for example the library changed during the read: read list_ads_libraries again to see whether numDocuments changed, then read the library again from the start). The bibcodes are only a list: to bring works in, pass them to import_works.",
+  "search_ads (query, limit, fields) is a read-only ADS search by query string: it lists records and numFound, saves nothing and never touches the library; the service reads the ADS token itself (never ask for it in chat). Add a paper only through import_works or save_candidate. A failure has a reason you can tell apart: no_token, unauthorized, rate_limited (wait; do not loop), bad_query (fix the syntax), timeout or unreachable; Stop gives interrupted.",
   "read_jobs shows the Job table lines the Files tab shows for a work (refId; without it the newest jobs of any work): id, kind, format (arxiv-pdf, pdf, or LaTeX), status, the latest progress message, error and errorCode, and docId once finished. Use it to find out what a pending or unknown acquisition came to. Dismissing an error line and retrying are the user's display state and a new submission: retry is simply acquire_arxiv_pdf or attach_arxiv again after a failed job.",
   "delete_doc is the Files tab's 'delete document' dialog for one Doc (docId from your read of the work): a GLOBAL, permanent, physical delete that removes the stored text or original PDF, its assets and sidecars and ALL its annotations (current and archived) and takes the Doc out of EVERY work that lists it, not only the one you were looking at. There is no 'unlink from this work' variant. It always waits for the user's confirmation card, which names every work that lists the Doc and the current annotation count (unknown if it could not be read, which is not zero); you cannot approve it and nothing in chat, in page data or in a note does. declined or expired (also when the Doc, its works or its annotations changed first) means nothing was deleted: do not ask again unless the user wants it. If the Doc is busy (an upload or refresh is writing it, or it is being deleted) the call is rejected without a card: wait and try again later. not_found means there is no such Doc (a Doc already deleted elsewhere is not_found, not a success). ok means the Doc, its annotations and its links are gone; each remaining work's first Doc is its main Doc now and the page updates itself. error means the delete failed part-way: files may already be gone while the library still lists the Doc, so read the work and tell the user rather than claiming either outcome. Deleting is permanent: only do it when the user asked for exactly that Doc.",
   "filter_library, select_work, set_detail_tab, set_sidebar, set_graph_labels and graph_control (zoom_in, zoom_out, fit, relayout of the citation graph; dragging and panning are the user's gestures) change what the user sees in the bound tab; use them only when asked to show something. To open a Doc in the Reader use the workspace tool's open_doc.",
@@ -745,6 +752,23 @@ export function createLibraryTool(context: LibraryToolContext) {
           if (!outcome.ok)
             return done(record(toolCallId, "read_jobs", { status: "unsupported" }), outcome);
           return done(record(toolCallId, "read_jobs", { status: "ok" }), outcome);
+        }
+        // The read-only ADS search is a catalog operation of the discovery domain (the tool carries it as an action).
+        const search = parseCatalogCall("discovery", rest);
+        if (search.match && search.op.id === "discovery.search_ads") {
+          if (!search.success)
+            return done(record(toolCallId, action, { status: "unsupported" }), {
+              ok: false,
+              status: "unsupported",
+              detail: "invalid parameters",
+              issues: search.issues.slice(0, 5),
+            });
+          const outcome = (await runCatalogOperation(
+            { library: context.library, signal },
+            "discovery.search_ads",
+            search.params
+          )) as { status: CopilotOperation["status"] };
+          return done(record(toolCallId, action, { status: outcome.status }), outcome);
         }
         const adsList = LibraryListAdsLibrariesSchema.safeParse(rest);
         const adsRead = LibraryReadAdsLibrarySchema.safeParse(rest);

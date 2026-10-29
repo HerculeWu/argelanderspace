@@ -98,6 +98,7 @@ import {
 import {
   AdsDiscoveryError,
   type AdsLibrariesSource,
+  type AdsSearchSource,
   type CredentialStore,
   configFilePath,
   createAdsCredentialStore,
@@ -141,6 +142,7 @@ import type {
 } from "./copilot-reader-tool.js";
 import { mountCopilotRoutes } from "./copilot-routes.js";
 import { mountDiagnosticsRoutes } from "./diagnostics.js";
+import { badDiscoveryBibcode } from "./discovery-actions.js";
 import { createDocDeletion } from "./doc-delete.js";
 import { badDocId, badFileName } from "./doc-id.js";
 import { DocMutationRegistry } from "./doc-mutations.js";
@@ -227,6 +229,12 @@ export interface AppDeps {
    * so the token is read from the credential store then. Absent: the two actions answer `unsupported`.
    */
   makeAdsLibraries?: () => AdsLibrariesSource | Promise<AdsLibrariesSource>;
+  /**
+   * The read-only ADS search of the operation catalog (`discovery.search_ads`, release-0.2 ticket 09), for the Copilot
+   * `library` tool and the workbench's operation route. Asked at each use so the token is read then. Absent: the
+   * operation answers `unsupported`.
+   */
+  makeAdsSearch?: () => AdsSearchSource | Promise<AdsSearchSource>;
   /** The ingest pipelines (the upload endpoint consumes `ingestLatexZip`). */
   pipelines: IngestPipelines;
   /** The rate window of the page-error reports (page-errors.ts); a test shortens it. Default a minute. */
@@ -337,23 +345,6 @@ export interface AppDeps {
 // --------------------------------------------------------------------------- //
 // Small parity helpers
 // --------------------------------------------------------------------------- //
-
-/**
- * Stage 14 discovery seed validation: bibcodes are identifiers, not ADS
- * query strings — capped length, no whitespace/quotes/control characters
- * (never present in real bibcodes; the infra layer additionally quotes and
- * escapes before embedding anything in a Solr query).
- */
-function badDiscoveryBibcode(v: string): boolean {
-  return (
-    v.length === 0 ||
-    v.length > 64 ||
-    ![...v].every((ch) => {
-      const code = ch.charCodeAt(0);
-      return code > 0x20 && code !== 0x7f && ch !== '"' && ch !== "\\";
-    })
-  );
-}
 
 /** ADS discovery failure → HTTP status (stage plan §8.1). */
 function discoveryErrorStatus(kind: AdsDiscoveryError["kind"]): 429 | 502 | 503 {
@@ -860,6 +851,8 @@ export function createApp(deps: AppDeps): Hono {
     acquisition,
     deletion: docDeletion,
     ...(deps.makeAdsLibraries ? { adsLibraries: deps.makeAdsLibraries } : {}),
+    ...(deps.makeAdsSearch ? { adsSearch: deps.makeAdsSearch } : {}),
+    ...(deps.makeDiscoverySource ? { discoverySource: deps.makeDiscoverySource } : {}),
   };
   // Confirmation cards raised through the CLI (release-0.2 ticket 04): one queue, outside any Copilot conversation.
   const externalRequests = new ExternalRequestQueue({

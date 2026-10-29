@@ -11,10 +11,18 @@ import {
   libraryPayload,
   loadCurrentGraph,
 } from "@argelanderspace/core";
+import { type AdapterWiring, realAdsSearch, realDiscoverySource } from "./deps.js";
 import { AsyncLock } from "./lock.js";
 import type { OperationRuntime } from "./operation-catalog.js";
 
-export function createLocalOperationRuntime(paths: LibraryPaths): OperationRuntime {
+/**
+ * `wiring` is the composition seam of the network clients (tests inject `fetchImpl` and `adsToken`); the CLI passes none,
+ * so the ADS token is read from the credential store at each use and requests go out through the global `fetch`.
+ */
+export function createLocalOperationRuntime(
+  paths: LibraryPaths,
+  wiring: AdapterWiring = {}
+): OperationRuntime {
   return {
     library: {
       paths,
@@ -25,6 +33,8 @@ export function createLocalOperationRuntime(paths: LibraryPaths): OperationRunti
           paths,
           loadCurrentGraph(paths) ?? buildGraph(LibraryStore.load(paths), paths.outputDir)
         ),
+      adsSearch: () => realAdsSearch(wiring),
+      discoverySource: () => realDiscoverySource(paths, wiring),
     },
   };
 }

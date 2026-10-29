@@ -11,6 +11,7 @@ import {
   type OperationDef,
   type OperationId,
 } from "@argelanderspace/contracts";
+import { exploreSeed, searchAds } from "./discovery-actions.js";
 import { runDeleteDocOperation } from "./doc-delete-operation.js";
 import type { ExternalAsk, ExternalCardFields } from "./external-requests.js";
 import { applyLibraryOperation, type LibraryOpDeps, readLibrary } from "./library-actions.js";
@@ -38,6 +39,8 @@ export interface OperationRuntime {
   confirm?: OperationConfirmPort;
   /** Present in the running workbench only: opens somewhere in its most recently active window (ticket 05). */
   navigate?: NavigationPort;
+  /** Cancels a read that is waiting on ADS (the Copilot's Stop); a CLI request's abort comes as `OperationCall.signal`. */
+  signal?: AbortSignal | undefined;
 }
 
 /** Who asked and whether they are still there; given by the operation route, absent for a Copilot tool call. */
@@ -68,6 +71,10 @@ export const OPERATION_HANDLERS: OperationHandlers = {
     runNavigationOperation(runtime, { op: "library.open_work", params }, call),
   "argument.open": (runtime, params, call) =>
     runNavigationOperation(runtime, { op: "argument.open", params }, call),
+  "discovery.search_ads": (runtime, params, call) =>
+    searchAds(runtime.library, params, call?.signal ?? runtime.signal),
+  "discovery.explore": (runtime, params, call) =>
+    exploreSeed(runtime.library, params, call?.signal ?? runtime.signal),
 };
 
 /** Run a cataloged operation with params already parsed by its catalog entry. */

@@ -5,6 +5,10 @@
  * `set_main_doc`; later tickets add domains here by listing their entries.
  */
 import {
+  DISCOVERY_EXPLORE_OPERATION,
+  DISCOVERY_SEARCH_ADS_OPERATION,
+} from "./discovery-catalog.js";
+import {
   LIBRARY_DELETE_DOC_OPERATION,
   LIBRARY_READ_OPERATION,
   LIBRARY_SET_MAIN_DOC_OPERATION,
@@ -23,6 +27,8 @@ export const OPERATION_CATALOG = [
   WORKSPACE_OPEN_DOC_OPERATION,
   LIBRARY_OPEN_WORK_OPERATION,
   ARGUMENT_OPEN_OPERATION,
+  DISCOVERY_SEARCH_ADS_OPERATION,
+  DISCOVERY_EXPLORE_OPERATION,
 ] as const;
 export type CatalogOperation = (typeof OPERATION_CATALOG)[number];
 export type OperationId = CatalogOperation["id"];

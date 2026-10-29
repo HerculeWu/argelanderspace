@@ -402,7 +402,8 @@ async function send(id: string, context: PageContext, text: string) {
 // Closing touch-up of ticket 03 (updated parenthetical reworded): footprint 80715 -> 80709 bytes (-6 B): -6 * 4/7 = -3 tokens, 67336 -> 67333.
 // Ticket 04 repair round (`batch` also for an identifier: the parameter and the import_works description reworded): footprint 80709 -> 80786 bytes (+77 B): +77 * 4/7 = +44 tokens, 67333 -> 67377.
 // Ticket 04 repair round 2 (bib refusals say merge_refused / batch_refused: import_works description): footprint 80786 -> 80996 bytes (+210 B): +210 * 4/7 = +120 tokens, 67377 -> 67497.
-const WINDOW_BIG_DOC = 67_497;
+// release-0.2 ticket 09 (search_ads: the action, the `fields` parameter, the description paragraph and one prompt sentence): footprint 81053 -> 81949 bytes (+896 B; measured at HEAD, the chain above has drifted 57 B from it): +896 * 4/7 = +512 tokens, 67497 -> 68009.
+const WINDOW_BIG_DOC = 68_009;
 
 // ---- Reader: a document many windows long -------------------------------------------------------------- //
 test("a Reader document several windows long is delivered in parts with its range; reading on reaches the last unique marker, earlier parts leave the conversation and the record stays", async () => {
@@ -726,8 +727,8 @@ test("a PDF several windows long is delivered in page parts, reading on reaches 
   };
   // ticket 33: lane 1 removed attachment tool text, lane 3 added download_original, lane 4 undo_delete_task; merged: 49700 -> 50_300.
   // Review rounds A and B: bound to the fixed footprint like the others, +1440 tokens (see WINDOW_BIG_DOC for the derivation).
-  await withWindow(56_797, async () => {
-    // 51_740 + 800 (copilot ticket 58, see WINDOW_BIG_DOC) + 1_710 (shelf ticket 07, see WINDOW_BIG_DOC) + 556 (project intake ticket 01) + 839 (project intake ticket 02) + 236 (ticket 02 repair round) + 63 (ticket 02 second repair round) + 375 (project intake ticket 03) + 317 (ticket 03 fix round); - 3 (ticket 03 closing touch-up); + 44 (ticket 04 repair round); + 120 (ticket 04 repair round 2)
+  await withWindow(57_309, async () => {
+    // 51_740 + 800 (copilot ticket 58, see WINDOW_BIG_DOC) + 1_710 (shelf ticket 07, see WINDOW_BIG_DOC) + 556 (project intake ticket 01) + 839 (project intake ticket 02) + 236 (ticket 02 repair round) + 63 (ticket 02 second repair round) + 375 (project intake ticket 03) + 317 (ticket 03 fix round); - 3 (ticket 03 closing touch-up); + 44 (ticket 04 repair round); + 120 (ticket 04 repair round 2); + 512 (release-0.2 ticket 09)
     const reader: Step = (c) => {
       const state = progress(c);
       const batch = state.batch;

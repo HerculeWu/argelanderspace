@@ -64,6 +64,7 @@ export * from "./shelf/store.js";
 export * from "./sources/ads.js";
 export * from "./sources/ads-discovery.js";
 export * from "./sources/ads-libraries.js";
+export * from "./sources/ads-search.js";
 export * from "./sources/ads-token-test.js";
 export * from "./sources/cache.js";
 export * from "./sources/crossref.js";

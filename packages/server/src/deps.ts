@@ -23,6 +23,8 @@ import {
   AdsDiscoveryClient,
   AdsLibrariesClient,
   type AdsLibrariesSource,
+  AdsSearchClient,
+  type AdsSearchSource,
   type AppConfig,
   CrossrefClient,
   type ExternalObserver,
@@ -175,6 +177,14 @@ export async function realDiscoverySource(
  */
 export async function realAdsLibraries(wiring: AdapterWiring = {}): Promise<AdsLibrariesSource> {
   return new AdsLibrariesClient({ ...(await adsTokenOf(wiring)), ...fetchOf(wiring, "ads") });
+}
+
+/**
+ * The read-only ADS search source (release-0.2 ticket 09): a GET-only client with the token read from the credential
+ * store at each use. No cache, nothing written.
+ */
+export async function realAdsSearch(wiring: AdapterWiring = {}): Promise<AdsSearchSource> {
+  return new AdsSearchClient({ ...(await adsTokenOf(wiring)), ...fetchOf(wiring, "ads") });
 }
 
 /** The ingest pipeline writing under `<dataDir>/output` (Stage 5 tex pipeline). */
