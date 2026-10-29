@@ -93,66 +93,71 @@ export const PDF_ANNOTATION_KINDS = [
 
 const WriteEpoch = { docId: Id, sha256: Sha256, rev: Count };
 
-export const PdfCreateAnnotationOperationSchema = z
-  .object({
-    action: z.literal("create_pdf_annotation"),
-    ...WriteEpoch,
-    kind: z.enum(PDF_ANNOTATION_KINDS),
-    body: Body,
-    pageIndex: Count.optional(),
-    rectangle: PdfRectangleInputSchema.optional(),
-    style: PdfRectangleStyleInputSchema.optional(),
-    parts: z.array(PdfTextPartInputSchema).min(1).max(PDF_TEXT_PARTS_MAX).optional(),
-    color: PdfHighlightColorSchema.optional(),
-  })
+const pdfCreateShape = {
+  ...WriteEpoch,
+  kind: z.enum(PDF_ANNOTATION_KINDS),
+  body: Body,
+  pageIndex: Count.optional(),
+  rectangle: PdfRectangleInputSchema.optional(),
+  style: PdfRectangleStyleInputSchema.optional(),
+  parts: z.array(PdfTextPartInputSchema).min(1).max(PDF_TEXT_PARTS_MAX).optional(),
+  color: PdfHighlightColorSchema.optional(),
+};
+/** The rules of a create request, written once for the tool action and the catalog parameters. */
+function refinePdfCreate(op: z.infer<z.ZodObject<typeof pdfCreateShape>>, ctx: z.RefinementCtx) {
+  const forbid = (field: keyof typeof op, why: string) => {
+    if (op[field] !== undefined) ctx.addIssue({ code: "custom", path: [field], message: `${why}` });
+  };
+  const need = (field: keyof typeof op, why: string) => {
+    if (op[field] === undefined) ctx.addIssue({ code: "custom", path: [field], message: `${why}` });
+  };
+  switch (op.kind) {
+    case "rectangle":
+      need("pageIndex", "a rectangle needs the zero-based pageIndex");
+      need("rectangle", "a rectangle needs its rectangle");
+      forbid("parts", "only a text annotation has parts");
+      forbid("color", "colour applies to highlights only");
+      break;
+    case "page_comment":
+      need("pageIndex", "a page comment needs the zero-based pageIndex");
+      forbid("rectangle", "only a rectangle has geometry");
+      forbid("style", "style applies to rectangles only");
+      forbid("parts", "only a text annotation has parts");
+      forbid("color", "colour applies to highlights only");
+      break;
+    case "document_comment":
+      forbid("pageIndex", "a document comment has no page");
+      forbid("rectangle", "only a rectangle has geometry");
+      forbid("style", "style applies to rectangles only");
+      forbid("parts", "only a text annotation has parts");
+      forbid("color", "colour applies to highlights only");
+      break;
+    default:
+      need("parts", "a text annotation needs parts (the real text and its page)");
+      forbid("pageIndex", "a text annotation takes its pages from parts");
+      forbid("rectangle", "the rectangles of text come from the page's text layer, not from you");
+      forbid("style", "style applies to rectangles only");
+      if (op.kind !== "highlight") forbid("color", "colour applies to highlights only");
+      if (op.parts) {
+        for (let i = 1; i < op.parts.length; i++)
+          if ((op.parts[i]?.pageIndex ?? 0) <= (op.parts[i - 1]?.pageIndex ?? 0))
+            ctx.addIssue({
+              code: "custom",
+              path: ["parts", i, "pageIndex"],
+              message: "parts must be in ascending page order, one per page",
+            });
+      }
+  }
+}
+/** The create parameters without `action` (the catalog entry's; a refined schema cannot be `.omit`ted). */
+export const PdfCreateAnnotationParamsSchema = z
+  .object(pdfCreateShape)
   .strict()
-  .superRefine((op, ctx) => {
-    const forbid = (field: keyof typeof op, why: string) => {
-      if (op[field] !== undefined)
-        ctx.addIssue({ code: "custom", path: [field], message: `${why}` });
-    };
-    const need = (field: keyof typeof op, why: string) => {
-      if (op[field] === undefined)
-        ctx.addIssue({ code: "custom", path: [field], message: `${why}` });
-    };
-    switch (op.kind) {
-      case "rectangle":
-        need("pageIndex", "a rectangle needs the zero-based pageIndex");
-        need("rectangle", "a rectangle needs its rectangle");
-        forbid("parts", "only a text annotation has parts");
-        forbid("color", "colour applies to highlights only");
-        break;
-      case "page_comment":
-        need("pageIndex", "a page comment needs the zero-based pageIndex");
-        forbid("rectangle", "only a rectangle has geometry");
-        forbid("style", "style applies to rectangles only");
-        forbid("parts", "only a text annotation has parts");
-        forbid("color", "colour applies to highlights only");
-        break;
-      case "document_comment":
-        forbid("pageIndex", "a document comment has no page");
-        forbid("rectangle", "only a rectangle has geometry");
-        forbid("style", "style applies to rectangles only");
-        forbid("parts", "only a text annotation has parts");
-        forbid("color", "colour applies to highlights only");
-        break;
-      default:
-        need("parts", "a text annotation needs parts (the real text and its page)");
-        forbid("pageIndex", "a text annotation takes its pages from parts");
-        forbid("rectangle", "the rectangles of text come from the page's text layer, not from you");
-        forbid("style", "style applies to rectangles only");
-        if (op.kind !== "highlight") forbid("color", "colour applies to highlights only");
-        if (op.parts) {
-          for (let i = 1; i < op.parts.length; i++)
-            if ((op.parts[i]?.pageIndex ?? 0) <= (op.parts[i - 1]?.pageIndex ?? 0))
-              ctx.addIssue({
-                code: "custom",
-                path: ["parts", i, "pageIndex"],
-                message: "parts must be in ascending page order, one per page",
-              });
-        }
-    }
-  });
+  .superRefine(refinePdfCreate);
+export const PdfCreateAnnotationOperationSchema = z
+  .object({ action: z.literal("create_pdf_annotation"), ...pdfCreateShape })
+  .strict()
+  .superRefine(refinePdfCreate);
 export type PdfCreateAnnotationOperation = z.infer<typeof PdfCreateAnnotationOperationSchema>;
 
 /**
@@ -160,26 +165,30 @@ export type PdfCreateAnnotationOperation = z.infer<typeof PdfCreateAnnotationOpe
  * annotation is anchored to (kind, page, text, created time) never changes: moving it means deleting and creating.
  * `expectedUpdatedAt` is that annotation's `updated_at` as your latest reading or write result showed it.
  */
-export const PdfUpdateAnnotationOperationSchema = z
-  .object({
-    action: z.literal("update_pdf_annotation"),
-    ...WriteEpoch,
-    annotationId: AnnotationId,
-    expectedUpdatedAt: z.iso.datetime({ offset: true }),
-    body: Body.optional(),
-    rectangle: PdfRectangleInputSchema.optional(),
-    style: PdfRectangleStyleInputSchema.optional(),
-    color: PdfHighlightColorSchema.optional(),
-  })
+const pdfUpdateShape = {
+  ...WriteEpoch,
+  annotationId: AnnotationId,
+  expectedUpdatedAt: z.iso.datetime({ offset: true }),
+  body: Body.optional(),
+  rectangle: PdfRectangleInputSchema.optional(),
+  style: PdfRectangleStyleInputSchema.optional(),
+  color: PdfHighlightColorSchema.optional(),
+};
+const hasPdfUpdateField = (op: z.infer<z.ZodObject<typeof pdfUpdateShape>>) =>
+  op.body !== undefined ||
+  op.rectangle !== undefined ||
+  op.style !== undefined ||
+  op.color !== undefined;
+const PDF_UPDATE_NEEDS_FIELD = { message: "give at least one of body, rectangle, style or color" };
+/** The update parameters without `action` (the catalog entry's). */
+export const PdfUpdateAnnotationParamsSchema = z
+  .object(pdfUpdateShape)
   .strict()
-  .refine(
-    (op) =>
-      op.body !== undefined ||
-      op.rectangle !== undefined ||
-      op.style !== undefined ||
-      op.color !== undefined,
-    { message: "give at least one of body, rectangle, style or color" }
-  );
+  .refine(hasPdfUpdateField, PDF_UPDATE_NEEDS_FIELD);
+export const PdfUpdateAnnotationOperationSchema = z
+  .object({ action: z.literal("update_pdf_annotation"), ...pdfUpdateShape })
+  .strict()
+  .refine(hasPdfUpdateField, PDF_UPDATE_NEEDS_FIELD);
 export type PdfUpdateAnnotationOperation = z.infer<typeof PdfUpdateAnnotationOperationSchema>;
 
 /** The trash button: one annotation at once (the UI asks no confirmation), undoable with undo_pdf_annotation. */

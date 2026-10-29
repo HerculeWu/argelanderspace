@@ -14,6 +14,7 @@ import {
 import { acquireContext, runAttachArxivOperation } from "./acquisition-operations.js";
 import { runArgumentEdit, runArgumentRead, runArgumentReplace } from "./argument-operations.js";
 import type { ArgumentOpDeps } from "./copilot-argument-tool.js";
+import type { ReaderOpDeps } from "./copilot-reader-tool.js";
 import { exploreSeed, searchAds } from "./discovery-actions.js";
 import { runDeleteDocOperation } from "./doc-delete-operation.js";
 import type { ExternalAsk, ExternalCardFields } from "./external-requests.js";
@@ -29,6 +30,17 @@ import {
   readLibrary,
 } from "./library-actions.js";
 import { runNavigationOperation } from "./navigation-operation.js";
+import {
+  CATALOG_PDF_SCOPE,
+  runPdfWrite,
+  runReaderRead,
+  runReaderWrite,
+  runReadImage,
+  runReadPageImage,
+  runReadSvgImage,
+  runTextReadSource,
+  type TextSourceReader,
+} from "./reader-operations.js";
 import type { NavigationPort } from "./workbench-windows.js";
 
 /**
@@ -54,6 +66,14 @@ export interface OperationRuntime {
   confirm?: OperationConfirmPort;
   /** Present in the running workbench only: opens somewhere in its most recently active window (ticket 05). */
   navigate?: NavigationPort;
+  /**
+   * The Reader's data seam (release-0.2 ticket 07): the annotations access path, the PDF access path and the reads of
+   * a Doc. The workbench passes the one its Copilot `reader` tool uses; a CLI command in its own process builds the
+   * same seam over its own locks (`createReaderOps`).
+   */
+  reader?: ReaderOpDeps;
+  /** The text Doc service's source read (release-0.2 ticket 07). */
+  text?: TextSourceReader;
   /** Cancels a read that is waiting on ADS (the Copilot's Stop); a CLI request's abort comes as `OperationCall.signal`. */
   signal?: AbortSignal | undefined;
   /**
@@ -132,7 +152,51 @@ export const OPERATION_HANDLERS: OperationHandlers = {
     runArgumentReplace(runtime, { action: "replace", ...params }, call),
   "argument.clear": (runtime, params, call) =>
     runArgumentReplace(runtime, { action: "clear", ...params }, call),
+  "reader.read": (runtime, params) => runReaderRead(readerOf(runtime), params),
+  "reader.read_image": (runtime, params) => runReadImage(readerOf(runtime), params),
+  "reader.read_svg_image": (runtime, params) => runReadSvgImage(readerOf(runtime), params),
+  "reader.read_page_image": (runtime, params) => runReadPageImage(readerOf(runtime), params),
+  "text.read_source": async (runtime, params) => {
+    if (!runtime.text) throw new Error("this runtime has no text Doc service");
+    return runTextReadSource(runtime.text, params);
+  },
+  "reader.create_annotation": async (runtime, params) =>
+    (await runReaderWrite(readerOf(runtime), { action: "create_annotation", ...params })).payload,
+  "reader.update_annotation": async (runtime, params) =>
+    (await runReaderWrite(readerOf(runtime), { action: "update_annotation", ...params })).payload,
+  "reader.delete_annotation": async (runtime, params) =>
+    (await runReaderWrite(readerOf(runtime), { action: "delete_annotation", ...params })).payload,
+  "reader.create_pdf_annotation": async (runtime, params) =>
+    (
+      await runPdfWrite(
+        readerOf(runtime),
+        { action: "create_pdf_annotation", ...params },
+        CATALOG_PDF_SCOPE
+      )
+    ).payload,
+  "reader.update_pdf_annotation": async (runtime, params) =>
+    (
+      await runPdfWrite(
+        readerOf(runtime),
+        { action: "update_pdf_annotation", ...params },
+        CATALOG_PDF_SCOPE
+      )
+    ).payload,
+  "reader.delete_pdf_annotation": async (runtime, params) =>
+    (
+      await runPdfWrite(
+        readerOf(runtime),
+        { action: "delete_pdf_annotation", ...params },
+        CATALOG_PDF_SCOPE
+      )
+    ).payload,
 };
+
+/** The Reader seam of a runtime; a runtime made without one cannot run the reading and annotation operations. */
+function readerOf(runtime: OperationRuntime): ReaderOpDeps {
+  if (!runtime.reader) throw new Error("this runtime has no Reader data");
+  return runtime.reader;
+}
 
 /** Run a cataloged operation with params already parsed by its catalog entry. */
 export function runCatalogOperation(

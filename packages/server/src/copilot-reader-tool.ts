@@ -18,6 +18,7 @@ import {
   PdfHighlightColorSchema,
   type PdfSearchState,
   type PdfSourceMaterial,
+  parseCatalogCall,
   READER_OPERATION_ACTIONS,
   READER_PANELS,
   READER_RIGHT_TABS,
@@ -30,7 +31,6 @@ import {
   type ReaderViewAction,
   ReaderViewActionSchema,
   type ReaderWriteOperation,
-  ReaderWriteOperationSchema,
 } from "@argelanderspace/contracts";
 import { sniffImage, TextAssetError } from "@argelanderspace/core";
 import { Type } from "@earendil-works/pi-ai";
@@ -44,6 +44,7 @@ import {
   type ToolResult,
 } from "./copilot-tool-kit.js";
 import { type ViewActionOutcome, viewOutcomeResult } from "./copilot-workspace-tool.js";
+import { runPdfWrite, runReaderWrite } from "./reader-operations.js";
 import { renderSvgFigure, type SvgEngine } from "./svg-raster.js";
 
 export const READER_TOOL_NAME = "reader";
@@ -462,128 +463,18 @@ const record = (id: string, action: string, partial: Partial<CopilotOperation>) 
   recordFor(READER_TOOL_NAME, id, action, partial);
 
 export function createReaderTool(context: ReaderToolContext) {
+  // The annotation writes are catalog operations (reader.create_annotation ...): the answer, its words and the record
+  // come from the one function the CLI's `annotation` commands also run (reader-operations.ts).
   const write = async (
     id: string,
     op: ReaderWriteOperation,
     done: (operation: CopilotOperation, payload: object) => ToolResult
   ) => {
-    const object = { kind: "doc" as const, id: op.docId };
-    const outcome = await context.reader.write(op);
-    const reread = "read the Doc again (reader read) to see what is stored now";
-    const older = (n: number | undefined) =>
-      n === undefined
-        ? {}
-        : {
-            archivedOlder: n,
-            archivedNote: `this call found the Doc's text replaced and archived ${n} annotation(s) of the older text (they are no longer current and cannot be read or written; tell the user)`,
-          };
-    switch (outcome.kind) {
-      case "saved":
-        return done(
-          record(id, op.action, {
-            status: "ok",
-            object,
-            label: outcome.label,
-            rev: outcome.epoch.annotationsRev,
-          }),
-          {
-            ok: true,
-            status: "ok",
-            ...(outcome.annotation ? { annotation: outcome.annotation } : {}),
-            ...(outcome.deleted ? { deleted: outcome.deleted } : {}),
-            ...(outcome.expanded
-              ? {
-                  widened:
-                    "the range touched the inside of a math, cite or xref mark and was widened to the whole mark, as selecting it in the Reader does; annotation.target holds what was saved",
-                }
-              : {}),
-            epoch: outcome.epoch,
-            observed:
-              "saved through the page's own save; the user's Reader shows it at once. The new epoch.annotationsRev replaces the one you sent; an update or delete of an annotation needs its updated_at from a reading, or from annotation here",
-            ...older(outcome.archived),
-          }
-        );
-      case "unchanged":
-        return done(
-          record(id, op.action, {
-            status: "noop",
-            object,
-            label: outcome.label,
-            rev: outcome.epoch.annotationsRev,
-          }),
-          {
-            ok: true,
-            status: "noop",
-            detail: "the body bytes are exactly what is stored; nothing was written",
-            annotation: outcome.annotation,
-            epoch: outcome.epoch,
-            ...older(outcome.archived),
-          }
-        );
-      case "conflict":
-        return done(
-          record(id, op.action, {
-            status: "conflict",
-            object,
-            rev: outcome.epoch.annotationsRev,
-          }),
-          {
-            ok: false,
-            status: "conflict",
-            reason: outcome.reason,
-            current: outcome.epoch,
-            ...(outcome.annotation ? { annotation: outcome.annotation } : {}),
-            detail:
-              outcome.reason === "document_changed"
-                ? `the Doc's text is not the one your reading was of (it was replaced; annotations of the older text are no longer current). Nothing was written. ${reread}, then form a new request from that`
-                : outcome.reason === "annotation_changed"
-                  ? `this annotation was changed after your reading (its body is not the one you saw; annotation shows it now). Nothing was written. ${reread}, decide again from what the user wrote, then form a new request with the updated_at of that reading; never reuse the old one`
-                  : `the annotations changed since your reading (the user or another call saved first). Nothing was written. ${reread}, then form a new request from that; do not resend with the new revision`,
-            ...older(outcome.archived),
-          }
-        );
-      case "no_annotation":
-        return done(record(id, op.action, { status: "not_found", object }), {
-          ok: false,
-          status: "not_found",
-          detail: `no annotation ${outcome.annotationId} in this epoch (it may have been deleted); nothing was written. ${reread}`,
-          ...older(outcome.archived),
-        });
-      case "invalid":
-        return done(record(id, op.action, { status: "invalid", object }), {
-          ok: false,
-          status: "invalid",
-          detail: `${outcome.detail}; nothing was written`,
-          ...older(outcome.archived),
-        });
-      case "not_found":
-        return done(record(id, op.action, { status: "not_found", object }), {
-          ok: false,
-          status: "not_found",
-          detail: "no such Doc",
-        });
-      case "busy":
-        return done(record(id, op.action, { status: "rejected", object }), {
-          ok: false,
-          status: "rejected",
-          detail:
-            "the Doc is being replaced or deleted right now; nothing was written. Try again when the job has finished",
-        });
-      case "pdf":
-        return done(record(id, op.action, { status: "unsupported", object }), {
-          ok: false,
-          status: "unsupported",
-          detail:
-            "this is a PDF Doc; create_annotation, update_annotation and delete_annotation are for LaTeX and text Docs. A PDF Doc's workbench annotations are written with create_pdf_annotation, update_pdf_annotation, delete_pdf_annotation, undo_pdf_annotation and redo_pdf_annotation (sha256 and rev from the PDF reading); nothing was written",
-        });
-      case "error":
-        return done(record(id, op.action, { status: "error", object }), {
-          ok: false,
-          status: "error",
-          detail: outcome.detail,
-          ...(outcome.archivedOlder ? { archivedOlder: true } : {}),
-        });
-    }
+    const answer = await runReaderWrite(context.reader, op);
+    return done(
+      record(id, op.action, { ...answer.record, object: { kind: "doc" as const, id: op.docId } }),
+      answer.payload
+    );
   };
   /** The PDF annotation writes: the same panel operations as the user's tools, through the page's own commit rules. */
   const writePdf = async (
@@ -591,128 +482,13 @@ export function createReaderTool(context: ReaderToolContext) {
     op: PdfAnnotationOperation,
     done: (operation: CopilotOperation, payload: object) => ToolResult
   ): Promise<ToolResult> => {
-    const object = { kind: "doc" as const, id: op.docId };
-    if (!context.reader.pdf?.write)
-      return done(record(id, op.action, { status: "unsupported", object }), {
-        ok: false,
-        status: "unsupported",
-        detail: "PDF annotation writes are not available in this host; nothing was written",
-      });
-    const outcome = await context.reader.pdf.write(op, { conversationId: context.conversationId });
-    const reread = "read the Doc again (reader read) to see what is stored now";
-    switch (outcome.kind) {
-      case "saved":
-        return done(
-          record(id, op.action, {
-            status: "ok",
-            object,
-            label: outcome.label,
-            rev: outcome.epoch.annotationsRev,
-          }),
-          {
-            ok: true,
-            status: "ok",
-            ...(outcome.annotation ? { annotation: outcome.annotation } : {}),
-            ...(outcome.deleted ? { deleted: outcome.deleted } : {}),
-            ...(outcome.moved ? { [outcome.moved === "undo" ? "undone" : "redone"]: true } : {}),
-            epoch: outcome.epoch,
-            history: outcome.history,
-            observed:
-              "saved through the page's own save rules (the original's SHA-256 and the revision were checked in the same critical section); the open PDF Reader shows it at once. epoch.annotationsRev replaces the revision you sent. An update or delete of an annotation needs its updated_at from a reading, or from annotation here",
-          }
-        );
-      case "unchanged":
-        return done(
-          record(id, op.action, {
-            status: "noop",
-            object,
-            label: outcome.label,
-            rev: outcome.epoch.annotationsRev,
-          }),
-          {
-            ok: true,
-            status: "noop",
-            detail: "the annotation already has exactly this content; nothing was written",
-            annotation: outcome.annotation,
-            epoch: outcome.epoch,
-          }
-        );
-      case "nothing":
-        return done(
-          record(id, op.action, { status: "noop", object, rev: outcome.epoch.annotationsRev }),
-          {
-            ok: true,
-            status: "noop",
-            reason: outcome.reason,
-            detail:
-              outcome.reason === "history_ended"
-                ? "the annotations were changed by someone else (the user or another call) after your last change, which ends the history, as it ends the panel's undo history; nothing was changed"
-                : outcome.reason === "changed"
-                  ? "the stored annotations are not what your last change left, so they were not overwritten and the history ended; nothing was changed"
-                  : "there is nothing to undo or redo: only changes you made to this Doc through this tool can be undone, and the service keeps them only until it restarts; nothing was changed",
-            epoch: outcome.epoch,
-          }
-        );
-      case "conflict":
-        return done(
-          record(id, op.action, {
-            status: "conflict",
-            object,
-            ...(outcome.epoch.annotationsRev !== null ? { rev: outcome.epoch.annotationsRev } : {}),
-          }),
-          {
-            ok: false,
-            status: "conflict",
-            reason: outcome.reason,
-            current: outcome.epoch,
-            ...(outcome.annotation ? { annotation: outcome.annotation } : {}),
-            detail:
-              outcome.reason === "document_changed"
-                ? `the PDF is not the original your reading was of (document changed). Nothing was written. ${reread}, then form a new request from that`
-                : outcome.reason === "annotation_changed"
-                  ? `this annotation was changed after your reading (annotation shows it now). Nothing was written. ${reread}, decide again from what is stored, then form a new request with the updated_at of that reading; never reuse the old one`
-                  : `the annotations changed since your reading (the user or another call saved first; current shows the revision). Nothing was written. ${reread}, then form a new request from that; do not resend with the new revision`,
-          }
-        );
-      case "no_annotation":
-        return done(record(id, op.action, { status: "not_found", object }), {
-          ok: false,
-          status: "not_found",
-          detail: `no annotation ${outcome.annotationId} in this PDF (it may have been deleted); nothing was written. ${reread}`,
-        });
-      case "invalid":
-        return done(record(id, op.action, { status: "invalid", object }), {
-          ok: false,
-          status: "invalid",
-          detail: `${outcome.detail}; nothing was written`,
-        });
-      case "unsupported":
-        return done(record(id, op.action, { status: "unsupported", object }), {
-          ok: false,
-          status: "unsupported",
-          detail:
-            "this Doc is not a PDF: the PDF annotation actions are for PDF Docs; a LaTeX or text Doc's annotations are written with create_annotation, update_annotation and delete_annotation; nothing was written",
-        });
-      case "not_found":
-        return done(record(id, op.action, { status: "not_found", object }), {
-          ok: false,
-          status: "not_found",
-          detail: "no such PDF Doc",
-        });
-      case "busy":
-        return done(record(id, op.action, { status: "rejected", object }), {
-          ok: false,
-          status: "rejected",
-          detail:
-            "the Doc is being replaced or deleted right now; nothing was written. Try again when the job has finished",
-        });
-      case "error":
-        return done(record(id, op.action, { status: "error", object }), {
-          ok: false,
-          status: "error",
-          detail: outcome.detail,
-        });
-    }
+    const answer = await runPdfWrite(context.reader, op, {
+      conversationId: context.conversationId,
+    });
+    return done(
+      record(id, op.action, { ...answer.record, object: { kind: "doc" as const, id: op.docId } }),
+      answer.payload
+    );
   };
   const pdfOutcome = (
     id: string,
@@ -1326,32 +1102,51 @@ export function createReaderTool(context: ReaderToolContext) {
           return await readPageImage(toolCallId, image.data, done);
         }
         if ((PDF_ANNOTATION_ACTIONS as readonly string[]).includes(action)) {
-          const written = PdfAnnotationOperationSchema.safeParse(params);
+          // create, update and delete are catalog operations (their parameters are the catalog entry's); undo and redo
+          // are the conversation's own history and stay tool actions.
+          const cataloged = parseCatalogCall(READER_TOOL_NAME, params);
+          const written =
+            cataloged.match && cataloged.success
+              ? { success: true as const, data: { action, ...cataloged.params } }
+              : cataloged.match
+                ? { success: false as const, issues: cataloged.issues }
+                : (() => {
+                    const direct = PdfAnnotationOperationSchema.safeParse(params);
+                    return direct.success
+                      ? { success: true as const, data: direct.data }
+                      : {
+                          success: false as const,
+                          issues: direct.error.issues.map((issue) => ({
+                            path: issue.path.join("."),
+                            message: issue.message,
+                          })),
+                        };
+                  })();
           if (!written.success)
             return done(record(toolCallId, action, { status: "invalid" }), {
               ok: false,
               status: "invalid",
               detail:
                 "invalid parameters; nothing was written. Every PDF annotation write needs docId, sha256 and rev from the PDF reading and the fields of its action",
-              issues: written.error.issues
-                .slice(0, 5)
-                .map((issue) => ({ path: issue.path.join("."), message: issue.message })),
+              issues: written.issues.slice(0, 5),
             });
-          return await writePdf(toolCallId, written.data, done);
+          return await writePdf(toolCallId, written.data as PdfAnnotationOperation, done);
         }
         if ((READER_WRITE_ACTIONS as readonly string[]).includes(action)) {
-          const written = ReaderWriteOperationSchema.safeParse(params);
-          if (!written.success)
+          const cataloged = parseCatalogCall(READER_TOOL_NAME, params);
+          if (!cataloged.match || !cataloged.success)
             return done(record(toolCallId, action, { status: "invalid" }), {
               ok: false,
               status: "invalid",
               detail:
                 "invalid parameters; nothing was written. Every write needs docId, fingerprint and rev from the reading, and the fields of its action",
-              issues: written.error.issues
-                .slice(0, 5)
-                .map((issue) => ({ path: issue.path.join("."), message: issue.message })),
+              issues: cataloged.match ? cataloged.issues.slice(0, 5) : [],
             });
-          return await write(toolCallId, written.data, done);
+          return await write(
+            toolCallId,
+            { action, ...cataloged.params } as ReaderWriteOperation,
+            done
+          );
         }
         const parsed = ReaderViewActionSchema.safeParse(params);
         if (!parsed.success)

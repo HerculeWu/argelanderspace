@@ -806,34 +806,37 @@ export const ReaderAnnotationTargetInputSchema = z.discriminatedUnion("type", [
 ]);
 export type ReaderAnnotationTargetInput = z.infer<typeof ReaderAnnotationTargetInputSchema>;
 
+export const ReaderCreateAnnotationSchema = z
+  .object({
+    action: z.literal("create_annotation"),
+    ...WriteEpoch,
+    target: ReaderAnnotationTargetInputSchema,
+    body: AnnotationBody,
+  })
+  .strict();
+/** The editor's Save on an existing annotation: only the body changes; target, snapshot and created_at never do. */
+export const ReaderUpdateAnnotationSchema = z
+  .object({
+    action: z.literal("update_annotation"),
+    ...WriteEpoch,
+    annotationId: z.string().regex(/^a_[0-9a-f]{8}$/),
+    expectedUpdatedAt: ExpectedUpdatedAt,
+    body: AnnotationBody,
+  })
+  .strict();
+/** The trash button: one annotation, at once (the UI asks no confirmation for a single annotation). */
+export const ReaderDeleteAnnotationSchema = z
+  .object({
+    action: z.literal("delete_annotation"),
+    ...WriteEpoch,
+    annotationId: z.string().regex(/^a_[0-9a-f]{8}$/),
+    expectedUpdatedAt: ExpectedUpdatedAt,
+  })
+  .strict();
 export const ReaderWriteOperationSchema = z.discriminatedUnion("action", [
-  z
-    .object({
-      action: z.literal("create_annotation"),
-      ...WriteEpoch,
-      target: ReaderAnnotationTargetInputSchema,
-      body: AnnotationBody,
-    })
-    .strict(),
-  /** The editor's Save on an existing annotation: only the body changes; target, snapshot and created_at never do. */
-  z
-    .object({
-      action: z.literal("update_annotation"),
-      ...WriteEpoch,
-      annotationId: z.string().regex(/^a_[0-9a-f]{8}$/),
-      expectedUpdatedAt: ExpectedUpdatedAt,
-      body: AnnotationBody,
-    })
-    .strict(),
-  /** The trash button: one annotation, at once (the UI asks no confirmation for a single annotation). */
-  z
-    .object({
-      action: z.literal("delete_annotation"),
-      ...WriteEpoch,
-      annotationId: z.string().regex(/^a_[0-9a-f]{8}$/),
-      expectedUpdatedAt: ExpectedUpdatedAt,
-    })
-    .strict(),
+  ReaderCreateAnnotationSchema,
+  ReaderUpdateAnnotationSchema,
+  ReaderDeleteAnnotationSchema,
 ]);
 export type ReaderWriteOperation = z.infer<typeof ReaderWriteOperationSchema>;
 export const READER_WRITE_ACTIONS = [

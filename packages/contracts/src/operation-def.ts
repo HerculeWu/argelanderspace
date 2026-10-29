@@ -122,8 +122,11 @@ export interface OperationOption {
   readonly param: string;
   /** `--ref-id`. */
   readonly flag: string;
-  /** `boolean`: a bare flag. `string` / `integer` / `number` / `enum`: takes a value. */
-  readonly kind: "boolean" | "string" | "integer" | "number" | "enum";
+  /**
+   * `boolean`: a bare flag. `string` / `integer` / `number` / `enum`: takes a value. `json`: a nested or array
+   * parameter (an object such as an annotation target); the value is JSON text (`--target '{"type":"document"}'`).
+   */
+  readonly kind: "boolean" | "string" | "integer" | "number" | "enum" | "json";
   readonly required: boolean;
   /** The parameter may be `null`: the value `null` on the command line means JSON null. */
   readonly nullable: boolean;
@@ -142,19 +145,21 @@ interface JsonSchemaNode {
   required?: string[];
 }
 
-/** The flat form of a parameter, or null when it has none (an array, an object, a union of several shapes). */
-function flatOption(
+/**
+ * The option of a parameter. Scalars are flat; an array, an object or a union of several shapes takes its value as JSON
+ * text (`kind: "json"`, for example `--target '{"type":"document"}'`; release-0.2 tickets 07 and 08).
+ */
+function parameterOption(
   param: string,
   node: JsonSchemaNode,
   requiredNames: ReadonlySet<string>
-): OperationOption | null {
+): OperationOption {
   let nullable = false;
   let inner = node;
   if (node.anyOf) {
     const live = node.anyOf.filter((branch) => branch.type !== "null");
     nullable = live.length !== node.anyOf.length;
-    if (live.length !== 1) return null;
-    inner = live[0] as JsonSchemaNode;
+    inner = live.length === 1 ? (live[0] as JsonSchemaNode) : { ...inner, type: "object" };
   }
   const kind = inner.enum
     ? "enum"
@@ -166,8 +171,7 @@ function flatOption(
           ? "number"
           : inner.type === "string"
             ? "string"
-            : null;
-  if (kind === null) return null;
+            : "json";
   return {
     param,
     flag: operationOptionFlag(param),
@@ -192,22 +196,10 @@ function parameterNodes(op: OperationDef): {
 }
 
 /**
- * The options of an operation, in the order its parameters are declared. Only flat parameters are mapped; an array or
- * object parameter (the argument operations' `argument`, `patch`, `graph`, `ids`) has no option and is given with
- * `--json` ({@link operationJsonOnlyParams}).
+ * The options of an operation, in the order its parameters are declared: one per parameter. An array or object
+ * parameter is an option whose value is JSON text (`kind: "json"`); `--json` still takes the whole object.
  */
 export function operationOptions(op: OperationDef): OperationOption[] {
   const { entries, required } = parameterNodes(op);
-  return entries.flatMap(([param, node]) => {
-    const option = flatOption(param, node, required);
-    return option ? [option] : [];
-  });
-}
-
-/** The parameters with no flat CLI option: only `--json` can carry them. */
-export function operationJsonOnlyParams(op: OperationDef): string[] {
-  const { entries, required } = parameterNodes(op);
-  return entries
-    .filter(([param, node]) => flatOption(param, node, required) === null)
-    .map(([param]) => param);
+  return entries.map(([param, node]) => parameterOption(param, node, required));
 }

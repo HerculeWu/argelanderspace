@@ -23,6 +23,7 @@ import {
 } from "@argelanderspace/core";
 import { fetchArxivPdf } from "@argelanderspace/infra";
 import { type Acquisition, createAcquisition, createLockedRebuild } from "./acquisition.js";
+import { createAnnotationAccess } from "./annotations-access.js";
 import { type ArgumentOpDeps, ArgumentUndoRegistry } from "./copilot-argument-tool.js";
 import {
   type AdapterWiring,
@@ -37,7 +38,9 @@ import { JobRunner, readJobRecords } from "./jobs.js";
 import type { AcquisitionPort, JobTable, LibraryOpDeps } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
 import type { OperationRuntime } from "./operation-catalog.js";
-import { worksOwningDoc } from "./pdf-access.js";
+import { createPdfAccess, worksOwningDoc } from "./pdf-access.js";
+import { createReaderOps } from "./reader-ops-deps.js";
+import { TextDocService } from "./text-docs.js";
 
 /** The longest a timer can wait: "until the job ends" for a process that is the only one that can run it. */
 const UNBOUNDED_WAIT_MS = 2_147_483_647;
@@ -59,18 +62,37 @@ export function createLocalOperationRuntime(
   seams: LocalOperationSeams = {}
 ): OperationRuntime {
   const libraryLock = new AsyncLock();
+  // The annotation and PDF access paths are the server's own modules, here on this process's locks (the only code that
+  // reads or writes a Doc's annotations). The Doc mutation registry is shared with the acquisition below, so a Doc whose
+  // job runs in this process is busy to them too; nothing is announced.
+  const annotationLock = new AsyncLock();
+  const docMutations = new DocMutationRegistry();
+  const none = () => {};
+  const annotationAccess = createAnnotationAccess({
+    paths,
+    lock: annotationLock,
+    docMutations,
+    onChanged: none,
+  });
+  const pdfAccess = createPdfAccess({
+    paths,
+    docMutations,
+    lock: annotationLock,
+    onChanged: none,
+    readingPositionLock: new AsyncLock(),
+    onReadingPositionChanged: none,
+  });
   const jobsDir = join(paths.dataDir, "jobs");
   let built: Acquisition | undefined;
   /** The import pipeline and the job queue, made when an operation first needs them. */
   const acquisition = (): Acquisition => {
     if (built) return built;
     const runner = new JobRunner({ dir: jobsDir, recover: false });
-    const docMutations = new DocMutationRegistry();
     const made = createAcquisition({
       paths,
       runner,
       libraryLock,
-      annotationLock: new AsyncLock(),
+      annotationLock,
       docMutations,
       libraryChanged: () => {},
       lockedRebuild: createLockedRebuild(libraryLock),
@@ -141,5 +163,17 @@ export function createLocalOperationRuntime(
     },
     undo: new ArgumentUndoRegistry(),
   };
-  return { library, argument };
+  return {
+    library,
+    argument,
+    reader: createReaderOps({ paths, annotationAccess, pdfAccess, docMutations }),
+    text: new TextDocService({
+      paths,
+      libraryLock,
+      annotationLock,
+      docMutations,
+      broadcast: none,
+      libraryChanged: none,
+    }),
+  };
 }

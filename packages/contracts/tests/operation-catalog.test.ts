@@ -9,12 +9,12 @@ import {
   operationCliGroups,
   operationCliName,
   operationDomains,
-  operationJsonOnlyParams,
   operationOptionFlag,
   operationOptions,
   operationsOfCliGroup,
   operationsOfDomain,
   parseCatalogCall,
+  READER_OPERATION_ACTIONS,
   WorkspaceViewActionSchema,
 } from "../src/index.js";
 
@@ -57,9 +57,9 @@ describe("operation catalog (ADR 0015)", () => {
     for (const op of navigation) expect([op.effect, op.confirm]).toEqual(["read", "none"]);
     expect(operationsOfCliGroup("open").map((op) => op.id)).toEqual(navigation.map((op) => op.id));
     expect(operationCliGroups()).toContain("open");
-    // Only navigation entries override the derived placement.
+    // Only navigation entries and the annotation writes (ticket 07, group `annotation`) override the derived placement.
     for (const op of OPERATION_CATALOG.filter((entry) => !entry.navigates))
-      expect(op.cli).toBeUndefined();
+      if (op.cli) expect(op.cli.group).toBe("annotation");
     // anchor is the CLI-only addition to the Copilot's open_doc; the Copilot action itself takes docId only.
     expect(
       parseCatalogCall("workspace", { action: "open_doc", docId: "d", anchor: "sec-1" })
@@ -146,7 +146,125 @@ describe("operation catalog (ADR 0015)", () => {
     expect(parseCatalogCall("library", { action: "filter_library", query: "x" })).toEqual({
       match: false,
     });
-    expect(parseCatalogCall("reader", { action: "read" })).toEqual({ match: false });
+    // the Reader's view actions are interface actions: not cataloged
+    expect(parseCatalogCall("reader", { action: "navigate", docId: "d", anchor: "a" })).toEqual({
+      match: false,
+    });
+    expect(parseCatalogCall("reader", { action: "undo_pdf_annotation" })).toEqual({
+      match: false,
+    });
+  });
+
+  it("reading and annotation entries (ticket 07): what is cataloged, where the CLI puts it", () => {
+    const reader = operationsOfDomain("reader");
+    expect(
+      reader.map((op) => [op.id, op.effect, op.cli ? `${op.cli.group} ${op.cli.name}` : null])
+    ).toEqual([
+      ["reader.read", "read", null],
+      ["reader.read_image", "read", null],
+      ["reader.read_svg_image", "read", null],
+      ["reader.read_page_image", "read", null],
+      ["reader.create_annotation", "write", "annotation create"],
+      ["reader.update_annotation", "write", "annotation update"],
+      ["reader.delete_annotation", "write", "annotation delete"],
+      ["reader.create_pdf_annotation", "write", "annotation create-pdf"],
+      ["reader.update_pdf_annotation", "write", "annotation update-pdf"],
+      ["reader.delete_pdf_annotation", "write", "annotation delete-pdf"],
+    ]);
+    expect(operationsOfDomain("text").map((op) => op.id)).toEqual(["text.read_source"]);
+    expect(operationCliGroups()).toEqual(expect.arrayContaining(["reader", "annotation", "text"]));
+    // none asks a card (a single annotation is deleted at once, as the trash button does) and none navigates
+    for (const op of [...reader, ...operationsOfDomain("text")])
+      expect([op.confirm, op.navigates]).toEqual(["none", false]);
+    // interface actions and the conversation-bound undo history are not operations
+    const ids = OPERATION_CATALOG.map((op) => op.id as string);
+    for (const ui of [
+      "navigate",
+      "jump_back",
+      "set_panel",
+      "set_right_tab",
+      "retry_sync",
+      "set_text_view",
+      "goto_page",
+      "zoom",
+      "search",
+      "download_original",
+      "undo_pdf_annotation",
+      "redo_pdf_annotation",
+    ])
+      expect(ids).not.toContain(`reader.${ui}`);
+    // every write is a Copilot action of the same name, with the same parameters
+    for (const op of reader)
+      expect(READER_OPERATION_ACTIONS as readonly string[]).toContain(op.name);
+  });
+
+  it("nested annotation parameters are CLI options that take JSON text, the flat ones stay flat", () => {
+    const create = OPERATION_CATALOG.find((op) => op.id === "reader.create_annotation");
+    expect(create && operationOptions(create).map((o) => [o.flag, o.kind])).toEqual([
+      ["--doc-id", "string"],
+      ["--fingerprint", "string"],
+      ["--rev", "integer"],
+      ["--target", "json"],
+      ["--body", "string"],
+    ]);
+    const createPdf = OPERATION_CATALOG.find((op) => op.id === "reader.create_pdf_annotation");
+    expect(createPdf && operationOptions(createPdf).map((o) => [o.flag, o.kind])).toEqual([
+      ["--doc-id", "string"],
+      ["--sha256", "string"],
+      ["--rev", "integer"],
+      ["--kind", "enum"],
+      ["--body", "string"],
+      ["--page-index", "integer"],
+      ["--rectangle", "json"],
+      ["--style", "json"],
+      ["--parts", "json"],
+      ["--color", "enum"],
+    ]);
+    for (const op of OPERATION_CATALOG) expect(() => operationOptions(op), op.id).not.toThrow();
+  });
+
+  it("the annotation writes keep the refinements of the Copilot actions", () => {
+    const epoch = { docId: "d", sha256: "a".repeat(64), rev: 0 };
+    const call = (extra: Record<string, unknown>) =>
+      parseCatalogCall("reader", { action: "create_pdf_annotation", ...epoch, ...extra });
+    expect(call({ kind: "page_comment", body: "b", pageIndex: 0 })).toMatchObject({
+      success: true,
+    });
+    for (const bad of [
+      { kind: "page_comment", body: "b" },
+      { kind: "document_comment", body: "b", pageIndex: 0 },
+      { kind: "rectangle", body: "b", pageIndex: 0 },
+      {
+        kind: "highlight",
+        body: "b",
+        parts: [
+          { pageIndex: 1, quote: "q" },
+          { pageIndex: 0, quote: "q" },
+        ],
+      },
+      { kind: "page_comment", body: "  ", pageIndex: 0 },
+    ])
+      expect(call(bad), JSON.stringify(bad)).toMatchObject({ match: true, success: false });
+    const update = (extra: Record<string, unknown>) =>
+      parseCatalogCall("reader", {
+        action: "update_pdf_annotation",
+        ...epoch,
+        annotationId: "a_0000aaaa",
+        expectedUpdatedAt: "2026-09-10T10:00:00.000Z",
+        ...extra,
+      });
+    expect(update({})).toMatchObject({ match: true, success: false });
+    expect(update({ body: "x" })).toMatchObject({ success: true });
+    // the text annotation target is validated as the Copilot's is
+    const text = parseCatalogCall("reader", {
+      action: "create_annotation",
+      docId: "d",
+      fingerprint: "f",
+      rev: 0,
+      target: { type: "text", block: "p-1", start: 0, end: 1 },
+      body: "b",
+    });
+    expect(text).toMatchObject({ match: true, success: false });
   });
 
   it("catalogs every library business action of the Copilot tool, and none of its interface actions", () => {
@@ -286,7 +404,7 @@ describe("operation catalog (ADR 0015)", () => {
     });
   });
 
-  it("flat parameters become options; array and object parameters are --json only", () => {
+  it("scalar parameters become flat options; array and object parameters take JSON text", () => {
     const by = (name: string) => entry(`argument.${name}`);
     expect(operationOptions(by("add_edge")).map((o) => [o.flag, o.kind])).toEqual([
       ["--work-id", "string"],
@@ -295,16 +413,16 @@ describe("operation catalog (ADR 0015)", () => {
       ["--to", "string"],
       ["--role", "enum"],
     ]);
-    expect(operationJsonOnlyParams(by("add_edge"))).toEqual([]);
-    expect(operationJsonOnlyParams(by("create"))).toEqual(["argument"]);
-    expect(operationJsonOnlyParams(by("update"))).toEqual(["patch"]);
-    expect(operationJsonOnlyParams(by("replace"))).toEqual(["graph"]);
-    expect(operationJsonOnlyParams(by("read"))).toEqual(["ids"]);
-    expect(operationOptions(by("read")).map((o) => o.flag)).toEqual([
-      "--work-id",
-      "--offset",
-      "--edge-offset",
-      "--field",
+    // array and object parameters are options that take JSON text
+    expect(operationOptions(by("create")).find((o) => o.param === "argument")?.kind).toBe("json");
+    expect(operationOptions(by("update")).find((o) => o.param === "patch")?.kind).toBe("json");
+    expect(operationOptions(by("replace")).find((o) => o.param === "graph")?.kind).toBe("json");
+    expect(operationOptions(by("read")).map((o) => [o.flag, o.kind])).toEqual([
+      ["--work-id", "string"],
+      ["--offset", "integer"],
+      ["--edge-offset", "integer"],
+      ["--ids", "json"],
+      ["--field", "string"],
     ]);
   });
 });

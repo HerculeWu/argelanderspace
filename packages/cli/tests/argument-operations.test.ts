@@ -174,11 +174,12 @@ test("the group gains the catalog commands next to get and put, whose help is by
   ]);
   expect(cli(["argument", "get", "--help"]).stdout).toBe(FROZEN_GET_HELP);
   expect(cli(["argument", "put", "--help"]).stdout).toBe(FROZEN_PUT_HELP);
-  // object parameters have no option: the help says --json is the way
+  // object parameters are options that take JSON text (ticket 07), and --json still takes the whole object
   const create = cli(["argument", "create", "--help"]).stdout;
   expect(create).toContain("--work-id <string>");
   expect(create).toContain("--expected-rev <integer>");
-  expect(create).toContain("the only way to give argument");
+  expect(create).toContain("--argument <json>");
+  expect(create).toContain("--json <file|->");
 });
 
 test("without a workbench: create, read, update, edges and delete run in this process and agree with the frozen `argument get`", () => {
