@@ -50,6 +50,14 @@ function optionValue(option: OperationOption, raw: string | boolean): unknown {
   if (option.kind === "boolean") return raw === true || raw === "true";
   const text = String(raw);
   if (option.nullable && text === "null") return null;
+  // A nested or array parameter (an annotation target, the parts of a PDF highlight) is given as JSON text.
+  if (option.kind === "json") {
+    try {
+      return JSON.parse(text) as unknown;
+    } catch {
+      throw new ParamError(`${option.flag} must be valid JSON`);
+    }
+  }
   if (option.kind === "integer" || option.kind === "number") {
     const value = Number(text);
     if (
@@ -244,6 +252,11 @@ function registerOperation(group: Command, op: OperationDef): void {
 /** What `--help` says of a group whose name is not a domain (navigation, ticket 05). */
 const GROUP_DESCRIPTIONS: Record<string, string> = {
   open: "ask the running workbench to show a place in its most recently active window",
+  reader:
+    "read a Doc (the whole LaTeX/text reading or PDF pages, a figure, a page image); annotation writes are planned from this reading",
+  annotation:
+    "add, change or delete the annotations of a LaTeX/text Doc or the workbench annotations of a PDF Doc (the Doc's PDF is never changed); `annot` stays the read-only listing",
+  text: "read the Markdown source of a text Doc",
 };
 
 /**

@@ -116,8 +116,11 @@ export interface OperationOption {
   readonly param: string;
   /** `--ref-id`. */
   readonly flag: string;
-  /** `boolean`: a bare flag. `string` / `integer` / `number` / `enum`: takes a value. */
-  readonly kind: "boolean" | "string" | "integer" | "number" | "enum";
+  /**
+   * `boolean`: a bare flag. `string` / `integer` / `number` / `enum`: takes a value. `json`: a nested or array
+   * parameter (an object such as an annotation target); the value is JSON text (`--target '{"type":"document"}'`).
+   */
+  readonly kind: "boolean" | "string" | "integer" | "number" | "enum" | "json";
   readonly required: boolean;
   /** The parameter may be `null`: the value `null` on the command line means JSON null. */
   readonly nullable: boolean;
@@ -146,11 +149,7 @@ export function operationOptions(op: OperationDef): OperationOption[] {
     if (node.anyOf) {
       const live = node.anyOf.filter((branch) => branch.type !== "null");
       nullable = live.length !== node.anyOf.length;
-      if (live.length !== 1)
-        throw new Error(
-          `operation ${op.id}: parameter ${param} has no flat CLI mapping; use --json`
-        );
-      inner = live[0] as JsonSchemaNode;
+      inner = live.length === 1 ? (live[0] as JsonSchemaNode) : { ...inner, type: "object" };
     }
     const kind = inner.enum
       ? "enum"
@@ -162,9 +161,7 @@ export function operationOptions(op: OperationDef): OperationOption[] {
             ? "number"
             : inner.type === "string"
               ? "string"
-              : null;
-    if (kind === null)
-      throw new Error(`operation ${op.id}: parameter ${param} has no flat CLI mapping; use --json`);
+              : "json";
     return {
       param,
       flag: operationOptionFlag(param),

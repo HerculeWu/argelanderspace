@@ -35,7 +35,7 @@
 
 - **命令**：`argelanderspace <domain> <name 的下划线换成连字符>`，如 `library set-main-doc`。领域组若已存在（`library` 有既有的 `build`）则就地增加子命令，既有命令不动。
 - **参数到选项**：每个扁平参数一个选项，camelCase 变 kebab-case（`refId` → `--ref-id`）。类型：字符串、整数、枚举（`<a|b>`）取值；布尔是不带值的开关。可为 `null` 的参数（如 `expectedMainDocId`）取值 `null`（字面）表示 JSON null。选项一律不在命令行层面标必填，缺参数由目录的 schema 校验并报告；帮助里标 `(required)`。
-- **`--json <file|->`**：整个参数对象从文件或标准输入读入，不能与参数选项同用；对象里不写 `action`。嵌套或数组参数没有扁平映射，只能用 `--json`（`operationOptions` 遇到时抛错，由加条目的人处理）。
+- **`--json <file|->`**：整个参数对象从文件或标准输入读入，不能与参数选项同用；对象里不写 `action`。嵌套或数组参数（标注的 `target`、PDF 的 `rectangle`、`parts`）也是一个选项，值写 JSON 文本（`--target '{"type":"document"}'`，`operationOptions` 里 `kind: "json"`，票 07 起）；整个对象用 `--json` 更省事。
 - **`--data-dir`**：与既有命令一致。
 - **输出**：stdout 一份 JSON（两格缩进），就是该操作的结果对象，与 Copilot 工具返回的同形。**退出码**：
 
@@ -138,6 +138,10 @@ CLI 不对导航操作设 Ctrl-C 撤回；命令被中断时连接断开，serve
 | `argument.open` | read | none | 导航：`open argument-graph` |
 | `discovery.search_ads` | read | none | 只读 ADS 搜索（票 09），见下节 |
 | `discovery.explore` | read | none | 探索页对一个 seed 的请求，以数据返回（票 09），见下节 |
+| `reader.read` / `read_image` / `read_svg_image` / `read_page_image` | read | none | 阅读：Doc 全文、插图、页图（票 07），见「阅读与标注」 |
+| `text.read_source` | read | none | 文本 Doc 的 Markdown 源（票 07） |
+| `reader.create_annotation` / `update_annotation` / `delete_annotation` | write | none | LaTeX/文本 Doc 的标注增改删，CLI 在 `annotation create|update|delete`（票 07） |
+| `reader.create_pdf_annotation` / `update_pdf_annotation` / `delete_pdf_annotation` | write | none | PDF 工作台标注增改删，CLI 在 `annotation create-pdf|update-pdf|delete-pdf`（票 07） |
 
 ## 探索领域与 ADS 只读搜索（票 09）
 
@@ -154,3 +158,25 @@ CLI 不对导航操作设 Ctrl-C 撤回；命令被中断时连接断开，serve
 **两条路径**：工作台运行时由它执行（`createApp` 里 `LibraryOpDeps` 的 `adsSearch`/`discoverySource`，即页面路由和 Copilot 共用的工厂，server 的 `makeAdsSearch` 默认 `realAdsSearch`）；未运行时 CLI 用 `createLocalOperationRuntime` 在本进程里用同样的 `realAdsSearch`/`realDiscoverySource`（它接受可选的 `AdapterWiring` 供测试注入 `adsToken` 与 `fetchImpl`；CLI 不传，token 从凭据库读）。两条路径的答案同形。测试：infra `ads-search.test.ts`，server `discovery-operations.test.ts`（本进程、工作台路由、Copilot 工具三条入口；断言只有 GET、token 只在头里、数据夹逐字节不变、每类错误），cli `discovery-operations.test.ts`（命令派生、参数错误退出 2、经工作台的退出码与输出；本进程路径不在 CLI 子进程里测，因为子进程会读测试机器真实的凭据库）。
 
 **窗口常量**：Copilot 的 `library` 工具多了动作 `search_ads`、参数 `fields`、说明一段与基础提示词一句，系统指令加工具 schema 的占用从 81053 增至 81949 字节（+896 B，×4/7＝+512 token），按 project-intake 02 的方法同步了 `copilot-batching.test.ts` 的 `WINDOW_BIG_DOC` 与 PDF 多窗口、`copilot-pdf`、`copilot`、`copilot-text-host` 的窗口、`copilot-argument-read-window` 的 GAP_WINDOW（45000→45512）、`copilot-transcription` 的上限。
+
+## 阅读与标注（票 07）
+
+条目在 `packages/contracts/src/reader-catalog.ts`（领域 `reader`，即 Copilot 的 `reader` 工具）与 `text-catalog.ts`（`text.read_source`）；执行在 `packages/server/src/reader-operations.ts`，数据接缝 `ReaderOpDeps` 由 `reader-ops-deps.ts` 的 `createReaderOps` 建出（从 `app.ts` 里原来的内联块搬出，行为不变）。
+
+**CLI 组。** 读取留在 `reader`：`reader read`、`reader read-image`、`reader read-svg-image`、`reader read-page-image`；`text read-source`。标注写入放进新组 **`annotation`**（条目的 `cli` 覆盖，Copilot 一侧仍是 `reader` 工具的原动作名）：`annotation create|update|delete`（LaTeX/文本 Doc）、`annotation create-pdf|update-pdf|delete-pdf`（PDF 工作台标注）。冻结的 `annot` 不动，仍是真只读的列表；`annotation` 是另一个组，二者在 `--help` 里并列。顶层既有的 `read`、`show`、`ref` 等不变。
+
+**进目录的与不进的。** 进：整份阅读（LaTeX/文本的 reading 或 PDF 各页文字）、插图、SVG 渲染、PDF 页图、文本源，以及上面六个标注写入。不进：Reader 的界面动作（`navigate`、`jump_back`、`set_panel`、`set_right_tab`、`retry_sync`、`set_text_view`，PDF 的翻页、缩放、搜索、`open_annotation`、`download_original`）；`undo_pdf_annotation`/`redo_pdf_annotation`（撤销栈属于一次 Copilot 会话，且只在服务重启前存在，CLI 无对应概念）；文本 Doc 的 `create`、`save_source`、`add_pdf_image`、`validate`、`generate`（写源文或发布正文，不属于本票，留给后续）。
+
+**参数。** 就是 `reader-ops.ts`、`pdf-annotation-ops.ts`、`text-ops.ts` 里动作 schema 去掉 `action`。PDF 的 create 与 update 带 `superRefine`/`refine`，不能 `omit`，所以那里写了 `PdfCreateAnnotationParamsSchema`、`PdfUpdateAnnotationParamsSchema`，动作 schema 与它共用同一个 shape 与同一个校验函数，规则只写一处。
+
+**写入走哪条路径。** 标注写入（`runReaderWrite`、`runPdfWrite`）只调 `ReaderOpDeps.write` / `pdf.write`，那就是 server 的标注访问路径（`annotations-access.ts` 的 `commit`、`pdf-access.ts` 的 `writeAnnotation`），三态指纹规则、「无法计算是系统错误不当作 mismatch」、归档只发生在这条路径上，都在那里，这里一行没有重写。工作台运行时用工作台自己的那一份（与页面 PUT、Copilot 共用同一把 `annotationLock`）；未运行时 `createLocalOperationRuntime` 用**同一份模块**在本进程建一套（自己的锁、`DocMutationRegistry` 为空、不通知）。所以：
+- 读（`reader read`）走 `peek`：只读，不归档，旧内容的标注只是不列出，一个字节不动；
+- 写在读到的 epoch 已不是当前时：指纹成功但不同 → 访问路径照旧归档旧批次并建空 current，本次写入答 `conflict`（`reason: document_changed`，带 `archivedOlder` 与条数），写入的内容不落盘；指纹无法计算、IR 或 current 损坏、资产丢失 → 答 `error`，退出 1，不归档、不重写；Doc 不存在 → `not_found`；归档写不进去 → 原 current 保持原样；
+- 跨进程同一 Doc 并发写仍不支持（I013 的边界不变）；同一 dataDir 有工作台时 CLI 交给它，没有时才在本进程做，两条路径逐字节同形（测试比对）。
+
+**与 Copilot 的关系。** 标注写入：Copilot 的 `reader` 工具对 `create_annotation`、`update_annotation`、`delete_annotation`、`create/update/delete_pdf_annotation` 用 `parseCatalogCall` 取参数，执行与措辞来自同一对函数 `runReaderWrite`/`runPdfWrite`（操作记录里的 status/label/rev 也由它们给出），行为与旧版一致（`copilot-reader*` 测试未改全过）。PDF 写入的撤销历史按 `conversationId` 分，目录操作用自己的范围 `operation-catalog`，既不能撤销某个会话的改动，也不会被会话撤销；经 CLI 的写入对会话相当于「别人改了」，会让它的历史按既有规则终止。**读取不是同一套代码**：Copilot 的 `read` 要按模型窗口余量分批、按账本重投递、图片作 image part；CLI 没有窗口，`reader read` 一次给整份（`from`/`version` 仍可取后面的部分），图片作 `data`（base64）放在 JSON 里。两边只共用参数 schema 与读取接缝。工具的 schema 与说明字节没有变，**窗口常量不用动**（系统指令加工具 schema 仍是 81949 B）。
+
+**图片。** `read-image` 只给 PNG/JPEG/WebP（其余原样拒绝，不转换）；`read-svg-image` 先做与 Copilot 相同的安全检查，再用可选的 resvg 渲染，没装则答 `unsupported`；`read-page-image` 用同一份已校验的原件字节和 PDFium。单张上限同 Copilot（`PDF_IMAGE_MAX_BYTES`），超过答 `rejected` 并提示减小 `--long-edge`。CLI 输出可能是几 MB 的 base64，外部 agent 要自己落成文件才能看图。
+
+**测试。** server `reader-operations.test.ts`（本进程、工作台路由与 Copilot 工具三个入口答案和文件逐一相同；三态各分支与系统错误〔IR 不是 JSON、IR 不合 schema、current 损坏、资产丢失、归档写不进〕；读取不写盘；PDF 的增改删与页图；插图；文本源）；cli `annotation-operations.test.ts`（真实 `bin.js`，工作台未运行与运行两条路径各一遍：读、增改删、冻结的 `annot` 在其后仍列出并保持键序、三态、参数错误退出 2、`--json`、PDF）；contracts `operation-catalog.test.ts`（条目、CLI 位置、JSON 选项、PDF 校验仍在）。冻结的 `annot` golden（`agent.test.ts`）未改全过。
+

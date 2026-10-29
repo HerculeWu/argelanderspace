@@ -121,6 +121,16 @@ export const AddPdfImageRequestSchema = z
   .strict();
 export type AddPdfImageRequest = z.infer<typeof AddPdfImageRequestSchema>;
 
+/** The source panel's read: the saved source with its rev and assets; a long one in parts (`from` + `version`). */
+export const TextReadSourceSchema = z
+  .object({
+    action: z.literal("read_source"),
+    docId: Id,
+    from: Count.optional(),
+    version: z.string().min(1).max(100).optional(),
+  })
+  .strict();
+
 export const TextOperationSchema = z.discriminatedUnion("action", [
   z
     .object({
@@ -130,14 +140,7 @@ export const TextOperationSchema = z.discriminatedUnion("action", [
       operationId: z.string().min(8).max(128).optional(),
     })
     .strict(),
-  z
-    .object({
-      action: z.literal("read_source"),
-      docId: Id,
-      from: Count.optional(),
-      version: z.string().min(1).max(100).optional(),
-    })
-    .strict(),
+  TextReadSourceSchema,
   z
     .object({
       action: z.literal("save_source"),
