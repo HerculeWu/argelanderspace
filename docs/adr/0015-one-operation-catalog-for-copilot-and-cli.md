@@ -23,4 +23,4 @@ status: accepted
 - 数据保护与被修订的旧条文见 [contracts](../contracts.md)「操作目录与外部 agent」；文献仓无 CLI 一句在 v0.3 之前照旧。同时局部修订 [ADR 0011](0011-copilot-file-and-command-tools.md)（取消随包 skill 白名单，Copilot 获得只读 ADS 搜索）与 ADR 0014（外部 agent 不再只读）。
 - **Agent 插件**随 npm 包发布，只带操作说明、不带 CLI 本体与 MCP，使用本机同版本 CLI；桌面应用用户经设置里的「安装命令行工具」拿到 PATH 上的 CLI。
 
-来源：2026-10-28 Copilot / CLI / Agent 插件设计访谈 Q2、Q5、Q11–Q16，用户采纳推荐答案，Q17 批准本 ADR。尚未实施。
+来源：2026-10-28 Copilot / CLI / Agent 插件设计访谈 Q2、Q5、Q11–Q16，用户采纳推荐答案，Q17 批准本 ADR。2026-10-29 随 release-0.2 票 01–15 实施（机制见 [operation-catalog](../operation-catalog.md)）。
