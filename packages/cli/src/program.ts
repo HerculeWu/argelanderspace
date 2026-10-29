@@ -61,7 +61,7 @@ export { resolveDataDir };
 interface IngestOpts {
   output?: string;
   outRoot?: string;
-  figureDpi: string;
+  figureDpi?: string;
   assets: boolean;
   cache: boolean;
   verbose?: boolean;
@@ -408,7 +408,10 @@ export function buildProgram(): Command {
     .argument("<input>", "arXiv id/URL | .tex/dir/tarball | DOI")
     .option("-o, --output <path>", "also write the document JSON to this path")
     .option("--out-root <dir>", "output root (default <data-dir>/output)")
-    .option("--figure-dpi <n>", "DPI for rasterising vector figures (default 200)", "200")
+    .option(
+      "--figure-dpi <n>",
+      "accepted for compatibility and ignored (figures are kept as vector)"
+    )
     .option("--no-assets", "do not download figure images locally")
     .option("--no-cache", "ignore the on-disk fetch cache (re-fetch)")
     .option("-v, --verbose", "verbose progress on stderr")

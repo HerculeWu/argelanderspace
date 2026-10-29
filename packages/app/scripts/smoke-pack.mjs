@@ -44,6 +44,10 @@
 //   6. the installed package's dist/skills (project-intake ticket 12) is what the Copilot lists: exactly the six
 //      bundled skills (no allow-list), read from the installed dist/skills, while a decoy <project>/skills beside
 //      node_modules (README marker and a decoy-skill) is not taken for them.
+//   7. every CLI command end to end through the installed bin.js (release-0.2 ticket 15, cli-e2e-lib.mjs): the catalog
+//      commands with the workbench running and not running (confirmation cards approved, denied, Ctrl-C'd, abandoned
+//      by the workbench exiting), the 16 older commands, and every command in the installed operation guides. No
+//      network leaves the machine (a fetch block is preloaded into every child); --skip-cli-e2e leaves this out.
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -63,6 +67,7 @@ import { homedir, networkInterfaces, tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { FILE_TOOL_NAMES } from "../../contracts/dist/index.js";
+import { runCliE2E, syntheticPdf } from "./cli-e2e-lib.mjs";
 import { lockfileClosure, pnpmVersion } from "./dep-dir-lib.mjs";
 import { checkAgentPluginIn, checkPackContents } from "./pack-contents.mjs";
 import { checkTutorialLoadable, tutorialSize } from "./tutorial-smoke-lib.mjs";
@@ -812,27 +817,6 @@ async function until(what, fn, ms = 60000) {
     await new Promise((r) => setTimeout(r, 250));
   }
 }
-function syntheticPdf() {
-  const content = "BT /F1 18 Tf 40 100 Td (Packed app smoke PDF page) Tj ET";
-  const objects = [
-    "<< /Type /Catalog /Pages 2 0 R >>",
-    "<< /Type /Pages /Count 1 /Kids [3 0 R] >>",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
-    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
-    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-  ];
-  let out = "%PDF-1.4\n";
-  const offsets = [];
-  objects.forEach((body, i) => {
-    offsets.push(out.length);
-    out += `${i + 1} 0 obj\n${body}\nendobj\n`;
-  });
-  const xref = out.length;
-  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (const o of offsets) out += `${String(o).padStart(10, "0")} 00000 n \n`;
-  out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
-  return Buffer.from(out, "latin1");
-}
 const pdfPage = (docId, sha) => ({
   version: 1,
   viewId: randomUUID(),
@@ -1224,6 +1208,31 @@ try {
         ? loaded.problems.join("; ")
         : `${loaded.works} Works, ${loaded.annotations} annotations`
     );
+  }
+}
+// ---- 7. every CLI command, end to end (release-0.2 ticket 15; cli-e2e-lib.mjs) ------------------------------------- //
+// The catalog commands with the workbench not running and running (cards approved, denied, Ctrl-C'd, abandoned), the 16
+// older commands, and every command the installed package's operation guides tell an agent to run, all through the
+// INSTALLED bin.js in this temp tree, on a copy of the installed tutorial sample and synthetic files. Skipped by the
+// control run and by --skip-cli-e2e.
+if (mutateLoader || argv.includes("--skip-cli-e2e"))
+  log("SKIP  CLI end-to-end: not run (control run or --skip-cli-e2e)");
+else {
+  try {
+    await runCliE2E({
+      node: join(bin, "node"),
+      binJs: join(pkgDir, "dist/bin.js"),
+      tutorialDir: join(pkgDir, "dist/tutorial"),
+      skillsDir: join(pkgDir, "dist/skills"),
+      work,
+      evidenceDir,
+      pathEnv: bin,
+      texPath: latexmk && !piReachable(texPath) ? texPath : undefined,
+      check,
+      log,
+    });
+  } catch (error) {
+    check(false, "CLI end-to-end ran to the end", String(error?.stack ?? error));
   }
 }
 writeFileSync(

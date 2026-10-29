@@ -79,6 +79,34 @@ test("CLI is built (dist/bin.js exists — run `pnpm --filter @argelanderspace/c
   expect(existsSync(BIN)).toBe(true);
 });
 
+describe("ingest --figure-dpi (accepted for compatibility, ignored; release-0.2 ticket 15)", () => {
+  test("--help says it is ignored and shows no default", () => {
+    const home = mkdtempSync(join(tmpdir(), "argelander-dpi-"));
+    try {
+      const help = runCli(["ingest", "--help"], childEnv(home));
+      expect(help.status).toBe(0);
+      const text = help.stdout.replace(/\s+/g, " ");
+      expect(text).toContain("--figure-dpi <n> accepted for compatibility and ignored");
+      expect(text).not.toMatch(/--figure-dpi[^-]*\(default/);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+  test("passing it is not an option error (the failure is the missing source, not the flag)", () => {
+    const home = mkdtempSync(join(tmpdir(), "argelander-dpi-"));
+    try {
+      const r = runCli(
+        ["ingest", "--figure-dpi", "300", join(home, "no-such.tex"), "--data-dir", join(home, "d")],
+        childEnv(home)
+      );
+      expect(r.stderr).not.toMatch(/unknown option|--figure-dpi/);
+      expect(r.status).toBe(1);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("source auto-detection (latex routing + DOI stubs)", () => {
   test("arXiv id / prefix / URL → latex", () => {
     expect(detectSource("2501.17225")).toEqual({ kind: "latex", input: "2501.17225" });

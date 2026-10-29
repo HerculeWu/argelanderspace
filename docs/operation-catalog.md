@@ -242,3 +242,56 @@ CLI 不对导航操作设 Ctrl-C 撤回；命令被中断时连接断开，serve
 ### Agent 插件（票 14）
 
 构建（`packages/app/scripts/copy-assets.mjs` → `agent-plugin-lib.mjs`）产出 `dist/agent-plugin/`：`.claude-plugin/marketplace.json`（marketplace 名 `argelanderspace-local`，一个条目 `argelanderspace`，`source: "./"`，marketplace 根与插件根同一个目录）、`.claude-plugin/plugin.json`（名 `argelanderspace`，版本 = 包版本）、从刚复制好的 `dist/skills` 复制的 `skills/`。不带 MCP、hooks、agents、CLI 本体。`checkAgentPlugin`（`pack-contents.mjs` 的 `checkAgentPluginIn`）在 prepack 与 `smoke-pack.mjs` 中检查文件齐全、版本一致、skills 与随包说明逐字节相同；`pack-contents.mjs` 的必需文件列表含插件文件。`argelanderspace agent-plugin`（`packages/cli/src/agent-plugin.ts`）只读：用 infra `bundledAgentPluginDir(CLI 入口)` 找入口旁的 `dist/agent-plugin`（npm 与桌面包相同，桌面包保留在 `sidecar/app/dist/agent-plugin`），名字取自清单，输出路径与 `/plugin marketplace add`、`/plugin install argelanderspace@argelanderspace-local`。
+
+## CLI 命令一览与 Copilot 对照（票 15）
+
+目录现有 35 个操作，按下表一一对应 CLI 命令与 Copilot 工具动作（命令前都冠 `argelanderspace`；选项由参数 schema 派生，见上文「派生规则」）。「卡」＝ `confirm: "card"`，「条件卡」＝ `conditional`。Copilot 一列写「工具 · 动作」：`discovery.search_ads` 在 Copilot 里是 `library` 工具的 `search_ads` 动作；Plan、Writer、Mail、文献仓工具没有目录操作，也没有 CLI 命令。目录之外、保持原样的 CLI 命令：`ingest`、`library build`、`acquire`、`serve`、`tutorial`、`search`、`read`、`show`、`ref`、`note`、`label`、`list`、`annot`、`argument get`、`argument put`、`pdf-path`（共 16 个，行为与冻结面不变），以及不属于目录的 `agent-plugin`（票 14）。
+
+| 操作 | CLI 命令 | Copilot（工具 · 动作） | effect | 确认 |
+|---|---|---|---|---|
+| `library.read` | `library read` | `library` · `read` | read | — |
+| `library.set_main_doc` | `library set-main-doc` | `library` · `set_main_doc` | write | — |
+| `library.delete_doc` | `library delete-doc` | `library` · `delete_doc` | write | 卡 |
+| `library.import_works` | `library import-works` | `library` · `import_works` | write | — |
+| `library.attach_local_pdf` | `library attach-local-pdf` | `library` · `attach_local_pdf` | write | — |
+| `library.list_ads_libraries` | `library list-ads-libraries` | `library` · `list_ads_libraries` | read | — |
+| `library.read_ads_library` | `library read-ads-library` | `library` · `read_ads_library` | read | — |
+| `library.acquire_arxiv_pdf` | `library acquire-arxiv-pdf` | `library` · `acquire_arxiv_pdf` | write | — |
+| `library.attach_arxiv` | `library attach-arxiv` | `library` · `attach_arxiv` | write | 条件卡 |
+| `library.read_jobs` | `library read-jobs` | `library` · `read_jobs` | read | — |
+| `library.open_work` | `open work` | 无同名动作（界面动作 `select_work`） | read（导航） | — |
+| `workspace.open_doc` | `open doc` | `workspace` · `open_doc` | read（导航） | — |
+| `argument.open` | `open argument-graph` | `argument` · `open` | read（导航） | — |
+| `discovery.search_ads` | `discovery search-ads` | `library` · `search_ads` | read | — |
+| `discovery.explore` | `discovery explore` | 无同名动作（Copilot 的 `explore_work` 是界面动作） | read | — |
+| `argument.read` | `argument read` | `argument` · `read` | read | — |
+| `argument.create` | `argument create` | `argument` · `create` | write | — |
+| `argument.update` | `argument update` | `argument` · `update` | write | — |
+| `argument.delete` | `argument delete` | `argument` · `delete` | write | — |
+| `argument.undo_delete` | `argument undo-delete` | `argument` · `undo_delete` | write | — |
+| `argument.add_edge` | `argument add-edge` | `argument` · `add_edge` | write | — |
+| `argument.remove_edge` | `argument remove-edge` | `argument` · `remove_edge` | write | — |
+| `argument.replace` | `argument replace` | `argument` · `replace` | write | 条件卡 |
+| `argument.clear` | `argument clear` | `argument` · `clear` | write | 条件卡 |
+| `reader.read` | `reader read` | `reader` · `read` | read | — |
+| `reader.read_image` | `reader read-image` | `reader` · `read_image` | read | — |
+| `reader.read_svg_image` | `reader read-svg-image` | `reader` · `read_svg_image` | read | — |
+| `reader.read_page_image` | `reader read-page-image` | `reader` · `read_page_image` | read | — |
+| `text.read_source` | `text read-source` | `text` · `read_source` | read | — |
+| `reader.create_annotation` | `annotation create` | `reader` · `create_annotation` | write | — |
+| `reader.update_annotation` | `annotation update` | `reader` · `update_annotation` | write | — |
+| `reader.delete_annotation` | `annotation delete` | `reader` · `delete_annotation` | write | — |
+| `reader.create_pdf_annotation` | `annotation create-pdf` | `reader` · `create_pdf_annotation` | write | — |
+| `reader.update_pdf_annotation` | `annotation update-pdf` | `reader` · `update_pdf_annotation` | write | — |
+| `reader.delete_pdf_annotation` | `annotation delete-pdf` | `reader` · `delete_pdf_annotation` | write | — |
+
+**`ingest --figure-dpi`**（2026-10-29 用户裁决）：该选项保留接收、说明忽略。`ingest --help` 写「accepted for compatibility and ignored (figures are kept as vector)」，不再带默认值 200；传入不报错、行为不变（[tex-pipeline](tex-pipeline.md) 里已有同一说明）。旧定位：help 写「DPI for rasterising vector figures (default 200)」，与图已改为矢量 SVG 的事实不符；原因：用户选择不接线、不移除，只改说明。
+
+## CLI 端到端 smoke（票 15）
+
+`packages/app/scripts/cli-e2e-lib.mjs`（入口：`smoke-pack.mjs` 第 7 节，在刚打包、干净安装出的 `bin.js` 上跑；`smoke-cli.mjs` 在仓库自己的 `packages/app/dist` 上跑同一组检查，不打包，开发时用）。**不进 `pnpm -r test`**，与 `smoke-pack.mjs` 同一定位（需要先 `corepack pnpm -r build`，起真实子进程与工作台）。隔离：临时 HOME/XDG、无会话总线（凭据库找不到钥匙串）、教程示例的临时拷贝作数据目录、合成 PDF 与 .bib；**不联网**：每个子进程预载 `--import netblock.mjs`，把非回环的 `fetch` 换成记录主机名的拒绝，所以 ADS（没有保存的 token，答 `no_token`，根本不发请求）与 arXiv/Crossref/OpenAlex 的操作只测到「要出门为止」，其成功答案由 server 测试以桩 HTTP 覆盖。
+
+- **目录命令**（35 个）在两条路径各跑：未运行工作台，与运行中的工作台（`serve --port 0`）。确认卡经页面接口 `POST /api/external-requests/:id/decision`（带 Origin；无 Origin 另测得 403）决定：批准、拒绝（退出 3）、命令被 SIGINT 中断（退出 130，卡片变 `withdrawn`，再批准得 409）、工作台在命令等待时被终止（退出 4，实例记录被撤销）；`delete-doc`、`attach-arxiv`（刷新既有 arXiv Doc）、`argument replace` / `clear` 都走卡。导航用脚本化的页面：在 `/ws` 报 `window.active`、对 `workbench.navigate` 回 `window.navigated`；没有页面时答 `no_window`。末尾的覆盖检查：每个目录命令在两条路径都跑过，否则失败。
+- **既有 16 个命令**各跑一次（`ingest` 需要 TeX Live，缺则明说跳过），加 `agent-plugin`；`ingest --figure-dpi 300` 被接收。
+- **操作说明里的每条命令**：用 `extractSkillCommands`（票 12 的模块）从安装包里的 `dist/skills`（README 与六份 SKILL.md）取出，把 `<占位符>` 按选项与位置填成固定夹具的值（有状态的值，如标注的 `--rev`、论证图的 `--expected-rev`，在每条命令前现读），在另一份数据拷贝、无工作台下真实执行。通过条件：到了处理器——无 commander 用法错误、无堆栈、退出码为 0 或 1（`--help` 要有 Usage；只写了命令名而无选项的提及，答退出 2 的参数清单即可）；`not_found`、`conflict`、`workbench_required` 这类操作自己的答案算答案，逐条列在 `cli-e2e-commands.txt`。填不出占位符是失败（说明引入了新的占位符，要补夹具）。
+- 输出：每条检查一行 PASS/FAIL，每条命令的退出码与 status 写进证据目录的 `cli-e2e-commands.txt`，末尾报告被拦截的网络请求数与主机。

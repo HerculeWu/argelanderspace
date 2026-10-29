@@ -31,8 +31,8 @@ via `pdftocairo` (poppler; Ghostscript for EPS) — optional; missing or failed
 conversions degrade the figure gracefully, never the ingest. No Python anywhere.
 
 ArgelanderSpace is a local single-user tool: the server binds `127.0.0.1` and
-there is no authentication. LLM agents integrate through the CLI plus the pi
-skills in `skills/` — see **Agent integration (skills)** below.
+there is no authentication. LLM agents integrate through the CLI plus the
+operation guides in `skills/` — see **Agent integration** below.
 
 ## Requirements
 
@@ -140,8 +140,10 @@ start over). In the desktop app the tutorial starts from the welcome page.
 
 ## CLI
 
+The commands that exist since the first releases:
+
 ```
-argelanderspace ingest <input>      arXiv id/URL | local .tex/dir/tarball
+argelanderspace ingest <input>      arXiv id/URL | local .tex/dir/tarball | DOI (a Work without a Doc)
 argelanderspace library build       rebuild the library (seed → enrich ADS▸Crossref▸OpenAlex → plan → graph)
                                     [--offline] [--bib refs.bib]
 argelanderspace acquire <refs.bib>  add a .bib's works and print the acquisition plan
@@ -149,7 +151,40 @@ argelanderspace acquire <refs.bib>  add a .bib's works and print the acquisition
 argelanderspace serve               API + web UI + WebSocket progress  [--port N] [--web-dist DIR]
 argelanderspace tutorial            the in-app tutorial in the browser: set up or resume the tutorial
                                     folder and serve it  [--dir DIR] [--port N] [--reset]
+argelanderspace agent-plugin        print the Claude Code Agent plugin's path and the two commands that
+                                    install it (changes no configuration)
 ```
+
+plus the reading commands (`search`, `list`, `read`, `show`, `ref`, `annot`,
+`pdf-path`), `note`, `label` and `argument get|put` described under **Agent
+integration**.
+
+Since 0.2 every operation the Copilot has for the Library, reading, annotation,
+ADS discovery and argument graphs is also a CLI command, derived from one
+operation catalog, so the two entries do the same thing with the same
+protection:
+
+| Group | Commands |
+|---|---|
+| `library` | `read`, `set-main-doc`, `delete-doc`, `import-works`, `attach-local-pdf`, `list-ads-libraries`, `read-ads-library`, `acquire-arxiv-pdf`, `attach-arxiv`, `read-jobs` (and `build`, above) |
+| `discovery` | `search-ads`, `explore` |
+| `reader`, `text` | `reader read`, `read-image`, `read-svg-image`, `read-page-image`; `text read-source` |
+| `annotation` | `create`, `update`, `delete` (LaTeX / text Docs); `create-pdf`, `update-pdf`, `delete-pdf` (PDF Docs) |
+| `argument` | `read`, `create`, `update`, `delete`, `undo-delete`, `add-edge`, `remove-edge`, `replace`, `clear` (and `get`, `put`, above) |
+| `open` | `doc`, `work`, `argument-graph` — ask the running workbench to show a place |
+
+Each prints one JSON object (the operation's result) and exits 0 on success, 1
+when the operation answered `ok: false`, 2 on invalid parameters, 3 when the
+user refused a confirmation card, 4 when the workbench quit while a card was
+waiting, 130 on Ctrl-C. When a workbench is running for the same data folder the
+command is handed to it (one writer); otherwise it runs in its own process.
+Something that needs a person's confirmation in the Copilot (deleting a Doc,
+replacing a Doc's arXiv text, replacing or clearing an argument graph that has
+arguments) shows the same card in the running workbench and the command waits
+for the answer; without a workbench it answers `workbench_required` and does
+nothing. `argelanderspace <group> --help` lists the options; the derivation
+rules and the exit codes are in [docs/operation-catalog.md](docs/operation-catalog.md)
+and the operation-to-command table is in [skills/README.md](skills/README.md).
 
 Global option: `--data-dir <dir>` (may appear before or after the subcommand;
 not taken by `tutorial`, whose data is the tutorial folder).
@@ -158,22 +193,49 @@ Useful ingest flags: `--no-assets` (skip figure materialization), `--no-cache`,
 (`--figure-dpi` is still accepted for compatibility but ignored: figures are
 vector SVG now.)
 
-## Agent integration (skills)
+## Agent integration
 
-LLM agents (pi-style CLI agents) drive ArgelanderSpace through the same CLI —
-no MCP. The repo ships three pi skills under `skills/` that encode the
-workflows, plus one self-contained skill that finds new papers on NASA ADS:
+Two kinds of agent use ArgelanderSpace, and one set of **operation guides**
+(`skills/`) serves both. A guide describes its steps with operations
+(`library.import_works`, `reader.read`, `argument.replace`) and says, for each,
+how it is called by the **Copilot** (the assistant inside the workbench: a tool
+and an action) and by an **external agent** (Claude Code, pi or any agent with a
+shell: the `argelanderspace` command). No MCP server is involved. The Copilot
+loads all six guides from the folder that ships with the application.
 
-| Skill | What it does |
+| Guide | What it does |
 |---|---|
-| `argelander-paper-ingest` | arXiv id / local LaTeX → `ingest` → `library build` → confirm in `search` → asks the user for a note (agent drafts the suggestion) for every paper |
-| `argelander-read-paper` | Deep-read one ingested doc: resolves equations/figures/tables via `show`, citations via `ref`, keeps paper claims vs cited work apart, cites evidence as deep links |
-| `argelander-query-paper-library` | Ranks the whole library against a research question (`note` is the primary signal), shows a shortlist, hands picks to read-paper, synthesizes with work ids + deep links |
-| `argelander-find-papers` | Standalone, read-only: searches NASA ADS for seed papers, expands with `similar` / `useful`, returns a ranked list. Uses its own script and `~/.ads/dev_key`, not the CLI — a separate copy from the token saved in the workbench |
-| `argelander-argument-graph` | Reads one ingested paper and writes its argument graph (Toulmin arguments, Native/End arguments, edges, sources) into the workbench with `argument put`; asks before replacing an existing graph and reports End arguments, main chains and audit findings |
-| `argelander-project-intake` | Moves a half-finished project into a Project by interview: ADS libraries, Zotero/.bib, loose PDFs, servers, Overleaf or local manuscripts and a TODO file become Works, PDFs, Plans and Tasks through the Copilot's business tools; progress lives in `argelanderspace-intake.md`. An external agent uses its read-only preparation mode and hands the writing to the Copilot |
+| `argelander-find-papers` | Finds papers that are in no library yet: searches NASA ADS with `discovery.search_ads` (the token saved in the workbench; no key file is read), expands from seed papers with ADS `similar(…)` / `useful(…)` queries, returns a ranked list. Read-only |
+| `argelander-paper-ingest` | Brings one paper in: `library.import_works` for the Work, then the body (arXiv LaTeX `library.attach_arxiv`, a PDF `library.attach_local_pdf` or `library.acquire_arxiv_pdf`, or a local LaTeX source with `ingest` + `library build`), then asks the user for a note and sets it |
+| `argelander-read-paper` | Deep-reads one ingested doc (`reader.read`, or the CLI's markdown `read`): resolves equations/figures/tables and citations, keeps paper claims vs cited work apart, cites evidence as deep links; also reads and writes the user's annotations (`annotation …`) |
+| `argelander-query-paper-library` | Ranks the whole library against a research question (the note is the primary signal), shows a shortlist, hands picks to read-paper, synthesizes with work ids + deep links |
+| `argelander-argument-graph` | Reads one paper and writes its argument graph (Toulmin arguments, Native/End arguments, edges, sources) with `argument.replace`; a graph that already has arguments is replaced only after the user confirms on the card; reports End arguments, main chains and audit findings |
+| `argelander-project-intake` | Moves a half-finished project in by interview: ADS libraries, Zotero/.bib, loose PDFs, servers, Overleaf or local manuscripts and a TODO file become Works and PDFs through the catalog operations (an external agent can do all of the library part); Plans and Tasks are created by the Copilot; progress lives in `argelanderspace-intake.md` |
 
-Install by symlinking into pi's skills directory (`~/.pi/agent/skills/`
+Plans, the Writer, Mail and the shelf have no guide in this release. The
+Copilot has no operation that writes a note, tags or flags or that ingests a
+local source (it hands the user the command), and an external agent cannot
+create Plans or Tasks.
+
+### Install the guides
+
+**Claude Code.** The npm package and the desktop app carry an Agent plugin that
+holds the six guides (no MCP server, hooks or agents; the CLI itself must be on
+`PATH` at the same version). Run
+
+```bash
+argelanderspace agent-plugin
+```
+
+It prints the plugin's absolute path and the two commands to type inside Claude
+Code: `/plugin marketplace add <path>` and
+`/plugin install argelanderspace@argelanderspace-local`. It is read-only and
+changes no Claude Code configuration. The plugin's version is the package's
+version: run it again and update the plugin after upgrading ArgelanderSpace.
+Without the plugin you can copy the guides you want into Claude Code's skills
+folder (`~/.claude/skills/` for all projects, `.claude/skills/` for one).
+
+**pi.** Symlink the guides into pi's skills directory (`~/.pi/agent/skills/`
 globally, or `.pi/skills/` in a project):
 
 ```bash
@@ -214,14 +276,16 @@ needs neither Node nor administrator rights:
   outside ASCII (a Chinese user name is fine): `cmd` reads the launcher in the
   console's code page, so the launcher names those folders through
   `%LOCALAPPDATA%` and its kin.
-- **Show the skills folder** opens the skills that ship with the app (the
+- The launcher runs the app's own CLI, so `argelanderspace agent-plugin` works
+  with it as well (see **Install the guides** above for Claude Code).
+- **Show the skills folder** opens the guides that ship with the app (the
   `skills/` of this repository, in the package's resources —
   `/usr/lib/argelanderspace/skills` for the Linux deb). Copy the ones you want
   into your agent's skills directory yourself (see above); the app writes
   nothing into any agent tool's directory.
 
-The CLI–agent contract in one table (details + output conventions in
-`skills/README.md`):
+The older commands the guides still use, in one table (the operation-to-command
+table, the exit codes and the output conventions are in `skills/README.md`):
 
 | Command | Purpose | Output |
 |---|---|---|
@@ -231,6 +295,8 @@ The CLI–agent contract in one table (details + output conventions in
 | `show <docId> <floatId>` | one figure/table/equation/code/algorithm as JSON (+ `link`) | JSON |
 | `ref <docId> <refIdOrKey>` | one bibliography entry as JSON (+ `cited_in`, `link`) | JSON |
 | `annot <docId>` | a doc's current annotations as JSONL (reading order; `target` + `context` + `link` per row; read-only, stale-after-edit annotations hidden) | JSONL |
+| `argument get <workId>` / `argument put <workId> <file\|-> --rev n [--replace]` | the whole argument graph as JSON with `rev`; write it back (no confirmation card: prefer `argument replace`) | JSON |
+| `pdf-path <docId>` | absolute path of a PDF Doc's original file | one line |
 | `note <workId> [text...]` | set / print a work's note | JSON |
 | `label <workId> [--label c] [--read b] [--star b] [--tags a,b]` | patch user state | JSON |
 
@@ -401,7 +467,7 @@ pnpm workspace (use `corepack pnpm`; Node ≥ 24):
 | `packages/core` | pure domain logic: the tex ingest pipeline (compile ports, source tree, fusion, IR assembly), library/graph/planner (no I/O) |
 | `packages/infra` | side-effect adapters: latexmk compile + pdftocairo/gs figures, arXiv fetcher, ADS/Crossref/OpenAlex, config file |
 | `packages/server` | Hono server: REST endpoints, static SPA, job runner, `/ws` |
-| `packages/cli` | the commander program (`ingest` / `library build` / `acquire` / `serve`) |
+| `packages/cli` | the commander program: the older commands (`ingest`, `library build`, `acquire`, `serve`, `tutorial`, `search`, `note`, …), the commands derived from the operation catalog, `agent-plugin` |
 | `packages/web` | React reader workspace (vite) |
 | `packages/app` | the publishable `argelanderspace` npm package: bundles cli+server+core+infra into one ESM file + the built SPA + the `argelander.sty` instrumentation asset |
 
