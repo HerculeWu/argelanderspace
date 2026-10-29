@@ -21,5 +21,6 @@ export * from "./providers.js";
 export * from "./server.js";
 export * from "./watch.js";
 export * from "./workbench-instance.js";
+export * from "./workbench-required.js";
 export * from "./workbench-windows.js";
 export * from "./ws.js";

@@ -7,12 +7,11 @@
 import type { NavigationResult, NavigationTarget } from "@argelanderspace/contracts";
 import { readLibrary } from "./library-actions.js";
 import type { OperationCall, OperationRuntime } from "./operation-catalog.js";
+import { workbenchRequired } from "./workbench-required.js";
 import type { NavigationOutcome } from "./workbench-windows.js";
 
-const NOTHING = "nothing was opened";
-
-export const NAVIGATION_WORKBENCH_REQUIRED =
-  "this opens a place in the workbench, and no workbench is running for this data directory; open ArgelanderSpace on this project first (the command never starts it). Nothing was opened";
+const NOTHING_OPENED = "opened";
+const NOTHING = `nothing was ${NOTHING_OPENED}`;
 
 const subject = (target: NavigationTarget): string =>
   target.op === "workspace.open_doc"
@@ -75,7 +74,7 @@ export async function runNavigationOperation(
   call: OperationCall
 ): Promise<NavigationResult> {
   if (!runtime.navigate)
-    return { ok: false, status: "workbench_required", detail: NAVIGATION_WORKBENCH_REQUIRED };
+    return workbenchRequired("this opens a place in the workbench", NOTHING_OPENED);
   // A Work the Library does not have is not opened (the Library page and the graph view would show an empty page).
   if (target.op !== "workspace.open_doc") {
     const refId = target.op === "library.open_work" ? target.params.refId : target.params.workId;

@@ -105,7 +105,7 @@ async function startWorkbench(dataDir: string) {
       headers: { "content-type": "application/json", origin: `http://127.0.0.1:${port}` },
       body: JSON.stringify({ decision }),
     });
-  return { waitForCard, decide };
+  return { waitForCard, decide, close: () => srv.close() };
 }
 
 const draft = (title: string) => ({
@@ -421,4 +421,26 @@ test("replace of a graph that has arguments: the card, then approved writes (0) 
     counts: { arguments: 0, edges: 0 },
   });
   expect(JSON.parse(s.file()).arguments).toEqual([]);
+});
+
+test("a conditional operation losing the workbench: exit 1 saying it may have run (not the card-pending exit 4)", {
+  timeout: 90_000,
+}, async () => {
+  const s = setup();
+  s.cli([
+    "argument",
+    "replace",
+    "--json",
+    s.json({ workId: WORK, expectedRev: 0, graph: body("a", "b") }),
+  ]);
+  const wb = await startWorkbench(s.dataDir);
+  const waiting = s.cliAsync(["argument", "clear", "--work-id", WORK, "--expected-rev", "1"]);
+  await wb.waitForCard();
+  await wb.close();
+  const result = await waiting;
+  expect(result.status).toBe(1);
+  expect(result.stdout).toBe("");
+  expect(result.stderr).toMatch(/may or may not have run/);
+  expect(result.stderr).toMatch(/library read-jobs/);
+  expect(result.stderr).not.toMatch(/Nothing was done/);
 });

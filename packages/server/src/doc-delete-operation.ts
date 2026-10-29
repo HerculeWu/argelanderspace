@@ -8,12 +8,15 @@
  * Both read what the dialog would show without writing, refuse a Doc the dialog would not offer, and check again after
  * the click, so the wording of every refusal is defined once, here.
  */
+
+import { askCard } from "./confirm-card.js";
 import {
   applyDocDelete,
   type DocDeleteDescription,
   type DocDeletionPort,
 } from "./library-actions.js";
 import type { OperationCall, OperationRuntime } from "./operation-catalog.js";
+import { cardWorkbenchRequired } from "./workbench-required.js";
 
 export type DocDeleteReady = Extract<DocDeleteDescription, { kind: "ready" }>;
 export type DocDeleteRefusal = {
@@ -100,18 +103,13 @@ export async function runDeleteDocOperation(
   const port = runtime.library.deletion;
   if (!port) return { ok: false, status: "unsupported", detail: DOC_DELETE_UNAVAILABLE };
   // Only the running workbench has a place to show the card; without it nothing is deleted and nothing is asked.
-  if (!runtime.confirm)
-    return {
-      ok: false,
-      status: "workbench_required",
-      detail:
-        "deleting a Doc needs your confirmation on a card in the workbench, and no workbench is running for this data directory; open ArgelanderSpace on this project first. Nothing was deleted",
-    };
+  if (!runtime.confirm) return cardWorkbenchRequired("library.delete_doc");
   const prepared = await prepareDocDelete(port, params.docId);
   if (!prepared.ok) return prepared;
   const { described } = prepared;
-  const waiting = runtime.confirm.ask({
-    card: {
+  const card = await askCard(
+    runtime,
+    {
       action: "delete_doc",
       object: { kind: "doc", id: params.docId },
       format: described.format,
@@ -120,29 +118,11 @@ export async function runDeleteDocOperation(
       baseRev: described.rev,
       objectDigest: described.digest,
     },
-    client: call.client,
-    signal: call.signal,
-  });
-  if (waiting === null)
-    return {
-      ok: false,
-      status: "rejected",
-      detail:
-        "too many requests are already waiting for the user's confirmation; nothing was deleted",
-    };
-  const asked = await waiting;
-  if (asked.answer === "withdrawn")
-    return {
-      ok: false,
-      status: "interrupted",
-      detail: "the request was withdrawn before it was decided; nothing was deleted",
-    };
-  if (asked.answer === "denied")
-    return {
-      ok: false,
-      status: "denied",
-      detail: "the user denied the request; nothing was deleted",
-    };
+    call,
+    "deleted"
+  );
+  if (!card.approved) return card.refusal;
+  const { asked } = card;
   // Approved: the click is the commit. Whatever happens next is reported to the decision call.
   let result: unknown;
   try {

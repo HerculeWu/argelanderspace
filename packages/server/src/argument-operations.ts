@@ -18,6 +18,7 @@ import type {
   ArgumentToolWrite,
   RemovedArgument,
 } from "@argelanderspace/contracts";
+import { askCard } from "./confirm-card.js";
 import {
   alreadyEmptyAnswer,
   applyEditRequest,
@@ -37,6 +38,7 @@ import {
   writeArgumentProposal,
 } from "./copilot-argument-tool.js";
 import type { OperationCall, OperationRuntime } from "./operation-catalog.js";
+import { needsCard, workbenchRequired } from "./workbench-required.js";
 
 const UNSUPPORTED_HERE = {
   ok: false,
@@ -185,11 +187,10 @@ export async function runArgumentReplace(
   if (current.arguments.length > 0) {
     // Whatever is there would be lost: only the real user can say yes, and only the running workbench can ask.
     if (!runtime.confirm)
-      return {
-        ok: false,
-        status: "workbench_required",
-        detail: `${request.action} of a graph that has arguments needs your confirmation on a card in the workbench, and no workbench is running for this data directory; open ArgelanderSpace on this project first. Nothing was written`,
-      };
+      return workbenchRequired(
+        needsCard(`${request.action} of a graph that has arguments`),
+        "written"
+      );
     let described: ReturnType<typeof describeArgumentTarget>;
     try {
       described = describeArgumentTarget(deps, workId);
@@ -202,31 +203,14 @@ export async function runArgumentReplace(
     }
     if (!described) return unavailableAnswer({ kind: "no_work" }).payload;
     baseRev = described.rev;
-    const waiting = runtime.confirm.ask({
-      card: replaceCard(request, described, built.graph),
-      client: call.client,
-      signal: call.signal,
-    });
-    if (waiting === null)
-      return {
-        ok: false,
-        status: "rejected",
-        detail:
-          "too many requests are already waiting for the user's confirmation; nothing was written",
-      };
-    const asked = await waiting;
-    if (asked.answer === "withdrawn")
-      return {
-        ok: false,
-        status: "interrupted",
-        detail: "the request was withdrawn before it was decided; nothing was written",
-      };
-    if (asked.answer === "denied")
-      return {
-        ok: false,
-        status: "denied",
-        detail: "the user denied the request; nothing was written",
-      };
+    const card = await askCard(
+      runtime,
+      replaceCard(request, described, built.graph),
+      call,
+      "written"
+    );
+    if (!card.approved) return card.refusal;
+    const { asked } = card;
     settle = asked.settle;
     // Approved: the click is the commit. Check once more that it is the graph the card showed.
     let again: ReturnType<typeof describeArgumentTarget>;

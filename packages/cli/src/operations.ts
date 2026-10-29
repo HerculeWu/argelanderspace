@@ -8,9 +8,10 @@
  * `--json` supplies the whole parameter object instead. The output is the operation's result as JSON on stdout, the
  * same object the Copilot tool returns. Exit codes: 0 the result is ok/noop (or a read), 1 the operation answered
  * `ok: false` or failed, 2 the parameters were not valid (nothing was run), 3 the user denied the confirmation card
- * (`status: "denied"`), 4 an operation waiting for a confirmation card was interrupted (the workbench exited or
- * stopped answering), 130 this command was interrupted (Ctrl-C) and withdrew its card. An operation with
- * `confirm: "card"` and every navigation operation (`argelanderspace open doc|work|argument-graph`, ticket 05) need
+ * (`status: "denied"`), 4 an operation that always waits for a confirmation card (`confirm: "card"`) was interrupted
+ * (the workbench exited or stopped answering; a `conditional` one cannot tell whether it was waiting, so its
+ * connection loss is exit 1 saying the operation may have run), 130 this command was interrupted (Ctrl-C) and
+ * withdrew its card. An operation with `confirm: "card"` and every navigation operation (`argelanderspace open doc|work|argument-graph`, ticket 05) need
  * a running workbench: without one the command answers `workbench_required` (exit 1) and runs nothing in this process. An
  * operation with `confirm: "conditional"` (`library attach-arxiv` replacing a Doc's text; replacing or clearing an
  * argument graph that has arguments, `argument replace` / `clear`) needs the card only for those calls: it runs in this
@@ -34,6 +35,7 @@ import {
 } from "@argelanderspace/contracts";
 import { libraryPaths } from "@argelanderspace/core";
 import {
+  cardWorkbenchRequired,
   createLocalOperationRuntime,
   findRunningWorkbench,
   parseOperationParams,
@@ -146,11 +148,7 @@ async function runOperationCommand(op: OperationDef, cmd: Command): Promise<void
   }
   // The card is the real user's confirmation: with no workbench to show it nothing is asked and nothing runs here.
   if (op.confirm === "card") {
-    printResult({
-      ok: false,
-      status: "workbench_required",
-      detail: `${op.id} needs your confirmation on a card in the workbench, and no workbench is running for this data directory; open ArgelanderSpace on this project first. Nothing was done`,
-    });
+    printResult(cardWorkbenchRequired(op.id));
     process.exitCode = 1;
     return;
   }
@@ -204,11 +202,22 @@ async function runViaWorkbench(
     if (interrupted) {
       console.error("error: interrupted; the request was withdrawn and nothing was done");
       process.exitCode = EXIT_SIGINT;
-    } else if (waits) {
+    } else if (op.confirm === "card") {
+      // Every call of a `card` operation waits for the card, so a request that ends here was undecided (unless the
+      // click had just come).
       console.error(
         `error: interrupted; the workbench (port ${workbench.port}) stopped answering before the request was decided. Nothing was done unless you had just approved it; read the object to check`
       );
       process.exitCode = EXIT_INTERRUPTED;
+    } else if (op.confirm === "conditional") {
+      // Only some calls wait for a card and the CLI cannot tell which this was: the card may have been undecided
+      // (nothing done), or the operation already approved or needing none, so it may have run or its task been
+      // submitted. Not exit 4, which says the request was waiting for a card.
+      fail(
+        new Error(
+          `the workbench (port ${workbench.port}) stopped answering before this command had its answer; the operation may or may not have run, and a task it started may have been submitted. Read the object to check, and run \`argelanderspace library read-jobs\` for tasks`
+        )
+      );
     } else {
       fail(
         new Error(

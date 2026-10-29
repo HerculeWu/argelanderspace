@@ -124,11 +124,16 @@ const jobRecords = (p: LibraryPaths = paths) =>
   existsSync(jobsDirOf(p)) ? readdirSync(jobsDirOf(p)).filter((n) => n.endsWith(".json")) : [];
 const workOnDisk = (id: string, p: LibraryPaths = paths) => LibraryStore.load(p).get(id);
 
-function localRuntime(p: LibraryPaths = paths, wiring: Record<string, unknown> = {}) {
+function localRuntime(
+  p: LibraryPaths = paths,
+  wiring: Record<string, unknown> = {},
+  autoIngestArxiv: () => boolean = () => false
+) {
   const runtime = createLocalOperationRuntime(p, wiring, {
     makeSources: () => stubSources(),
     pipelines: stubPipelines(),
     fetchArxivPdf: (id) => arxivPdf(id),
+    autoIngestArxiv,
   });
   if (adsLibraries) runtime.library.adsLibraries = () => adsLibraries as AdsLibrariesSource;
   return runtime;
@@ -251,7 +256,7 @@ test("read_jobs: in this process it reads the records without creating or rewrit
 // ---- import_works --------------------------------------------------------------------------------- //
 const BIB = `@article{synth2026,\n  author = {Doe, Jane},\n  title = {A synthetic import},\n  journal = {MNRAS},\n  year = {2026},\n  doi = {10.1000/synth}\n}`;
 
-test("import_works (bib): created, then already held; in this process no arXiv PDF job is queued; the workbench answers the same", async () => {
+test("import_works (bib): created, then already held; BibTeX never queues an arXiv PDF job; the workbench answers the same", async () => {
   const first = (await local("library.import_works", { mode: "bib", text: BIB })) as Record<
     string,
     unknown
@@ -279,6 +284,52 @@ test("import_works (bib): created, then already held; in this process no arXiv P
   expect(viaRoute.status).toBe(200);
   expect(viaRoute.body).toEqual(JSON.parse(JSON.stringify(first)));
   expect(workOnDisk("doi:10.1000/synth", other.paths)).toBeDefined();
+});
+
+test("import_works (identifier) in this process follows auto_ingest_arxiv: on queues the arXiv PDF job and waits for its end, off queues none; same answer shape as the workbench", async () => {
+  const pdfJobs = (p: LibraryPaths) =>
+    jobRecords(p)
+      .map((name) => JSON.parse(readFileSync(join(jobsDirOf(p), name), "utf8")))
+      .filter((job) => job.payload?.format === "arxiv-pdf");
+  const params = { mode: "identifier", text: "arXiv:2603.77777" };
+  const fetched: string[] = [];
+  arxivPdf = async (id) => {
+    fetched.push(id);
+    return pdfBytes;
+  };
+
+  const off = (await runCatalogOperation(
+    localRuntime(paths, {}, () => false),
+    "library.import_works",
+    params
+  )) as Answer;
+  expect(off).toMatchObject({ ok: true, status: "ok", created: 1 });
+  expect(jobRecords()).toEqual([]);
+  expect(fetched).toEqual([]);
+
+  const second = seed("second");
+  const on = (await runCatalogOperation(
+    localRuntime(second.paths, {}, () => true),
+    "library.import_works",
+    params
+  )) as Answer;
+  expect(on).toMatchObject({ ok: true, status: "ok", created: 1 });
+  expect(valid("library.import_works", on)).toBe(true);
+  // The command returned only after the job ended.
+  const jobs = pdfJobs(second.paths);
+  expect(jobs).toHaveLength(1);
+  expect(jobs[0]).toMatchObject({ status: "done" });
+  expect(fetched).toEqual(["2603.77777"]);
+
+  // The workbench (its gate on) gives the same answer shape.
+  const third = seed("third");
+  paths = third.paths;
+  dataDir = third.dir;
+  buildApp();
+  const viaRoute = await viaWorkbench("library.import_works", params);
+  expect(viaRoute.status).toBe(200);
+  expect(Object.keys(viaRoute.body).sort()).toEqual(Object.keys(on).sort());
+  await Promise.all(runner.list().map((job) => runner.waitFor(job.id)));
 });
 
 test("import_works: invalid parameters never run; more than 200 bibcodes are the operation's own rejection on both paths", async () => {

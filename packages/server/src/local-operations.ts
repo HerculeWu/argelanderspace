@@ -7,8 +7,9 @@
  * What a command that writes needs (the import pipeline, the arXiv job queue, the PDF upload) is built on first use, so
  * a read creates no job directory and no runner. Jobs that run in this process are waited for to their end: the
  * process is the only thing that could run them, so a command that returned earlier would leave a queued job nobody
- * runs (`docs/operation-catalog.md`, "Long tasks without a workbench"). The automatic arXiv PDF job that the import
- * menu queues after a single identifier or bibcode import is not queued here for the same reason.
+ * runs (`docs/operation-catalog.md`, "Long tasks without a workbench"). That includes the automatic arXiv PDF job that
+ * the import menu queues after a single identifier or bibcode import: it is queued by the same `auto_ingest_arxiv`
+ * setting as on the workbench (user ruling 2026-10-29: the effect is the same), and the import waits for it to end.
  */
 
 import { join } from "node:path";
@@ -40,6 +41,7 @@ import { AsyncLock } from "./lock.js";
 import type { OperationRuntime } from "./operation-catalog.js";
 import { createPdfAccess, worksOwningDoc } from "./pdf-access.js";
 import { createReaderOps } from "./reader-ops-deps.js";
+import { readSettings } from "./settings.js";
 import { TextDocService } from "./text-docs.js";
 
 /** The longest a timer can wait: "until the job ends" for a process that is the only one that can run it. */
@@ -50,6 +52,8 @@ export interface LocalOperationSeams {
   makeSources?: (offline: boolean) => MetadataSources | Promise<MetadataSources>;
   pipelines?: IngestPipelines;
   fetchArxivPdf?: (arxivId: string) => Promise<Buffer>;
+  /** The `auto_ingest_arxiv` gate; absent → the setting in the user's config file, read at each import like the workbench. */
+  autoIngestArxiv?: () => boolean;
 }
 
 /**
@@ -84,6 +88,7 @@ export function createLocalOperationRuntime(
   });
   const jobsDir = join(paths.dataDir, "jobs");
   let built: Acquisition | undefined;
+  let builtRunner: JobRunner | undefined;
   /** The import pipeline and the job queue, made when an operation first needs them. */
   const acquisition = (): Acquisition => {
     if (built) return built;
@@ -105,13 +110,15 @@ export function createLocalOperationRuntime(
             arxivId,
             wiring.fetchImpl === undefined ? {} : { fetchImpl: wiring.fetchImpl }
           )),
-      // A job queued here would die with this process; the import does not queue one (see the header).
-      autoIngestArxiv: () => false,
+      // The same switch as the workbench's; a job queued here is waited for by `importWorks` below.
+      autoIngestArxiv:
+        seams.autoIngestArxiv ?? (() => readSettings().values.auto_ingest_arxiv !== false),
       pdfOwners: (docId) => worksOwningDoc(paths, docId),
       acquisitionWaitMs: UNBOUNDED_WAIT_MS,
     });
     runner.onEvent = (type, job) => made.onJobEvent(type, job);
     built = made;
+    builtRunner = runner;
     return made;
   };
   /** The job records are on disk at every transition, so reads never need the runner. */
@@ -139,7 +146,16 @@ export function createLocalOperationRuntime(
         paths,
         loadCurrentGraph(paths) ?? buildGraph(LibraryStore.load(paths), paths.outputDir)
       ),
-    importWorks: (req, options) => acquisition().importManualWorks(req, options),
+    importWorks: async (req, options) => {
+      const made = acquisition();
+      const known = new Set(builtRunner?.list().map((job) => job.id));
+      const outcome = await made.importManualWorks(req, options);
+      // The automatic arXiv PDF jobs this import queued: this process is the only one that can run them, so wait for
+      // their end (the answer is the import's, exactly as on the workbench; the jobs' end is in `read-jobs`).
+      const queued = (builtRunner?.list() ?? []).filter((job) => !known.has(job.id));
+      await Promise.all(queued.map((job) => made.jobs.waitFor(job.id)));
+      return outcome;
+    },
     acquisition: port,
     adsLibraries: () => realAdsLibraries(wiring),
     adsSearch: () => realAdsSearch(wiring),

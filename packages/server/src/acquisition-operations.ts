@@ -10,8 +10,11 @@
  * (the Copilot tool keeps its own card in its conversation). The wording of every refusal is `prepareArxivRefresh`'s,
  * defined once with the Copilot path.
  */
+
+import { askCard } from "./confirm-card.js";
 import { type AcquireContext, applyAttachArxiv, prepareArxivRefresh } from "./library-actions.js";
 import type { OperationCall, OperationRuntime } from "./operation-catalog.js";
+import { needsCard, workbenchRequired } from "./workbench-required.js";
 
 /** How the acquisition operations wait for their job, and when they stop being admitted. */
 export function acquireContext(runtime: OperationRuntime, call: OperationCall): AcquireContext {
@@ -21,9 +24,6 @@ export function acquireContext(runtime: OperationRuntime, call: OperationCall): 
     ...(runtime.jobWaitMs !== undefined ? { waitMs: runtime.jobWaitMs } : {}),
   };
 }
-
-const NO_WORKBENCH =
-  "refreshing the arXiv source replaces the text of an existing Doc and may discard its annotations, so it needs your confirmation on a card in the workbench, and no workbench is running for this data directory; open ArgelanderSpace on this project first. Nothing was changed and no job was started";
 
 /** The CLI's `library attach-arxiv`. */
 export async function runAttachArxivOperation(
@@ -38,12 +38,17 @@ export async function runAttachArxivOperation(
   const plan = port.describeSource(refId);
   // Not a replacement (a new Doc, or a refusal such as no_arxiv): no card, the shared submit answers.
   if (plan.kind !== "refresh") return applyAttachArxiv(runtime.library, refId, context);
-  if (!runtime.confirm) return { ok: false, status: "workbench_required", detail: NO_WORKBENCH };
   const nothing = "changed and no job was started";
+  if (!runtime.confirm)
+    return workbenchRequired(
+      `${needsCard("refreshing the arXiv source")} (it replaces the text of an existing Doc and may discard its annotations)`,
+      nothing
+    );
   const prepared = await prepareArxivRefresh(runtime.library, refId, plan, {});
   if (!prepared.ok) return prepared;
-  const waiting = runtime.confirm.ask({
-    card: {
+  const card = await askCard(
+    runtime,
+    {
       action: "refresh_arxiv_source",
       object: { kind: "doc", id: prepared.docId, workId: refId },
       label: prepared.title,
@@ -51,28 +56,11 @@ export async function runAttachArxivOperation(
       baseRev: prepared.rev,
       objectDigest: prepared.digest,
     },
-    client: call.client,
-    signal: call.signal,
-  });
-  if (waiting === null)
-    return {
-      ok: false,
-      status: "rejected",
-      detail: `too many requests are already waiting for the user's confirmation; nothing was ${nothing}`,
-    };
-  const asked = await waiting;
-  if (asked.answer === "withdrawn")
-    return {
-      ok: false,
-      status: "interrupted",
-      detail: `the request was withdrawn before it was decided; nothing was ${nothing}`,
-    };
-  if (asked.answer === "denied")
-    return {
-      ok: false,
-      status: "denied",
-      detail: `the user denied the request; nothing was ${nothing}`,
-    };
+    call,
+    nothing
+  );
+  if (!card.approved) return card.refusal;
+  const { asked } = card;
   // Approved: the click is the commit. The decision call is told as soon as the job exists (the job can take minutes);
   // this command's own answer is the job's end.
   let settled = false;

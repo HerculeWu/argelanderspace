@@ -45,10 +45,10 @@
   | 1 | 操作答了 `ok: false`（`not_found`、`conflict`、`rejected`、`error`、`workbench_required` 等）或意外失败（只在 stderr 写 `error: …`） |
   | 2 | 参数无效，输出 `{ ok: false, status: "unsupported", detail }`，什么都没执行 |
   | 3 | 用户在确认卡上拒绝：stdout `{ ok: false, status: "denied", detail }`，什么都没做 |
-  | 4 | 等待确认卡时工作台退出或不再应答：stderr `error: interrupted; …`，stdout 无输出。卡片随工作台消失；若恰在此刻批准，操作可能已执行，先读取对象核对 |
+  | 4 | `confirm: "card"` 的操作等待确认卡时工作台退出或不再应答：stderr `error: interrupted; …`，stdout 无输出。卡片随工作台消失；若恰在此刻批准，操作可能已执行，先读取对象核对 |
   | 130 | 命令在等待确认卡时被 Ctrl-C（或 SIGTERM）中断，卡片已撤回，stderr 写 `error: interrupted; …` |
 
-  3、4、130 只出现在 `confirm: "card"` 与 `"conditional"` 的操作上。
+  3、130 出现在 `confirm: "card"` 与 `"conditional"` 的操作上，4 只出现在 `"card"` 的操作上。`"conditional"` 的操作（`attach-arxiv`、`argument replace`/`clear`）在等待工作台应答时连接断开，CLI 无法知道这次是否在等卡（卡片待决则什么都没做；无需卡的调用或已批准后则操作可能已执行、任务可能已提交），所以不用 4，而是退出 1，stderr 写 `error: the workbench (port …) stopped answering before this command had its answer; the operation may or may not have run, and a task it started may have been submitted. Read the object to check, and run \`argelanderspace library read-jobs\` for tasks`（2026-10-29 收口修复）。
 - **路径选择**：命令先在参数校验（退出码 2，不执行也不联系工作台）通过后，按 `--data-dir` 解析出 dataDir，查该目录的实例记录（下节）。有活的工作台就交给它，没有就在本进程执行。两条路径的 stdout、stderr、退出码同形（测试逐字节比对）。只读操作也走工作台，读到的是它当前的状态。
 - **本进程路径**：用与 server 同形的 `LibraryOpDeps`（自己的库锁，无通知，读 Library 时图缓存过期则在内存里重建而不写盘；`createLocalOperationRuntime`）。
 
@@ -89,7 +89,7 @@ server 端用自己的运行时（`createApp` 里 Copilot 工具共用的那份 
 
 **页面一侧。** `GET /api/external-requests`（队列）、`POST /api/external-requests/:id/decision`（`{decision: "approve"|"deny"}`；批准的应答等操作完成后带回结果）、`POST …/dismiss`（关闭撤回卡）；队列变化用 WS 帧 `external-requests.changed`（无载荷，页面重读）。只有最早一张卡可决定（其余 409 `not_first`）。决定与关闭要求带 `Origin`（浏览器页面必带），无 Origin 的请求（curl、脚本）403；这不防同账户下伪造头的进程，只防持令牌的 agent 顺手自批。web 在 `src/external-requests/`：卡片内容就是 Copilot 同一 action 的卡（`copilot/confirmations` 的 `CONFIRMATION_KINDS`），批准前问同一套页面守卫（`ConfirmationGuards`，如打开中 Doc 的离开守卫）；批准成功后由决定的那个页面做 Shell 的三态更新（`docDeleted`）。窗口标题加 `(n)` 前缀，等待中有请求时 `beforeunload` 提示。**未实现**：桌面应用的 OS 通知与任务栏角标（页面里没有 Tauri 入口，需要新的宿主桥接，另议）。
 
-**给后续确认卡操作（06/07/08）。** 目录条目写 `confirm: "card"`；处理器里仿 `runDeleteDocOperation`：先做无写入的预读与拒绝，再 `runtime.confirm.ask({ card, client, signal })`（`card` 是 Copilot 该 action 的卡字段，不含 id），按 `answer`（`withdrawn`/`denied`/`approved`）返回，批准后核对并执行，最后 `settle(result)`；Copilot 一侧继续用自己的会话卡，预读/核对函数抽成共用以保持措辞一份。web 一侧该 action 若已有卡种则自动可显示；队列和折叠栏里的一行摘要在 `summaryOf`（`ExternalRequests.tsx`）按 action 补，撤回与结果文案按需补 `externalRequests.*`。
+**给后续确认卡操作（06/07/08）。** 目录条目写 `confirm: "card"`；处理器里仿 `runDeleteDocOperation`：先做无写入的预读与拒绝（无工作台答 `workbenchRequired(...)`，措辞模板与 CLI 前置拒绝同在 `workbench-required.ts` 一处定义），再 `askCard(runtime, card, call, nothing)`（`confirm-card.ts`；`card` 是 Copilot 该 action 的卡字段，不含 id，`nothing` 补全各拒绝文案里的「nothing was …」），它把「放不下→`rejected`、撤回→`interrupted`、拒绝→`denied`」的拒绝对象直接给出，批准才返回 `asked`，调用方批准后核对并执行，最后 `asked.settle(result)`；Copilot 一侧继续用自己的会话卡，预读/核对函数抽成共用以保持措辞一份。web 一侧该 action 若已有卡种则自动可显示；队列和折叠栏里的一行摘要在 `summaryOf`（`ExternalRequests.tsx`）按 action 补，撤回与结果文案按需补 `externalRequests.*`。
 
 ## 导航（票 05）
 
@@ -184,10 +184,10 @@ CLI 不对导航操作设 Ctrl-C 撤回；命令被中断时连接断开，serve
 **`acquire_arxiv_pdf` / `attach_arxiv` / `attach_local_pdf` 与长任务**：它们提交一个任务到 JobRunner（串行队列）并等它结束，答案里有 `job`（`pending` 表示调用在任务结束前就返回了，任务仍在跑，终点用 `read_jobs` 看，不要重复提交）。
 
 - **工作台运行时**：任务排进工作台自己的队列（与页面、Copilot 共用，同一把库锁与 DocMutationRegistry），命令等待至多 `CLI_JOB_WAIT_MS`（240 秒，`app.ts`；低于 Node 全局 fetch 的 5 分钟响应头超时，再长请求会被丢），超时答 `pending`，任务由工作台继续；命令中途被中断也只是停止等待，不取消任务。
-- **工作台未运行时（「无工作台的长任务」）**：任务在**本进程**的 JobRunner 里跑（`createLocalOperationRuntime` 按需建 `createAcquisition`：自己的库锁、DocMutationRegistry、`recover: false` 的 JobRunner），命令**一直等到任务结束**才退出，不设上限，因为退出后没有任何东西会继续这个任务；Ctrl-C 终止进程，任务记录停在 `running`/`queued`，下次工作台启动时被标为 `interrupted`，与既有语义一致。这条路径上的 `import_works` **不排**导入菜单在单个 identifier/bibcode 导入后会排的自动 arXiv PDF 任务（同样因为排了也没人跑），要 PDF 就显式 `acquire-arxiv-pdf`；经工作台时仍按设置 `auto_ingest_arxiv` 排，结果字节形状相同。`recover: false`：本进程不改写 jobs 目录里别人的未完成记录，也不在没有写入时建目录。
+- **工作台未运行时（「无工作台的长任务」）**：任务在**本进程**的 JobRunner 里跑（`createLocalOperationRuntime` 按需建 `createAcquisition`：自己的库锁、DocMutationRegistry、`recover: false` 的 JobRunner），命令**一直等到任务结束**才退出，不设上限，因为退出后没有任何东西会继续这个任务；Ctrl-C 终止进程，任务记录停在 `running`/`queued`，下次工作台启动时被标为 `interrupted`，与既有语义一致。这条路径上的 `import_works` 与工作台一样按设置 `auto_ingest_arxiv`（`config.toml`，每次导入现读；`LocalOperationSeams.autoIngestArxiv` 供测试注入）排导入菜单在单个 identifier/bibcode 导入后会排的自动 arXiv PDF 任务，并像上面其他长任务一样在本进程 JobRunner 里跑、**等到这些任务结束才退出**；命令的答案仍是导入结果本身，字节形状与工作台路径相同，任务的终点用 `read-jobs` 看（2026-10-29 用户裁决：两条路径效果相同）。`recover: false`：本进程不改写 jobs 目录里别人的未完成记录，也不在没有写入时建目录。
 - **`read_jobs` 在本进程**：直接读 `<dataDir>/jobs/*.json`（运行器每次状态变化都落盘），只读，不建目录、不把任何记录改成 `interrupted`；另一个进程里还在跑的任务按它最后写下的样子显示。
 
-**`attach_arxiv` 与确认卡**：只有「刷新既有 arXiv Doc」（`describeSource` 为 `refresh`）会替换正文并可能丢标注，只有这种调用要卡（`confirm: "conditional"`）；新建 Doc、给只有 PDF 的 Work 追加 LaTeX Doc、以及 `no_arxiv`/`skip`/`not_found` 等拒绝都不需要，在两条路径都直接执行。需要卡时：处理器先做无写入的预读（`prepareArxivRefresh`，Doc 忙、不存在等直接拒绝、不出卡，措辞与 Copilot 共用），把 Copilot 同一种卡 `refresh_arxiv_source` 放进外部请求队列（卡上有 Work 标题、将被替换的 Doc、标注数；web 的 `summaryOf` 与结果文案有对应分支，`externalRequests.*Refresh`）。批准后核对一次（Doc、标注数与版本、Work 的 Doc 列表都与卡所示一致，否则 `expired`、不提交），再提交任务。因为任务可能要几分钟，批准那次页面决定请求在**任务提交后立即**得到 `{ok:true,status:"submitted",jobId}`（页面据此显示「已开始替换」），命令自己的答案仍是任务结束时的 `AcquireOutcome`。拒绝 `denied`（退出码 3）、命令被中断时撤回（130）、工作台退出（4）同 `delete_doc`。**工作台未运行**且这次调用需要卡：处理器答 `{ok:false,status:"workbench_required"}`（退出 1），什么都不改、不提交任务；不需要卡的调用无工作台也照常运行。CLI 对 `conditional` 操作也装 SIGINT/SIGTERM 处理（因为它可能在等卡）。
+**`attach_arxiv` 与确认卡**：只有「刷新既有 arXiv Doc」（`describeSource` 为 `refresh`）会替换正文并可能丢标注，只有这种调用要卡（`confirm: "conditional"`）；新建 Doc、给只有 PDF 的 Work 追加 LaTeX Doc、以及 `no_arxiv`/`skip`/`not_found` 等拒绝都不需要，在两条路径都直接执行。需要卡时：处理器先做无写入的预读（`prepareArxivRefresh`，Doc 忙、不存在等直接拒绝、不出卡，措辞与 Copilot 共用），把 Copilot 同一种卡 `refresh_arxiv_source` 放进外部请求队列（卡上有 Work 标题、将被替换的 Doc、标注数；web 的 `summaryOf` 与结果文案有对应分支，`externalRequests.*Refresh`）。批准后核对一次（Doc、标注数与版本、Work 的 Doc 列表都与卡所示一致，否则 `expired`、不提交），再提交任务。因为任务可能要几分钟，批准那次页面决定请求在**任务提交后立即**得到 `{ok:true,status:"submitted",jobId}`（页面据此显示「已开始替换」），命令自己的答案仍是任务结束时的 `AcquireOutcome`。拒绝 `denied`（退出码 3）、命令被中断时撤回（130）同 `delete_doc`；工作台在命令等待时退出，因 CLI 无法知道这次是否在等卡，退出 1 并说明操作可能已执行或任务已提交（见上文退出码表），不是 4。**工作台未运行**且这次调用需要卡：处理器答 `{ok:false,status:"workbench_required"}`（退出 1），什么都不改、不提交任务；不需要卡的调用无工作台也照常运行。CLI 对 `conditional` 操作也装 SIGINT/SIGTERM 处理（因为它可能在等卡）。
 
 **窗口常量**：Copilot 的 `library` 工具 schema 与说明文字没有改动（动作、参数、说明字节不变），窗口常量不需同步；`copilot-library-tool.ts` 只是改用 `parseCatalogCall` 取参数，写入类动作的会话内等待、journal 与 `operationId` 去重仍留在该文件。
 
