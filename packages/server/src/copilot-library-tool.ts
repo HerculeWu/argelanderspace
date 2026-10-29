@@ -11,14 +11,8 @@ import {
   LIBRARY_DETAIL_TABS,
   LIBRARY_LABEL_KEYS,
   LIBRARY_OPERATION_ACTIONS,
-  LibraryAcquireArxivPdfSchema,
-  LibraryAttachArxivSchema,
-  LibraryAttachLocalPdfSchema,
-  LibraryImportWorksSchema,
-  LibraryListAdsLibrariesSchema,
-  LibraryReadAdsLibrarySchema,
+  type LibraryImportWorks,
   LibraryReadDiscoverySchema,
-  LibraryReadJobsSchema,
   LibrarySaveCandidateSchema,
   type LibraryViewAction,
   LibraryViewActionSchema,
@@ -55,10 +49,8 @@ import {
   type LibraryOpDeps,
   type LibraryOpOutcome,
   type LibraryReadOutcome,
-  listAdsLibraries,
   prepareArxivRefresh,
-  readAdsLibrary,
-  readJobs,
+  type ReadJobsOutcome,
 } from "./library-actions.js";
 import { runCatalogOperation } from "./operation-catalog.js";
 
@@ -746,9 +738,16 @@ export function createLibraryTool(context: LibraryToolContext) {
                 }),
           });
         }
-        const jobsRead = LibraryReadJobsSchema.safeParse(rest);
-        if (jobsRead.success) {
-          const outcome = readJobs(context.library, jobsRead.data);
+        // The cataloged actions below take their parameters from the catalog and run the same business code the CLI runs.
+        const catalogParams = (id: string): Record<string, unknown> | null =>
+          cataloged.match && cataloged.op.id === id && cataloged.success ? cataloged.params : null;
+        const jobsParams = catalogParams("library.read_jobs");
+        if (jobsParams) {
+          const outcome = (await runCatalogOperation(
+            { library: context.library },
+            "library.read_jobs",
+            jobsParams
+          )) as ReadJobsOutcome;
           if (!outcome.ok)
             return done(record(toolCallId, "read_jobs", { status: "unsupported" }), outcome);
           return done(record(toolCallId, "read_jobs", { status: "ok" }), outcome);
@@ -770,12 +769,17 @@ export function createLibraryTool(context: LibraryToolContext) {
           )) as { status: CopilotOperation["status"] };
           return done(record(toolCallId, action, { status: outcome.status }), outcome);
         }
-        const adsList = LibraryListAdsLibrariesSchema.safeParse(rest);
-        const adsRead = LibraryReadAdsLibrarySchema.safeParse(rest);
-        if (adsList.success || adsRead.success) {
-          const outcome = adsRead.success
-            ? await readAdsLibrary(context.library, adsRead.data, signal)
-            : await listAdsLibraries(context.library, signal);
+        const adsId = catalogParams("library.list_ads_libraries")
+          ? "library.list_ads_libraries"
+          : catalogParams("library.read_ads_library")
+            ? "library.read_ads_library"
+            : null;
+        if (adsId) {
+          const outcome = (await runCatalogOperation(
+            { library: context.library, signal },
+            adsId,
+            catalogParams(adsId) as Record<string, unknown>
+          )) as { status: CopilotOperation["status"] };
           return done(record(toolCallId, action, { status: outcome.status }), outcome);
         }
         // delete_doc is cataloged (confirm: "card"): its parameters come from the catalog; the card stays in this
@@ -788,55 +792,47 @@ export function createLibraryTool(context: LibraryToolContext) {
             toolCallId,
             docId: (cataloged.params as { docId: string }).docId,
           });
-        const pdfJob = LibraryAcquireArxivPdfSchema.safeParse(rest);
-        const sourceJob = LibraryAttachArxivSchema.safeParse(rest);
-        if (pdfJob.success || sourceJob.success) {
-          const refId = (
-            pdfJob.success ? pdfJob.data : (sourceJob as { data: { refId: string } }).data
-          ).refId;
+        const pdfJob = catalogParams("library.acquire_arxiv_pdf");
+        const sourceJob = catalogParams("library.attach_arxiv");
+        if (pdfJob || sourceJob) {
           return await runAcquisition({
             context,
             rest,
             requestedId,
             toolCallId,
             action,
-            refId,
-            kind: pdfJob.success ? "pdf" : "source",
+            refId: ((pdfJob ?? sourceJob) as { refId: string }).refId,
+            kind: pdfJob ? "pdf" : "source",
           });
         }
-        const localPdf = LibraryAttachLocalPdfSchema.safeParse(rest);
-        if (localPdf.success)
+        const localPdf = catalogParams("library.attach_local_pdf") as {
+          refId: string;
+          path: string;
+        } | null;
+        if (localPdf)
           return await runAttachLocalPdf({
             context,
             rest,
             requestedId,
             toolCallId,
-            refId: localPdf.data.refId,
-            path: localPdf.data.path,
+            refId: localPdf.refId,
+            path: localPdf.path,
           });
-        const importOp = LibraryImportWorksSchema.safeParse(rest);
+        const importParams = catalogParams("library.import_works") as {
+          mode: LibraryImportWorks["mode"];
+          text: string;
+          batch?: boolean;
+        } | null;
+        const importOp = importParams
+          ? { success: true as const, data: { action: "import_works" as const, ...importParams } }
+          : { success: false as const };
         const write =
           cataloged.match && cataloged.op.id === "library.set_main_doc" && cataloged.success
             ? { success: true as const, data: cataloged.params as { refId: string } }
             : { success: false as const };
         const save = LibrarySaveCandidateSchema.safeParse(rest);
         if (!importOp.success && !write.success && !save.success) {
-          const failure =
-            rest.action === "import_works"
-              ? importOp
-              : rest.action === "read_ads_library"
-                ? adsRead
-                : rest.action === "attach_local_pdf"
-                  ? localPdf
-                  : rest.action === "acquire_arxiv_pdf"
-                    ? pdfJob
-                    : rest.action === "attach_arxiv"
-                      ? sourceJob
-                      : rest.action === "read_jobs"
-                        ? jobsRead
-                        : rest.action === "save_candidate"
-                          ? save
-                          : null;
+          const failure = rest.action === "save_candidate" ? save : null;
           const issues =
             cataloged.match && !cataloged.success
               ? cataloged.issues

@@ -13,8 +13,14 @@ import { z } from "zod";
 
 /** `read`: leaves the Project as it was. `write`: changes Project data (ADR 0015's single-writer rule applies). */
 export type OperationEffect = "read" | "write";
-/** `none`: runs at once. `card`: waits for the real user's confirmation card (Copilot) / the workbench (CLI). */
-export type OperationConfirm = "none" | "card";
+/**
+ * `none`: runs at once. `card`: waits for the real user's confirmation card (Copilot) / the workbench (CLI), and with
+ * no workbench the CLI refuses it without running anything. `conditional`: only some calls need the card (for example
+ * `library.attach_arxiv`, which asks only when it would replace an existing Doc's text); the handler decides, runs the
+ * calls that need none in either place, and answers `workbench_required` itself for a call that needs a card where
+ * there is no workbench to show it.
+ */
+export type OperationConfirm = "none" | "card" | "conditional";
 
 export interface OperationDef<
   Domain extends string = string,

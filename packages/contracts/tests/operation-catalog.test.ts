@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   LIBRARY_OPERATION_ACTIONS,
+  LibraryImportWorksParamsSchema,
+  LibraryImportWorksSchema,
   OPERATION_CATALOG,
   operationCliGroups,
   operationCliName,
@@ -134,7 +136,88 @@ describe("operation catalog (ADR 0015)", () => {
       "docId",
       "expectedMainDocId",
     ]);
-    expect(parseCatalogCall("library", { action: "import_works" })).toEqual({ match: false });
+    expect(parseCatalogCall("library", { action: "import_works" })).toMatchObject({
+      match: true,
+      success: false,
+    });
+    expect(parseCatalogCall("library", { action: "filter_library", query: "x" })).toEqual({
+      match: false,
+    });
     expect(parseCatalogCall("reader", { action: "read" })).toEqual({ match: false });
+  });
+
+  it("catalogs every library business action of the Copilot tool, and none of its interface actions", () => {
+    const names = operationsOfDomain("library").map((op) => op.name);
+    for (const business of [
+      "read",
+      "set_main_doc",
+      "import_works",
+      "attach_local_pdf",
+      "list_ads_libraries",
+      "read_ads_library",
+      "acquire_arxiv_pdf",
+      "attach_arxiv",
+      "read_jobs",
+      "delete_doc",
+    ])
+      expect(names, business).toContain(business);
+    for (const ui of [
+      "filter_library",
+      "select_work",
+      "set_detail_tab",
+      "set_sidebar",
+      "set_temp_label",
+      "save_candidate",
+    ])
+      expect(names, ui).not.toContain(ui);
+    const meta = (id: string) => {
+      const op = OPERATION_CATALOG.find((entry) => entry.id === id);
+      return op && [op.effect, op.confirm, op.navigates];
+    };
+    expect(meta("library.import_works")).toEqual(["write", "none", false]);
+    expect(meta("library.attach_local_pdf")).toEqual(["write", "none", false]);
+    expect(meta("library.acquire_arxiv_pdf")).toEqual(["write", "none", false]);
+    expect(meta("library.attach_arxiv")).toEqual(["write", "conditional", false]);
+    expect(meta("library.list_ads_libraries")).toEqual(["read", "none", false]);
+    expect(meta("library.read_ads_library")).toEqual(["read", "none", false]);
+    expect(meta("library.read_jobs")).toEqual(["read", "none", false]);
+  });
+
+  it("import_works: the catalog parameters keep the action schema's cross-field rules and map to flat options", () => {
+    const op = OPERATION_CATALOG.find((entry) => entry.id === "library.import_works");
+    expect(op && operationOptions(op).map((o) => [o.flag, o.kind, o.required])).toEqual([
+      ["--mode", "enum", true],
+      ["--text", "string", true],
+      ["--batch", "boolean", false],
+    ]);
+    const call = (extra: Record<string, unknown>) =>
+      parseCatalogCall("library", { action: "import_works", ...extra });
+    expect(call({ mode: "bibcode", text: "2020ApJ...900....1H" })).toMatchObject({ success: true });
+    expect(call({ mode: "bibcode", text: " , ; " })).toMatchObject({ success: false });
+    expect(call({ mode: "bib", text: "@article{a,}", batch: true })).toMatchObject({
+      success: false,
+    });
+    // More than the batch limit is the operation's own `rejected` answer, not a malformed call.
+    const many = Array.from(
+      { length: 201 },
+      (_, i) => `2020ApJ...900.${String(i).padStart(4, "0")}H`
+    );
+    expect(call({ mode: "bibcode", text: many.join(" ") })).toMatchObject({ success: true });
+    // The action schema is built from the same fields and the same check.
+    expect(
+      LibraryImportWorksSchema.safeParse({ action: "import_works", mode: "bibcode", text: " " })
+        .success
+    ).toBe(false);
+    expect(LibraryImportWorksParamsSchema.safeParse({ mode: "bibcode", text: " " }).success).toBe(
+      false
+    );
+    expect(
+      LibraryImportWorksSchema.safeParse({
+        action: "import_works",
+        mode: "bib",
+        text: "x",
+        batch: true,
+      }).success
+    ).toBe(false);
   });
 });

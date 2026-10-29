@@ -2,7 +2,7 @@
  * The external agents' confirmation cards (release-0.2 ticket 04, approved prototype 03 variant A) at the component
  * seam: the real dock and chip with a scripted API. Layout and stacking are proven in the real browser, not here.
  */
-import type { CopilotDocDeleteConfirmation, ExternalRequest } from "@argelanderspace/contracts";
+import type { CopilotDocConfirmation, CopilotDocDeleteConfirmation, ExternalRequest } from "@argelanderspace/contracts";
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import i18n from "../src/i18n";
@@ -171,4 +171,45 @@ test("nothing is shown with no request, and the leave prompt is armed only while
   await act(async () => { api.changed?.(); });
   await waitFor(() => expect(added.mock.calls.some(([type]) => type === "beforeunload")).toBe(true));
   added.mockRestore();
+});
+
+const refreshRequest = (): ExternalRequest => ({
+  id: "00000000-0000-4000-8000-0000000000f1", state: "pending", receivedAt: new Date(Date.now() - 5_000).toISOString(),
+  client: { pid: 7, commandLine: "argelanderspace library attach-arxiv --ref-id arxiv:2603.00002" },
+  card: {
+    id: "00000000-0000-4000-8000-0000000000cc", runId: "00000000-0000-4000-8000-0000000000cc", toolCallId: "external", action: "refresh_arxiv_source",
+    object: { kind: "doc", id: "arxiv-2603.00002", workId: "arxiv:2603.00002" }, label: "The paper", impact: { annotations: "known", count: 2 }, baseRev: 5, objectDigest: "e".repeat(64),
+  } satisfies CopilotDocConfirmation,
+});
+
+test("replacing an arXiv source: the Copilot card of that action with its summary and the replacement's own result wording", async () => {
+  await show(refreshRequest());
+  await waitFor(() => expect(q("external-request")).not.toBeNull());
+  expect(q("external-request")?.getAttribute("data-action")).toBe("refresh_arxiv_source");
+  expect(q("external-request")?.textContent).toContain("Replace the arXiv source of “The paper”");
+  expect(q("external-request-command")?.textContent).toContain("attach-arxiv");
+  api.decide.mockResolvedValue({ state: "approved", result: { ok: true, status: "submitted", jobId: "ingest-1" } });
+  api.list = [];
+  fireEvent.click(q("external-request-approve") as HTMLElement);
+  await waitFor(() => expect(api.decide).toHaveBeenCalledWith(refreshRequest().id, "approve"));
+  await waitFor(() => expect(q("external-request-result")?.textContent).toContain("Replacement started"));
+  // not the Doc delete's wording, and the Shell is not told a Doc was deleted
+  expect(q("external-request-result")?.textContent).not.toContain("Deleted");
+  expect(deleted).not.toHaveBeenCalled();
+});
+
+test("replacing an arXiv source: denied and not-done results say nothing was replaced", async () => {
+  await show(refreshRequest());
+  await waitFor(() => expect(q("external-request-deny")).not.toBeNull());
+  api.decide.mockResolvedValue({ state: "denied" });
+  api.list = [];
+  fireEvent.click(q("external-request-deny") as HTMLElement);
+  await waitFor(() => expect(q("external-request-result")?.textContent).toContain("nothing was replaced"));
+  cleanup();
+  await show(refreshRequest());
+  await waitFor(() => expect(q("external-request-approve")).not.toBeNull());
+  api.decide.mockResolvedValue({ state: "approved", result: { ok: false, status: "expired", detail: "annotations changed" } });
+  api.list = [];
+  fireEvent.click(q("external-request-approve") as HTMLElement);
+  await waitFor(() => expect(q("external-request-result")?.textContent).toContain("Nothing was replaced"));
 });

@@ -2963,7 +2963,12 @@
     "staleBody": "The command left, or the request was already handled; nothing was changed.",
     "notDoneTitle": "Nothing was deleted",
     "failedTitle": "Your decision could not be sent",
-    "failedBody": "Try again; the command is still waiting."
+    "failedBody": "Try again; the command is still waiting.",
+    "withdrawnBodyRefresh": "Nothing was replaced.",
+    "doneTitleRefresh": "Replacement started",
+    "doneBodyRefresh": "The arXiv source is being fetched; the command line waits for the result.",
+    "deniedBodyRefresh": "The command received error code denied; nothing was replaced.",
+    "notDoneTitleRefresh": "Nothing was replaced"
   },
   "tutorial": {
     "ui": {

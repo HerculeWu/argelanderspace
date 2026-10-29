@@ -11,10 +11,21 @@ import {
   type OperationDef,
   type OperationId,
 } from "@argelanderspace/contracts";
+import { acquireContext, runAttachArxivOperation } from "./acquisition-operations.js";
 import { exploreSeed, searchAds } from "./discovery-actions.js";
 import { runDeleteDocOperation } from "./doc-delete-operation.js";
 import type { ExternalAsk, ExternalCardFields } from "./external-requests.js";
-import { applyLibraryOperation, type LibraryOpDeps, readLibrary } from "./library-actions.js";
+import {
+  applyAcquireArxivPdf,
+  applyAttachLocalPdf,
+  applyLibraryImport,
+  applyLibraryOperation,
+  type LibraryOpDeps,
+  listAdsLibraries,
+  readAdsLibrary,
+  readJobs,
+  readLibrary,
+} from "./library-actions.js";
 import { runNavigationOperation } from "./navigation-operation.js";
 import type { NavigationPort } from "./workbench-windows.js";
 
@@ -41,6 +52,12 @@ export interface OperationRuntime {
   navigate?: NavigationPort;
   /** Cancels a read that is waiting on ADS (the Copilot's Stop); a CLI request's abort comes as `OperationCall.signal`. */
   signal?: AbortSignal | undefined;
+  /**
+   * The longest an acquisition operation waits for its job before answering `pending` (the job goes on). Absent: the
+   * acquisition port's own bound. The workbench's route sets one below the HTTP client's header timeout; the in-process
+   * runtime sets none and waits for the end (`docs/operation-catalog.md`, "Long tasks without a workbench").
+   */
+  jobWaitMs?: number;
 }
 
 /** Who asked and whether they are still there; given by the operation route, absent for a Copilot tool call. */
@@ -71,6 +88,27 @@ export const OPERATION_HANDLERS: OperationHandlers = {
     runNavigationOperation(runtime, { op: "library.open_work", params }, call),
   "argument.open": (runtime, params, call) =>
     runNavigationOperation(runtime, { op: "argument.open", params }, call),
+  "library.import_works": (runtime, params) =>
+    applyLibraryImport(runtime.library, { action: "import_works", ...params }),
+  "library.attach_local_pdf": (runtime, params, call) =>
+    applyAttachLocalPdf(
+      runtime.library,
+      { action: "attach_local_pdf", ...params },
+      acquireContext(runtime, call)
+    ),
+  "library.list_ads_libraries": (runtime, _params, call) =>
+    listAdsLibraries(runtime.library, call.signal ?? runtime.signal),
+  "library.read_ads_library": (runtime, params, call) =>
+    readAdsLibrary(
+      runtime.library,
+      { action: "read_ads_library", ...params },
+      call.signal ?? runtime.signal
+    ),
+  "library.acquire_arxiv_pdf": (runtime, params, call) =>
+    applyAcquireArxivPdf(runtime.library, params.refId, acquireContext(runtime, call)),
+  "library.attach_arxiv": (runtime, params, call) => runAttachArxivOperation(runtime, params, call),
+  "library.read_jobs": (runtime, params) =>
+    Promise.resolve(readJobs(runtime.library, { action: "read_jobs", ...params })),
   "discovery.search_ads": (runtime, params, call) =>
     searchAds(runtime.library, params, call?.signal ?? runtime.signal),
   "discovery.explore": (runtime, params, call) =>

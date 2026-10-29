@@ -211,6 +211,9 @@ import {
 // Deps
 // --------------------------------------------------------------------------- //
 
+/** How long a CLI request waits for an acquisition job in the workbench before answering `pending`. */
+export const CLI_JOB_WAIT_MS = 240_000;
+
 export interface AppDeps {
   paths: LibraryPaths;
   /** The plan page's status dir (holds `plans.json`); `statusDirFor(dataDir)`. */
@@ -283,7 +286,7 @@ export interface AppDeps {
    * The workbench's operation route (operation-routes.ts): present when this server was started with a run token, absent
    * in apps that nobody routes CLI operations to.
    */
-  operations?: { token: string };
+  operations?: { token: string; jobWaitMs?: number };
   /** Where a navigation operation sends its target: the window registry of the hub (workbench-windows.ts). */
   navigation?: NavigationPort;
   /** Test seam of the text Doc generator (runs between building a candidate and publishing it). */
@@ -865,6 +868,9 @@ export function createApp(deps: AppDeps): Hono {
       runtime: {
         library: libraryOps,
         confirm: externalRequests,
+        // A CLI request outlives Node's default HTTP header timeout (five minutes) if it waits longer than this for a
+        // job; past it the command gets `pending` and the job goes on in this workbench.
+        jobWaitMs: deps.operations.jobWaitMs ?? CLI_JOB_WAIT_MS,
         ...(deps.navigation ? { navigate: deps.navigation } : {}),
       },
     });

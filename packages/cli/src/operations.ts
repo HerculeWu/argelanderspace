@@ -11,7 +11,10 @@
  * (`status: "denied"`), 4 an operation waiting for a confirmation card was interrupted (the workbench exited or
  * stopped answering), 130 this command was interrupted (Ctrl-C) and withdrew its card. An operation with
  * `confirm: "card"` and every navigation operation (`argelanderspace open doc|work|argument-graph`, ticket 05) need
- * a running workbench: without one the command answers `workbench_required` (exit 1) and runs nothing in this process. Exit codes are listed in `docs/operation-catalog.md`.
+ * a running workbench: without one the command answers `workbench_required` (exit 1) and runs nothing in this process. An
+ * operation with `confirm: "conditional"` (`library attach-arxiv`) needs the card only for the calls that replace
+ * content: it runs in this process otherwise, and answers `workbench_required` itself when a card would be needed.
+ * Exit codes are listed in `docs/operation-catalog.md`.
  *
  * Only the catalog's operations are registered here; the older commands (`ingest`, `library build`, `annot`, ...) are
  * not in the catalog and are not touched. A command first looks for a workbench running for the data directory and, if
@@ -163,7 +166,8 @@ async function runViaWorkbench(
   let answer: Awaited<ReturnType<typeof runOnWorkbench>>;
   // A command that waits for a confirmation card is interrupted from the terminal: the request is aborted, which
   // withdraws the card in the workbench.
-  const waits = op.confirm === "card";
+  // `conditional` may wait for a card too (attach-arxiv replacing a Doc's text), so it is interruptible the same way.
+  const waits = op.confirm !== "none";
   const controller = new AbortController();
   let interrupted = false;
   const onSignal = () => {

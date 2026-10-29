@@ -266,44 +266,60 @@ export const LibrarySetMainDocSchema = z
  * text may hold several bibcodes (a batch, at most `MANUAL_BIBCODES_MAX`; more is answered `rejected`, see
  * `libraryToolImportRequest`).
  */
-export const LibraryImportWorksSchema = z
-  .object({
-    action: z.literal("import_works"),
-    mode: z.enum(["identifier", "bibcode", "bib"]),
-    text: z.string().min(1).max(1_000_000),
-    /**
-     * Migration semantics, for modes bibcode and identifier (bib mode never queues a PDF and does not take it): no
-     * automatic arXiv PDF job. In bibcode mode it also gives the batch result shape even for one bibcode (per-entry
-     * result, a record that would merge Works is refused alone); an identifier keeps its single-entry result.
-     * Project intake's migration always sets it.
-     */
-    batch: z.boolean().optional(),
-  })
+const importWorksFields = {
+  mode: z.enum(["identifier", "bibcode", "bib"]),
+  text: z.string().min(1).max(1_000_000),
+  /**
+   * Migration semantics, for modes bibcode and identifier (bib mode never queues a PDF and does not take it): no
+   * automatic arXiv PDF job. In bibcode mode it also gives the batch result shape even for one bibcode (per-entry
+   * result, a record that would merge Works is refused alone); an identifier keeps its single-entry result.
+   * Project intake's migration always sets it.
+   */
+  batch: z.boolean().optional(),
+};
+
+/** The cross-field rules of `import_works`; shared by the action schema and the catalog's parameters. */
+function checkImportWorks(
+  op: { mode: "identifier" | "bibcode" | "bib"; text: string; batch?: boolean | undefined },
+  ctx: z.RefinementCtx
+): void {
+  if (op.batch !== undefined && op.mode === "bib") {
+    ctx.addIssue({
+      code: "custom",
+      path: ["batch"],
+      message: "batch applies to modes bibcode and identifier only",
+    });
+    return;
+  }
+  if (op.mode === "bibcode" && libraryBibcodeTokens(op.text).length === 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["text"],
+      message: "no bibcode in the text (separate bibcodes with whitespace, commas or semicolons)",
+    });
+    return;
+  }
+  // More than MANUAL_BIBCODES_MAX bibcodes is not a malformed call: the operation answers it as rejected, with the limit.
+  if (op.mode === "bibcode" && libraryBibcodeTokens(op.text).length > MANUAL_BIBCODES_MAX) return;
+  const request = ManualWorkRequestSchema.safeParse(libraryToolImportRequest(op));
+  if (!request.success)
+    for (const issue of request.error.issues)
+      ctx.addIssue({ code: "custom", path: ["text"], message: issue.message });
+}
+
+/**
+ * The parameters of `import_works` without `action`: the operation catalog's entry (`library.import_works`) uses this
+ * schema, and the action schema below is built from the same fields and the same check. It cannot be derived with
+ * `omit` from the action schema because of the cross-field check, so both are written from `importWorksFields`.
+ */
+export const LibraryImportWorksParamsSchema = z
+  .object(importWorksFields)
   .strict()
-  .superRefine((op, ctx) => {
-    if (op.batch !== undefined && op.mode === "bib") {
-      ctx.addIssue({
-        code: "custom",
-        path: ["batch"],
-        message: "batch applies to modes bibcode and identifier only",
-      });
-      return;
-    }
-    if (op.mode === "bibcode" && libraryBibcodeTokens(op.text).length === 0) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["text"],
-        message: "no bibcode in the text (separate bibcodes with whitespace, commas or semicolons)",
-      });
-      return;
-    }
-    // More than MANUAL_BIBCODES_MAX bibcodes is not a malformed call: the operation answers it as rejected, with the limit.
-    if (op.mode === "bibcode" && libraryBibcodeTokens(op.text).length > MANUAL_BIBCODES_MAX) return;
-    const request = ManualWorkRequestSchema.safeParse(libraryToolImportRequest(op));
-    if (!request.success)
-      for (const issue of request.error.issues)
-        ctx.addIssue({ code: "custom", path: ["text"], message: issue.message });
-  });
+  .superRefine(checkImportWorks);
+export const LibraryImportWorksSchema = z
+  .object({ action: z.literal("import_works"), ...importWorksFields })
+  .strict()
+  .superRefine(checkImportWorks);
 export type LibraryImportWorks = z.infer<typeof LibraryImportWorksSchema>;
 
 /**

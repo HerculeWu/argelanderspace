@@ -902,9 +902,10 @@ const STOP_POLL_MS = 200;
 async function awaitJob(
   port: AcquisitionPort,
   job: Job,
-  admitting: () => boolean
+  admitting: () => boolean,
+  waitMs?: number
 ): Promise<{ job: Job; finished: boolean }> {
-  const limit = port.waitMs ?? DEFAULT_WAIT_MS;
+  const limit = Math.min(port.waitMs ?? DEFAULT_WAIT_MS, waitMs ?? Number.POSITIVE_INFINITY);
   let poll: NodeJS.Timeout | undefined;
   let bound: NodeJS.Timeout | undefined;
   const released = new Promise<"released">((resolve) => {
@@ -929,10 +930,11 @@ async function settleAcquisition(
   started: Job,
   reused: boolean,
   work: { id: string; title?: string },
-  admitting: () => boolean
+  admitting: () => boolean,
+  waitMs?: number
 ): Promise<AcquireOutcome> {
   const object = { kind: "work" as const, id: work.id };
-  const { job, finished } = await awaitJob(port, started, admitting);
+  const { job, finished } = await awaitJob(port, started, admitting, waitMs);
   const view = jobView(job);
   if (!finished || job.status === "queued" || job.status === "running")
     return {
@@ -1011,6 +1013,11 @@ export interface AcquireContext {
   admitting: () => boolean;
   /** Called once with the job id as soon as the job exists (recorded in the journal). */
   onSubmitted?: (jobId: string) => void;
+  /**
+   * Stop waiting for the job after this long even if the port allows longer (the CLI over a workbench: a request that
+   * outlives the HTTP client's header timeout would be lost). The job is not cancelled; the answer is `pending`.
+   */
+  waitMs?: number;
 }
 
 /** The dialog's "fetch PDF from arXiv" submit: the shared start, then the job's own outcome. */
@@ -1045,7 +1052,8 @@ export async function applyAcquireArxivPdf(
     started.job,
     started.reused,
     { id: refId, title },
-    context.admitting
+    context.admitting,
+    context.waitMs
   );
 }
 
@@ -1138,7 +1146,8 @@ export async function applyAttachArxiv(
     started.job,
     started.reused,
     { id: refId, title },
-    context.admitting
+    context.admitting,
+    context.waitMs
   );
 }
 
@@ -1301,7 +1310,8 @@ export async function applyAttachLocalPdf(
     started.job,
     false,
     { id: op.refId, title },
-    context.admitting
+    context.admitting,
+    context.waitMs
   );
   if (!settled.ok) {
     const reason = settled.job ? localPdfJobReason(settled.job.error) : "job_failed";

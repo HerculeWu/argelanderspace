@@ -1,19 +1,52 @@
 /**
- * The in-process runtime of the operation catalog (ADR 0015; release-0.2 ticket 01): what a CLI command uses when no
- * workbench takes the operation (detection and routing to a running workbench are ticket 02). It composes the same
- * `LibraryOpDeps` shape the server does, on its own library lock, with no notification sink and no network seams.
- * The Library payload is read without writing anything: a stale graph cache is rebuilt in memory, not healed on disk.
+ * The in-process runtime of the operation catalog (ADR 0015; release-0.2 tickets 01 and 06): what a CLI command uses
+ * when no workbench takes the operation (detection and routing to a running workbench are ticket 02). It composes the
+ * same `LibraryOpDeps` shape the server does, on its own library lock, with no notification sink. The Library payload
+ * is read without writing anything: a stale graph cache is rebuilt in memory, not healed on disk.
+ *
+ * What a command that writes needs (the import pipeline, the arXiv job queue, the PDF upload) is built on first use, so
+ * a read creates no job directory and no runner. Jobs that run in this process are waited for to their end: the
+ * process is the only thing that could run them, so a command that returned earlier would leave a queued job nobody
+ * runs (`docs/operation-catalog.md`, "Long tasks without a workbench"). The automatic arXiv PDF job that the import
+ * menu queues after a single identifier or bibcode import is not queued here for the same reason.
  */
+
+import { join } from "node:path";
 import {
   buildGraph,
+  type IngestPipelines,
   type LibraryPaths,
   LibraryStore,
   libraryPayload,
   loadCurrentGraph,
+  type MetadataSources,
 } from "@argelanderspace/core";
-import { type AdapterWiring, realAdsSearch, realDiscoverySource } from "./deps.js";
+import { fetchArxivPdf } from "@argelanderspace/infra";
+import { type Acquisition, createAcquisition, createLockedRebuild } from "./acquisition.js";
+import {
+  type AdapterWiring,
+  realAdsLibraries,
+  realAdsSearch,
+  realDiscoverySource,
+  realPipelines,
+  realSources,
+} from "./deps.js";
+import { DocMutationRegistry } from "./doc-mutations.js";
+import { JobRunner, readJobRecords } from "./jobs.js";
+import type { AcquisitionPort, JobTable, LibraryOpDeps } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
 import type { OperationRuntime } from "./operation-catalog.js";
+import { worksOwningDoc } from "./pdf-access.js";
+
+/** The longest a timer can wait: "until the job ends" for a process that is the only one that can run it. */
+const UNBOUNDED_WAIT_MS = 2_147_483_647;
+
+/** Replacements for the real network and toolchain compositions, for tests; the CLI passes none. */
+export interface LocalOperationSeams {
+  makeSources?: (offline: boolean) => MetadataSources | Promise<MetadataSources>;
+  pipelines?: IngestPipelines;
+  fetchArxivPdf?: (arxivId: string) => Promise<Buffer>;
+}
 
 /**
  * `wiring` is the composition seam of the network clients (tests inject `fetchImpl` and `adsToken`); the CLI passes none,
@@ -21,20 +54,73 @@ import type { OperationRuntime } from "./operation-catalog.js";
  */
 export function createLocalOperationRuntime(
   paths: LibraryPaths,
-  wiring: AdapterWiring = {}
+  wiring: AdapterWiring = {},
+  seams: LocalOperationSeams = {}
 ): OperationRuntime {
-  return {
-    library: {
+  const libraryLock = new AsyncLock();
+  const jobsDir = join(paths.dataDir, "jobs");
+  let built: Acquisition | undefined;
+  /** The import pipeline and the job queue, made when an operation first needs them. */
+  const acquisition = (): Acquisition => {
+    if (built) return built;
+    const runner = new JobRunner({ dir: jobsDir, recover: false });
+    const docMutations = new DocMutationRegistry();
+    const made = createAcquisition({
       paths,
-      libraryLock: new AsyncLock(),
-      onChanged: () => {},
-      readPayload: async () =>
-        libraryPayload(
-          paths,
-          loadCurrentGraph(paths) ?? buildGraph(LibraryStore.load(paths), paths.outputDir)
-        ),
-      adsSearch: () => realAdsSearch(wiring),
-      discoverySource: () => realDiscoverySource(paths, wiring),
-    },
+      runner,
+      libraryLock,
+      annotationLock: new AsyncLock(),
+      docMutations,
+      libraryChanged: () => {},
+      lockedRebuild: createLockedRebuild(libraryLock),
+      pipelines: seams.pipelines ?? realPipelines(paths, wiring),
+      makeSources: seams.makeSources ?? ((offline) => realSources(paths, offline, wiring)),
+      fetchArxivPdf:
+        seams.fetchArxivPdf ??
+        ((arxivId) =>
+          fetchArxivPdf(
+            arxivId,
+            wiring.fetchImpl === undefined ? {} : { fetchImpl: wiring.fetchImpl }
+          )),
+      // A job queued here would die with this process; the import does not queue one (see the header).
+      autoIngestArxiv: () => false,
+      pdfOwners: (docId) => worksOwningDoc(paths, docId),
+      acquisitionWaitMs: UNBOUNDED_WAIT_MS,
+    });
+    runner.onEvent = (type, job) => made.onJobEvent(type, job);
+    built = made;
+    return made;
   };
+  /** The job records are on disk at every transition, so reads never need the runner. */
+  const jobs: JobTable = {
+    list: () => readJobRecords(jobsDir),
+    get: (id) => built?.jobs.get(id) ?? readJobRecords(jobsDir).find((job) => job.id === id),
+    waitFor: (id) => acquisition().jobs.waitFor(id),
+  };
+  const port: AcquisitionPort = {
+    startPdfUpload: (workId, bytes, filename) =>
+      acquisition().startPdfUpload(workId, bytes, filename),
+    startPdf: (workId) => acquisition().startPdf(workId),
+    describeSource: (workId) => acquisition().describeSource(workId),
+    startSource: (workId) => acquisition().startSource(workId),
+    annotationRisk: (docId) => acquisition().annotationRisk(docId),
+    jobs,
+    waitMs: UNBOUNDED_WAIT_MS,
+  };
+  const library: LibraryOpDeps = {
+    paths,
+    libraryLock,
+    onChanged: () => {},
+    readPayload: async () =>
+      libraryPayload(
+        paths,
+        loadCurrentGraph(paths) ?? buildGraph(LibraryStore.load(paths), paths.outputDir)
+      ),
+    importWorks: (req, options) => acquisition().importManualWorks(req, options),
+    acquisition: port,
+    adsLibraries: () => realAdsLibraries(wiring),
+    adsSearch: () => realAdsSearch(wiring),
+    discoverySource: () => realDiscoverySource(paths, wiring),
+  };
+  return { library };
 }

@@ -13,7 +13,7 @@
 | `id` | `<domain>.<name>`，类型层面是字面量 |
 | `summary` | 一句话，CLI `--help` 的说明 |
 | `effect` | `read` 或 `write` |
-| `confirm` | `none` 或 `card`（要 Copilot 同类确认卡；票 04 起生效） |
+| `confirm` | `none`；`card`（要 Copilot 同类确认卡；票 04 起生效）；`conditional`（只有部分调用要卡，由处理器判断；票 06 起，目前只有 `library.attach_arxiv`） |
 | `navigates` | 是否是「让工作台打开某处」的导航操作（票 05） |
 | `params` | 不含 `action` 的 strict zod 对象 |
 | `result` | 结果的 zod 形状，含 `{ ok: false, status, detail }` 这类属于答案的失败 |
@@ -48,7 +48,7 @@
   | 4 | 等待确认卡时工作台退出或不再应答：stderr `error: interrupted; …`，stdout 无输出。卡片随工作台消失；若恰在此刻批准，操作可能已执行，先读取对象核对 |
   | 130 | 命令在等待确认卡时被 Ctrl-C（或 SIGTERM）中断，卡片已撤回，stderr 写 `error: interrupted; …` |
 
-  3、4、130 只出现在 `confirm: "card"` 的操作上。
+  3、4、130 只出现在 `confirm` 为 `card` 或 `conditional` 的操作上。
 - **路径选择**：命令先在参数校验（退出码 2，不执行也不联系工作台）通过后，按 `--data-dir` 解析出 dataDir，查该目录的实例记录（下节）。有活的工作台就交给它，没有就在本进程执行。两条路径的 stdout、stderr、退出码同形（测试逐字节比对）。只读操作也走工作台，读到的是它当前的状态。
 - **本进程路径**：用与 server 同形的 `LibraryOpDeps`（自己的库锁，无通知，读 Library 时图缓存过期则在内存里重建而不写盘；`createLocalOperationRuntime`）。
 
@@ -138,6 +138,13 @@ CLI 不对导航操作设 Ctrl-C 撤回；命令被中断时连接断开，serve
 | `argument.open` | read | none | 导航：`open argument-graph` |
 | `discovery.search_ads` | read | none | 只读 ADS 搜索（票 09），见下节 |
 | `discovery.explore` | read | none | 探索页对一个 seed 的请求，以数据返回（票 09），见下节 |
+| `library.import_works` | write | none | 导入菜单的三种对话框（票 06），见「Library 领域」 |
+| `library.attach_local_pdf` | write | none | 本机 PDF 挂为已有 Work 的 Doc（票 06） |
+| `library.list_ads_libraries` | read | none | 读用户自己的 ADS libraries 列表（票 06） |
+| `library.read_ads_library` | read | none | 读一个 ADS library 的一窗 bibcode（票 06） |
+| `library.acquire_arxiv_pdf` | write | none | 「从 arXiv 获取 PDF」（票 06） |
+| `library.attach_arxiv` | write | conditional | 「从 arXiv 获取 LaTeX 源码」；替换既有 arXiv Doc 正文时要确认卡（票 06） |
+| `library.read_jobs` | read | none | 获取任务状态行（票 06） |
 
 ## 探索领域与 ADS 只读搜索（票 09）
 
@@ -154,3 +161,28 @@ CLI 不对导航操作设 Ctrl-C 撤回；命令被中断时连接断开，serve
 **两条路径**：工作台运行时由它执行（`createApp` 里 `LibraryOpDeps` 的 `adsSearch`/`discoverySource`，即页面路由和 Copilot 共用的工厂，server 的 `makeAdsSearch` 默认 `realAdsSearch`）；未运行时 CLI 用 `createLocalOperationRuntime` 在本进程里用同样的 `realAdsSearch`/`realDiscoverySource`（它接受可选的 `AdapterWiring` 供测试注入 `adsToken` 与 `fetchImpl`；CLI 不传，token 从凭据库读）。两条路径的答案同形。测试：infra `ads-search.test.ts`，server `discovery-operations.test.ts`（本进程、工作台路由、Copilot 工具三条入口；断言只有 GET、token 只在头里、数据夹逐字节不变、每类错误），cli `discovery-operations.test.ts`（命令派生、参数错误退出 2、经工作台的退出码与输出；本进程路径不在 CLI 子进程里测，因为子进程会读测试机器真实的凭据库）。
 
 **窗口常量**：Copilot 的 `library` 工具多了动作 `search_ads`、参数 `fields`、说明一段与基础提示词一句，系统指令加工具 schema 的占用从 81053 增至 81949 字节（+896 B，×4/7＝+512 token），按 project-intake 02 的方法同步了 `copilot-batching.test.ts` 的 `WINDOW_BIG_DOC` 与 PDF 多窗口、`copilot-pdf`、`copilot`、`copilot-text-host` 的窗口、`copilot-argument-read-window` 的 GAP_WINDOW（45000→45512）、`copilot-transcription` 的上限。
+
+
+## Library 领域（票 06）
+
+条目在 `packages/contracts/src/library-catalog.ts`，参数来自 `library-ops.ts` 的动作 schema；处理器是 `library-actions.ts` 的业务函数本身（`applyLibraryImport`、`applyAttachLocalPdf`、`listAdsLibraries`、`readAdsLibrary`、`applyAcquireArxivPdf`、`applyAttachArxiv`、`readJobs`），Copilot 的 `library` 工具跑同一批函数，所以两个入口的答案、措辞与逐条报告一份。
+
+**进目录的与不进的**：`library-ops.ts` 除界面动作外都进了（`read`、`set_main_doc`、`delete_doc` 早已在）。不进的：`filter_library`、`select_work`、`set_detail_tab`、`set_sidebar`、`set_graph_labels`、`graph_control`、`set_temp_label`（界面动作）、`read_discovery` 与 `save_candidate`（见「探索领域」，CLI 保存候选走 `import_works` 的 bibcode 模式，「保存候选不批量」不变）。
+
+**`import_works`**：`--mode identifier|bibcode|bib --text <文本> [--batch]`。bibcode 模式的文本可含多个 bibcode（空白、逗号、分号分隔），每次至多 200 个，更多答 `rejected` 且什么都不写；`--batch` 是迁入形态（单个 bibcode 也给逐条报告、合并时逐条拒绝、不排自动 arXiv PDF 任务）。含 `superRefine`（`batch` 与 `bib` 不并用、bibcode 非空等），所以条目的 `params` 是显式的 `LibraryImportWorksParamsSchema`，动作 schema `LibraryImportWorksSchema` 与它用同一组字段和同一个检查函数，仍是一处定义。合并既有 Works 的记录仍被拒（`rejected`），写入仍是窄写，逐条 `results`/`entries` 不变。
+
+**`attach_local_pdf`**：`--ref-id --path`（绝对路径，不在 CLI 里按当前目录补全：相对路径答 `path_not_absolute`）。读文件一次、只读，之后是 Files 标签上传自己的服务端路径（PDFium 可信解析、内存余量、页数上限、同 Work 同字节复用、DocMutationRegistry）。Copilot 里该动作受设置 `copilot_file_tools` 约束（关闭则拒绝），那是 Copilot 的权限，在 `copilot-library-tool.ts` 的调用点检查；CLI 与路由上的目录操作**不查**该设置，由调用 CLI 的人（或其 agent 宿主）自己负责读哪个文件，契约「本地 PDF Doc」其余规则照旧。
+
+**`list_ads_libraries` / `read_ads_library`**：只读，token 每次由组合层从凭据库现读，错误区分（`no_token`、`unauthorized`、`rate_limited`……）与文本照契约「ADS libraries」；`read_ads_library` 每次一窗，至多 200 条，`--offset` 翻页。本进程路径用 `realAdsLibraries`。
+
+**`acquire_arxiv_pdf` / `attach_arxiv` / `attach_local_pdf` 与长任务**：它们提交一个任务到 JobRunner（串行队列）并等它结束，答案里有 `job`（`pending` 表示调用在任务结束前就返回了，任务仍在跑，终点用 `read_jobs` 看，不要重复提交）。
+
+- **工作台运行时**：任务排进工作台自己的队列（与页面、Copilot 共用，同一把库锁与 DocMutationRegistry），命令等待至多 `CLI_JOB_WAIT_MS`（240 秒，`app.ts`；低于 Node 全局 fetch 的 5 分钟响应头超时，再长请求会被丢），超时答 `pending`，任务由工作台继续；命令中途被中断也只是停止等待，不取消任务。
+- **工作台未运行时（「无工作台的长任务」）**：任务在**本进程**的 JobRunner 里跑（`createLocalOperationRuntime` 按需建 `createAcquisition`：自己的库锁、DocMutationRegistry、`recover: false` 的 JobRunner），命令**一直等到任务结束**才退出，不设上限，因为退出后没有任何东西会继续这个任务；Ctrl-C 终止进程，任务记录停在 `running`/`queued`，下次工作台启动时被标为 `interrupted`，与既有语义一致。这条路径上的 `import_works` **不排**导入菜单在单个 identifier/bibcode 导入后会排的自动 arXiv PDF 任务（同样因为排了也没人跑），要 PDF 就显式 `acquire-arxiv-pdf`；经工作台时仍按设置 `auto_ingest_arxiv` 排，结果字节形状相同。`recover: false`：本进程不改写 jobs 目录里别人的未完成记录，也不在没有写入时建目录。
+- **`read_jobs` 在本进程**：直接读 `<dataDir>/jobs/*.json`（运行器每次状态变化都落盘），只读，不建目录、不把任何记录改成 `interrupted`；另一个进程里还在跑的任务按它最后写下的样子显示。
+
+**`attach_arxiv` 与确认卡**：只有「刷新既有 arXiv Doc」（`describeSource` 为 `refresh`）会替换正文并可能丢标注，只有这种调用要卡（`confirm: "conditional"`）；新建 Doc、给只有 PDF 的 Work 追加 LaTeX Doc、以及 `no_arxiv`/`skip`/`not_found` 等拒绝都不需要，在两条路径都直接执行。需要卡时：处理器先做无写入的预读（`prepareArxivRefresh`，Doc 忙、不存在等直接拒绝、不出卡，措辞与 Copilot 共用），把 Copilot 同一种卡 `refresh_arxiv_source` 放进外部请求队列（卡上有 Work 标题、将被替换的 Doc、标注数；web 的 `summaryOf` 与结果文案有对应分支，`externalRequests.*Refresh`）。批准后核对一次（Doc、标注数与版本、Work 的 Doc 列表都与卡所示一致，否则 `expired`、不提交），再提交任务。因为任务可能要几分钟，批准那次页面决定请求在**任务提交后立即**得到 `{ok:true,status:"submitted",jobId}`（页面据此显示「已开始替换」），命令自己的答案仍是任务结束时的 `AcquireOutcome`。拒绝 `denied`（退出码 3）、命令被中断时撤回（130）、工作台退出（4）同 `delete_doc`。**工作台未运行**且这次调用需要卡：处理器答 `{ok:false,status:"workbench_required"}`（退出 1），什么都不改、不提交任务；不需要卡的调用无工作台也照常运行。CLI 对 `conditional` 操作也装 SIGINT/SIGTERM 处理（因为它可能在等卡）。
+
+**窗口常量**：Copilot 的 `library` 工具 schema 与说明文字没有改动（动作、参数、说明字节不变），窗口常量不需同步；`copilot-library-tool.ts` 只是改用 `parseCatalogCall` 取参数，写入类动作的会话内等待、journal 与 `operationId` 去重仍留在该文件。
+
+**测试**：server `library-operations.test.ts`（每个操作的本进程路径与工作台路由、`attach_arxiv` 的批准/拒绝/撤回/过期/无工作台）、cli `library-operations.test.ts`（真实 `bin.js`：帮助、退出码 2、本进程路径含真实 PDFium 与等任务结束、经工作台的 ADS libraries/本地 PDF/确认卡 0·3·130）、contracts `operation-catalog.test.ts`、web `external-requests.test.tsx`。本进程的 ADS libraries 路径不在 CLI 子进程里测（会读测试机器的真实凭据库），由 server 测试以注入 token 与桩覆盖；`acquire-arxiv-pdf` 的网络部分同理。

@@ -69,6 +69,12 @@ export interface JobRunnerOptions {
    * interrupted arXiv-fetch jobs to `logs/arxiv-fetch.jsonl` here.
    */
   onInterrupted?: (job: Job) => void;
+  /**
+   * Rewrite the unfinished records of a previous run as `interrupted` (default true: what a server does at boot).
+   * A short-lived command process (the CLI running an operation without a workbench) passes false: it must not
+   * touch records that may belong to another process, and it keeps no history of its own in memory.
+   */
+  recover?: boolean;
   /** Clock seam for tests. */
   now?: () => Date;
   /**
@@ -105,8 +111,11 @@ export class JobRunner {
     this.now = opts.now ?? (() => new Date());
     this.onInterrupted = opts.onInterrupted;
     this.observe = opts.observe;
-    mkdirSync(this.dir, { recursive: true });
-    this.recover();
+    // A runner that does not recover has nothing to read, so it makes the directory only when it first writes a record.
+    if (opts.recover !== false) {
+      mkdirSync(this.dir, { recursive: true });
+      this.recover();
+    }
   }
 
   /** Boot recovery: load persisted jobs; unfinished → `interrupted`. */
@@ -228,8 +237,34 @@ export class JobRunner {
 
   /** Atomic write (`*.tmp` + rename) so a crash never leaves half a record. */
   private persist(job: Job): void {
+    mkdirSync(this.dir, { recursive: true });
     const path = join(this.dir, `${job.id}.json`);
     writeFileSync(`${path}.tmp`, JSON.stringify(job, null, 2), "utf8");
     renameSync(`${path}.tmp`, path);
   }
+}
+
+/**
+ * The job records of a data directory as they are on disk, newest first. Read-only: unlike constructing a
+ * {@link JobRunner} it neither creates the directory nor rewrites an unfinished record as `interrupted`, so a command
+ * that only looks at the jobs (`library read-jobs` without a workbench) changes nothing. A record whose job runs in
+ * another process shows as it was last written.
+ */
+export function readJobRecords(dir: string): Job[] {
+  let names: string[];
+  try {
+    names = readdirSync(dir).sort();
+  } catch {
+    return [];
+  }
+  const jobs: Job[] = [];
+  for (const name of names) {
+    if (!name.endsWith(".json")) continue;
+    try {
+      jobs.push(JSON.parse(readFileSync(join(dir, name), "utf8")) as Job);
+    } catch {
+      /* a corrupt file is skipped, as the runner's own recovery does */
+    }
+  }
+  return jobs.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }

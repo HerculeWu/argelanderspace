@@ -6,7 +6,14 @@
 import { z } from "zod";
 import { LibraryRefSchema } from "./library.js";
 import {
+  LibraryAcquireArxivPdfSchema,
+  LibraryAttachArxivSchema,
+  LibraryAttachLocalPdfSchema,
   LibraryDeleteDocSchema,
+  LibraryImportWorksParamsSchema,
+  LibraryListAdsLibrariesSchema,
+  LibraryReadAdsLibrarySchema,
+  LibraryReadJobsSchema,
   LibraryReadOperationSchema,
   LibraryRefSummarySchema,
   LibrarySetMainDocSchema,
@@ -136,4 +143,198 @@ export const LIBRARY_DELETE_DOC_OPERATION = defineOperation({
   navigates: false,
   params: LibraryDeleteDocSchema.omit({ action: true }),
   result: LibraryDeleteDocResultSchema,
+});
+
+// --------------------------------------------------------------------------- //
+// Release-0.2 ticket 06: the rest of the Library tool's business actions
+// --------------------------------------------------------------------------- //
+
+const FailureStatus = z.string();
+/** A failure that is part of the answer: `{ ok: false, status, detail }` plus whatever the operation adds (reason, entries…). */
+const FailureSchema = z.looseObject({
+  ok: z.literal(false),
+  status: FailureStatus,
+  detail: z.string(),
+});
+const WorkRef = z.object({ kind: z.literal("work"), id: z.string() }).passthrough();
+
+/** `import_works`: the single-entry shape (`results`), the bibcode batch shape (`entries`), or a failure. */
+export const LibraryImportWorksResultSchema = z.union([
+  z.looseObject({
+    ok: z.literal(true),
+    status: z.enum(["ok", "noop"]),
+    mode: z.literal("bibcode"),
+    batch: z.literal(true),
+    requested: z.number().int().nonnegative(),
+    created: z.number().int().nonnegative(),
+    existing: z.number().int().nonnegative(),
+    updated: z.array(z.string()),
+    refused: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+    entries: z.array(z.looseObject({ bibcode: z.string(), status: z.string() })),
+    reasons: z.record(z.string(), z.string()).optional(),
+    object: WorkRef.optional(),
+    label: z.string().optional(),
+    warnings: z.array(z.string()).optional(),
+  }),
+  z.looseObject({
+    ok: z.literal(true),
+    status: z.enum(["ok", "noop"]),
+    mode: z.enum(["identifier", "bibcode", "bib"]),
+    created: z.number().int().nonnegative(),
+    existing: z.number().int().nonnegative(),
+    updated: z.array(z.string()),
+    failed: z.number().int().nonnegative(),
+    results: z.array(z.looseObject({ status: z.string() })),
+    object: WorkRef.optional(),
+    label: z.string().optional(),
+    warnings: z.array(z.string()).optional(),
+  }),
+  FailureSchema,
+]);
+
+const JobViewSchema = z.looseObject({
+  id: z.string(),
+  kind: z.string(),
+  status: z.string(),
+  workId: z.string().nullable(),
+});
+/**
+ * What an acquisition (arXiv PDF, arXiv LaTeX source, local PDF) answers: the job it ran and waited for. `pending`:
+ * the call stopped waiting before the job finished (the job goes on where it runs; `read_jobs` shows its end).
+ * `workbench_required` / `denied` / `interrupted` belong to `attach_arxiv` when it would replace a Doc's text.
+ */
+export const LibraryAcquisitionResultSchema = z.union([
+  z.looseObject({
+    ok: z.literal(true),
+    status: z.enum(["ok", "noop", "pending"]),
+    job: JobViewSchema,
+    docId: z.string().optional(),
+    reused: z.boolean().optional(),
+    object: WorkRef,
+    label: z.string().optional(),
+    detail: z.string().optional(),
+    /** attach_local_pdf only. */
+    source: z.looseObject({ filename: z.string(), bytes: z.number().int() }).optional(),
+    resourceWarning: z.boolean().optional(),
+  }),
+  FailureSchema,
+]);
+
+export const LibraryListAdsLibrariesResultSchema = z.union([
+  z.looseObject({
+    ok: z.literal(true),
+    status: z.literal("ok"),
+    total: z.number().int().nonnegative(),
+    libraries: z.array(
+      z.looseObject({ id: z.string(), name: z.string(), numDocuments: z.number().int() })
+    ),
+    truncated: z.literal(true).optional(),
+  }),
+  FailureSchema,
+]);
+
+export const LibraryReadAdsLibraryResultSchema = z.union([
+  z.looseObject({
+    ok: z.literal(true),
+    status: z.literal("ok"),
+    library: z.looseObject({ id: z.string(), name: z.string(), numDocuments: z.number().int() }),
+    total: z.number().int().nonnegative(),
+    offset: z.number().int().nonnegative(),
+    bibcodes: z.array(z.string()),
+    nextOffset: z.number().int().nonnegative().optional(),
+  }),
+  FailureSchema,
+]);
+
+export const LibraryReadJobsResultSchema = z.union([
+  z.looseObject({
+    ok: z.literal(true),
+    jobs: z.array(JobViewSchema),
+    total: z.number().int().nonnegative(),
+  }),
+  FailureSchema,
+]);
+
+export const LIBRARY_IMPORT_WORKS_OPERATION = defineOperation({
+  domain: "library",
+  name: "import_works",
+  summary:
+    "Add works to the Library (the import menu): --mode identifier (a DOI or arXiv:<id>), bibcode (one, or up to 200 separated by whitespace/commas/semicolons) or bib (BibTeX text) with --text; --batch is the migration form (no automatic arXiv PDF job).",
+  effect: "write",
+  confirm: "none",
+  navigates: false,
+  params: LibraryImportWorksParamsSchema,
+  result: LibraryImportWorksResultSchema,
+});
+
+export const LIBRARY_ATTACH_LOCAL_PDF_OPERATION = defineOperation({
+  domain: "library",
+  name: "attach_local_pdf",
+  summary:
+    "Attach one PDF at an absolute local --path to the existing work --ref-id as a new Doc (the Files tab's upload); the file is only read.",
+  effect: "write",
+  confirm: "none",
+  navigates: false,
+  params: LibraryAttachLocalPdfSchema.omit({ action: true }),
+  result: LibraryAcquisitionResultSchema,
+});
+
+export const LIBRARY_LIST_ADS_LIBRARIES_OPERATION = defineOperation({
+  domain: "library",
+  name: "list_ads_libraries",
+  summary: "List your NASA ADS libraries (name, id, size). Read-only; the saved ADS token is used.",
+  effect: "read",
+  confirm: "none",
+  navigates: false,
+  params: LibraryListAdsLibrariesSchema.omit({ action: true }),
+  result: LibraryListAdsLibrariesResultSchema,
+});
+
+export const LIBRARY_READ_ADS_LIBRARY_OPERATION = defineOperation({
+  domain: "library",
+  name: "read_ads_library",
+  summary:
+    "Read the bibcodes of one ADS library (--library-id from list-ads-libraries), up to 200 per call from --offset. Read-only.",
+  effect: "read",
+  confirm: "none",
+  navigates: false,
+  params: LibraryReadAdsLibrarySchema.omit({ action: true }),
+  result: LibraryReadAdsLibraryResultSchema,
+});
+
+export const LIBRARY_ACQUIRE_ARXIV_PDF_OPERATION = defineOperation({
+  domain: "library",
+  name: "acquire_arxiv_pdf",
+  summary:
+    "Fetch the current arXiv PDF of the work --ref-id and add it as a Doc (the acquisition dialog's 'fetch PDF from arXiv'); waits for the job.",
+  effect: "write",
+  confirm: "none",
+  navigates: false,
+  params: LibraryAcquireArxivPdfSchema.omit({ action: true }),
+  result: LibraryAcquisitionResultSchema,
+});
+
+export const LIBRARY_ATTACH_ARXIV_OPERATION = defineOperation({
+  domain: "library",
+  name: "attach_arxiv",
+  summary:
+    "Get the LaTeX source of the work --ref-id from arXiv as a Doc (the acquisition dialog's 'get LaTeX source'); refreshing an existing arXiv Doc replaces its text and needs your confirmation on a card in the workbench.",
+  effect: "write",
+  confirm: "conditional",
+  navigates: false,
+  params: LibraryAttachArxivSchema.omit({ action: true }),
+  result: LibraryAcquisitionResultSchema,
+});
+
+export const LIBRARY_READ_JOBS_OPERATION = defineOperation({
+  domain: "library",
+  name: "read_jobs",
+  summary:
+    "Read the acquisition jobs (queued, running, finished, failed) of the work --ref-id, or the latest jobs of any work.",
+  effect: "read",
+  confirm: "none",
+  navigates: false,
+  params: LibraryReadJobsSchema.omit({ action: true }),
+  result: LibraryReadJobsResultSchema,
 });
