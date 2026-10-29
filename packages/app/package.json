@@ -1,6 +1,6 @@
 {
   "name": "argelanderspace",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Ingest arXiv LaTeX sources into a structured render IR, manage a citation-graph library, and read in a local web workspace.",
   "license": "MIT",
   "type": "module",
