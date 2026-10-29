@@ -23,6 +23,7 @@ import {
 } from "@argelanderspace/core";
 import { fetchArxivPdf } from "@argelanderspace/infra";
 import { type Acquisition, createAcquisition, createLockedRebuild } from "./acquisition.js";
+import { type ArgumentOpDeps, ArgumentUndoRegistry } from "./copilot-argument-tool.js";
 import {
   type AdapterWiring,
   realAdsLibraries,
@@ -122,5 +123,23 @@ export function createLocalOperationRuntime(
     adsSearch: () => realAdsSearch(wiring),
     discoverySource: () => realDiscoverySource(paths, wiring),
   };
-  return { library };
+  // Argument graphs (ticket 08): their own lock and no notice, like the library above. The undo memory lasts as long
+  // as this one command, so `undo_delete` has nothing to undo here (it answers so).
+  const argument: ArgumentOpDeps = {
+    dataDir: paths.dataDir,
+    lock: new AsyncLock(),
+    onChanged: () => {},
+    work: (workId) => {
+      try {
+        const found = LibraryStore.load(paths).get(workId);
+        return found
+          ? { id: found.id, title: found.title, docIds: [...(found.doc_ids ?? [])] }
+          : null;
+      } catch {
+        return "error";
+      }
+    },
+    undo: new ArgumentUndoRegistry(),
+  };
+  return { library, argument };
 }

@@ -12,6 +12,8 @@ import {
   type OperationId,
 } from "@argelanderspace/contracts";
 import { acquireContext, runAttachArxivOperation } from "./acquisition-operations.js";
+import { runArgumentEdit, runArgumentRead, runArgumentReplace } from "./argument-operations.js";
+import type { ArgumentOpDeps } from "./copilot-argument-tool.js";
 import { exploreSeed, searchAds } from "./discovery-actions.js";
 import { runDeleteDocOperation } from "./doc-delete-operation.js";
 import type { ExternalAsk, ExternalCardFields } from "./external-requests.js";
@@ -46,6 +48,8 @@ export interface OperationConfirmPort {
 /** What handlers may use. Domains add their deps here as the catalog grows. */
 export interface OperationRuntime {
   library: LibraryOpDeps;
+  /** The argument graph store (release-0.2 ticket 08): its own lock, Work lookup, change notice and undo memory. */
+  argument?: ArgumentOpDeps;
   /** Present in the running workbench only. */
   confirm?: OperationConfirmPort;
   /** Present in the running workbench only: opens somewhere in its most recently active window (ticket 05). */
@@ -113,6 +117,21 @@ export const OPERATION_HANDLERS: OperationHandlers = {
     searchAds(runtime.library, params, call?.signal ?? runtime.signal),
   "discovery.explore": (runtime, params, call) =>
     exploreSeed(runtime.library, params, call?.signal ?? runtime.signal),
+  "argument.read": async (runtime, params) =>
+    runArgumentRead(runtime, { action: "read", ...params }),
+  "argument.create": (runtime, params) => runArgumentEdit(runtime, { action: "create", ...params }),
+  "argument.update": (runtime, params) => runArgumentEdit(runtime, { action: "update", ...params }),
+  "argument.delete": (runtime, params) => runArgumentEdit(runtime, { action: "delete", ...params }),
+  "argument.undo_delete": (runtime, params) =>
+    runArgumentEdit(runtime, { action: "undo_delete", ...params }),
+  "argument.add_edge": (runtime, params) =>
+    runArgumentEdit(runtime, { action: "add_edge", ...params }),
+  "argument.remove_edge": (runtime, params) =>
+    runArgumentEdit(runtime, { action: "remove_edge", ...params }),
+  "argument.replace": (runtime, params, call) =>
+    runArgumentReplace(runtime, { action: "replace", ...params }, call),
+  "argument.clear": (runtime, params, call) =>
+    runArgumentReplace(runtime, { action: "clear", ...params }, call),
 };
 
 /** Run a cataloged operation with params already parsed by its catalog entry. */

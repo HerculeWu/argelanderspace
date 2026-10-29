@@ -132,37 +132,58 @@ export const ArgumentToolReadSchema = z.strictObject({
   ids: z.array(ArgumentId).min(1).max(ARGUMENT_READ_MAX_IDS).optional(),
   field: z.string().regex(ARGUMENT_READ_FIELD).optional(),
 });
+/** The write actions one by one: each is also the parameter schema of a catalog entry (`argument-catalog.ts`). */
+export const ArgumentToolCreateSchema = z.strictObject({
+  action: z.literal("create"),
+  ...Write,
+  argument: ArgumentToolDraftSchema,
+  id: ArgumentId.optional(),
+});
+export const ArgumentToolUpdateSchema = z.strictObject({
+  action: z.literal("update"),
+  ...Write,
+  id: ArgumentId,
+  patch: ArgumentToolPatchSchema,
+});
+export const ArgumentToolDeleteSchema = z.strictObject({
+  action: z.literal("delete"),
+  ...Write,
+  id: ArgumentId,
+});
+export const ArgumentToolUndoDeleteSchema = z.strictObject({
+  action: z.literal("undo_delete"),
+  ...Write,
+  id: ArgumentId,
+});
+export const ArgumentToolAddEdgeSchema = z.strictObject({
+  action: z.literal("add_edge"),
+  ...Write,
+  from: ArgumentId,
+  to: ArgumentId,
+  role: ArgumentEdgeRoleSchema,
+});
+export const ArgumentToolRemoveEdgeSchema = z.strictObject({
+  action: z.literal("remove_edge"),
+  ...Write,
+  from: ArgumentId,
+  to: ArgumentId,
+  role: ArgumentEdgeRoleSchema,
+});
+export const ArgumentToolReplaceSchema = z.strictObject({
+  action: z.literal("replace"),
+  ...Write,
+  graph: ArgumentToolGraphBodySchema,
+});
+export const ArgumentToolClearSchema = z.strictObject({ action: z.literal("clear"), ...Write });
 export const ArgumentToolWriteSchema = z.discriminatedUnion("action", [
-  z.strictObject({
-    action: z.literal("create"),
-    ...Write,
-    argument: ArgumentToolDraftSchema,
-    id: ArgumentId.optional(),
-  }),
-  z.strictObject({
-    action: z.literal("update"),
-    ...Write,
-    id: ArgumentId,
-    patch: ArgumentToolPatchSchema,
-  }),
-  z.strictObject({ action: z.literal("delete"), ...Write, id: ArgumentId }),
-  z.strictObject({ action: z.literal("undo_delete"), ...Write, id: ArgumentId }),
-  z.strictObject({
-    action: z.literal("add_edge"),
-    ...Write,
-    from: ArgumentId,
-    to: ArgumentId,
-    role: ArgumentEdgeRoleSchema,
-  }),
-  z.strictObject({
-    action: z.literal("remove_edge"),
-    ...Write,
-    from: ArgumentId,
-    to: ArgumentId,
-    role: ArgumentEdgeRoleSchema,
-  }),
-  z.strictObject({ action: z.literal("replace"), ...Write, graph: ArgumentToolGraphBodySchema }),
-  z.strictObject({ action: z.literal("clear"), ...Write }),
+  ArgumentToolCreateSchema,
+  ArgumentToolUpdateSchema,
+  ArgumentToolDeleteSchema,
+  ArgumentToolUndoDeleteSchema,
+  ArgumentToolAddEdgeSchema,
+  ArgumentToolRemoveEdgeSchema,
+  ArgumentToolReplaceSchema,
+  ArgumentToolClearSchema,
 ]);
 export type ArgumentToolWrite = z.infer<typeof ArgumentToolWriteSchema>;
 export type ArgumentToolRead = z.infer<typeof ArgumentToolReadSchema>;

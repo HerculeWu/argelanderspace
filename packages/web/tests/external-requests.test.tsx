@@ -213,3 +213,63 @@ test("replacing an arXiv source: denied and not-done results say nothing was rep
   fireEvent.click(q("external-request-approve") as HTMLElement);
   await waitFor(() => expect(q("external-request-result")?.textContent).toContain("Nothing was replaced"));
 });
+
+// ---- Replacing or clearing an argument graph (release-0.2 ticket 08) --------------------------------------------- //
+
+const argumentRequest = (mode: "replace" | "clear", over: Partial<ExternalRequest> = {}): ExternalRequest => ({
+  id: "00000000-0000-4000-8000-0000000000a1", state: "pending", receivedAt: new Date(Date.now() - 5_000).toISOString(),
+  client: { pid: 9, commandLine: `argelanderspace argument ${mode} --json plan.json` },
+  card: {
+    id: "00000000-0000-4000-8000-0000000000a1", runId: "00000000-0000-4000-8000-0000000000a1", toolCallId: "external", action: "replace_argument_graph",
+    object: { kind: "work", id: "doi:10.1000/w1", workId: "doi:10.1000/w1" }, label: "Work number 1", mode,
+    current: { arguments: 12, edges: 9 }, next: mode === "clear" ? { arguments: 0, edges: 0 } : { arguments: 3, edges: 2 },
+    baseRev: 4, objectDigest: "d".repeat(64),
+  },
+  ...over,
+});
+
+test("a replace of an argument graph shows Copilot's own card: the work, what is lost and what comes; Deny / Replace", async () => {
+  await show(argumentRequest("replace"));
+  await waitFor(() => expect(q("external-request")).not.toBeNull());
+  expect(q("external-request")?.getAttribute("data-action")).toBe("replace_argument_graph");
+  expect(q("external-request-command")?.textContent).toBe("argelanderspace argument replace --json plan.json");
+  expect(q("copilot-confirmation-title")?.textContent).toBe("Replace the argument graph");
+  expect(q("copilot-confirmation-work")?.textContent).toBe("Work number 1");
+  expect(q("copilot-confirmation-scope")?.textContent).toBe("The existing 12 arguments and 9 edges will be replaced by 3 arguments and 2 edges.");
+  expect(q("external-request-deny")?.textContent).toBe("Deny");
+  expect(q("external-request-approve")?.textContent).toBe("Replace");
+  // not a Doc card: no open-Doc warning
+  expect(q("external-request-open-doc")).toBeNull();
+});
+
+test("a clear says it cannot be undone; approving reports the argument graph, not a Doc, and moves nothing in the Shell", async () => {
+  await show(argumentRequest("clear"));
+  await waitFor(() => expect(q("external-request-approve")).not.toBeNull());
+  expect(q("copilot-confirmation-scope")?.textContent).toContain("All 12 arguments and 9 edges of this work will be deleted. This cannot be undone.");
+  api.decide.mockResolvedValue({ state: "approved", result: { ok: true, status: "ok", rev: 5, counts: { arguments: 0, edges: 0 } } });
+  api.list = [];
+  fireEvent.click(q("external-request-approve") as HTMLElement);
+  await waitFor(() => expect(api.decide).toHaveBeenCalledWith("00000000-0000-4000-8000-0000000000a1", "approve"));
+  await waitFor(() => expect(q("external-request-result")?.textContent).toContain("Argument graph cleared"));
+  expect(guards.leaveDoc).not.toHaveBeenCalled();
+  expect(deleted).not.toHaveBeenCalled();
+});
+
+test("the queue names an argument request by what it does; a withdrawn or denied one says the graph was not changed", async () => {
+  await show(request(1), argumentRequest("replace"));
+  await waitFor(() => expect(q("external-request-queued")).not.toBeNull());
+  expect(q("external-request-queued")?.textContent).toContain("Replace the argument graph of “Work number 1”");
+  cleanup();
+  api.list = [argumentRequest("replace", { state: "withdrawn" })];
+  render(<Harness />);
+  await waitFor(() => expect(q("external-request-withdrawn")).not.toBeNull());
+  expect(q("external-request-withdrawn")?.textContent).toContain("The argument graph was not changed.");
+  cleanup();
+  api.list = [argumentRequest("replace")];
+  api.decide.mockResolvedValue({ state: "denied" });
+  render(<Harness />);
+  await waitFor(() => expect(q("external-request-deny")).not.toBeNull());
+  api.list = [];
+  fireEvent.click(q("external-request-deny") as HTMLElement);
+  await waitFor(() => expect(q("external-request-result")?.textContent).toContain("the argument graph was not changed"));
+});

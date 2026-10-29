@@ -13,7 +13,7 @@
 | `id` | `<domain>.<name>`，类型层面是字面量 |
 | `summary` | 一句话，CLI `--help` 的说明 |
 | `effect` | `read` 或 `write` |
-| `confirm` | `none`；`card`（要 Copilot 同类确认卡；票 04 起生效）；`conditional`（只有部分调用要卡，由处理器判断；票 06 起，目前只有 `library.attach_arxiv`） |
+| `confirm` | `none`；`card`（要 Copilot 同类确认卡；票 04 起生效）；`conditional`（只有部分调用要卡，由处理器自己判断：`library.attach_arxiv` 替换既有 Doc 正文时，票 06；`argument.replace` / `clear` 作用于有论证的论证图时，票 08） |
 | `navigates` | 是否是「让工作台打开某处」的导航操作（票 05） |
 | `params` | 不含 `action` 的 strict zod 对象 |
 | `result` | 结果的 zod 形状，含 `{ ok: false, status, detail }` 这类属于答案的失败 |
@@ -35,7 +35,7 @@
 
 - **命令**：`argelanderspace <domain> <name 的下划线换成连字符>`，如 `library set-main-doc`。领域组若已存在（`library` 有既有的 `build`）则就地增加子命令，既有命令不动。
 - **参数到选项**：每个扁平参数一个选项，camelCase 变 kebab-case（`refId` → `--ref-id`）。类型：字符串、整数、枚举（`<a|b>`）取值；布尔是不带值的开关。可为 `null` 的参数（如 `expectedMainDocId`）取值 `null`（字面）表示 JSON null。选项一律不在命令行层面标必填，缺参数由目录的 schema 校验并报告；帮助里标 `(required)`。
-- **`--json <file|->`**：整个参数对象从文件或标准输入读入，不能与参数选项同用；对象里不写 `action`。嵌套或数组参数没有扁平映射，只能用 `--json`（`operationOptions` 遇到时抛错，由加条目的人处理）。
+- **`--json <file|->`**：整个参数对象从文件或标准输入读入，不能与参数选项同用；对象里不写 `action`。嵌套或数组参数没有扁平映射，只能用 `--json`（`operationOptions` 只列扁平参数，`operationJsonOnlyParams` 列出其余，`--help` 点明，票 08）。
 - **`--data-dir`**：与既有命令一致。
 - **输出**：stdout 一份 JSON（两格缩进），就是该操作的结果对象，与 Copilot 工具返回的同形。**退出码**：
 
@@ -48,7 +48,7 @@
   | 4 | 等待确认卡时工作台退出或不再应答：stderr `error: interrupted; …`，stdout 无输出。卡片随工作台消失；若恰在此刻批准，操作可能已执行，先读取对象核对 |
   | 130 | 命令在等待确认卡时被 Ctrl-C（或 SIGTERM）中断，卡片已撤回，stderr 写 `error: interrupted; …` |
 
-  3、4、130 只出现在 `confirm` 为 `card` 或 `conditional` 的操作上。
+  3、4、130 只出现在 `confirm: "card"` 与 `"conditional"` 的操作上。
 - **路径选择**：命令先在参数校验（退出码 2，不执行也不联系工作台）通过后，按 `--data-dir` 解析出 dataDir，查该目录的实例记录（下节）。有活的工作台就交给它，没有就在本进程执行。两条路径的 stdout、stderr、退出码同形（测试逐字节比对）。只读操作也走工作台，读到的是它当前的状态。
 - **本进程路径**：用与 server 同形的 `LibraryOpDeps`（自己的库锁，无通知，读 Library 时图缓存过期则在内存里重建而不写盘；`createLocalOperationRuntime`）。
 
@@ -145,6 +145,8 @@ CLI 不对导航操作设 Ctrl-C 撤回；命令被中断时连接断开，serve
 | `library.acquire_arxiv_pdf` | write | none | 「从 arXiv 获取 PDF」（票 06） |
 | `library.attach_arxiv` | write | conditional | 「从 arXiv 获取 LaTeX 源码」；替换既有 arXiv Doc 正文时要确认卡（票 06） |
 | `library.read_jobs` | read | none | 获取任务状态行（票 06） |
+| `argument.read` / `create` / `update` / `delete` / `undo_delete` / `add_edge` / `remove_edge` | read / write | none | 论证图的业务操作（票 08），见下节 |
+| `argument.replace` / `clear` | write | conditional | 整图替换与清空：论证图有论证时经确认卡（票 08） |
 
 ## 探索领域与 ADS 只读搜索（票 09）
 
@@ -186,3 +188,21 @@ CLI 不对导航操作设 Ctrl-C 撤回；命令被中断时连接断开，serve
 **窗口常量**：Copilot 的 `library` 工具 schema 与说明文字没有改动（动作、参数、说明字节不变），窗口常量不需同步；`copilot-library-tool.ts` 只是改用 `parseCatalogCall` 取参数，写入类动作的会话内等待、journal 与 `operationId` 去重仍留在该文件。
 
 **测试**：server `library-operations.test.ts`（每个操作的本进程路径与工作台路由、`attach_arxiv` 的批准/拒绝/撤回/过期/无工作台）、cli `library-operations.test.ts`（真实 `bin.js`：帮助、退出码 2、本进程路径含真实 PDFium 与等任务结束、经工作台的 ADS libraries/本地 PDF/确认卡 0·3·130）、contracts `operation-catalog.test.ts`、web `external-requests.test.tsx`。本进程的 ADS libraries 路径不在 CLI 子进程里测（会读测试机器的真实凭据库），由 server 测试以注入 token 与桩覆盖；`acquire-arxiv-pdf` 的网络部分同理。
+
+## 论证图领域（票 08）
+
+条目在 `packages/contracts/src/argument-catalog.ts`，参数就是 `argument-copilot.ts` 里各写动作的 schema 去掉 `action`（该文件把原来内联在 discriminated union 里的八个写动作各自命名，union 由它们组成，Copilot 的工具 schema 字节不变），处理器在 `packages/server/src/argument-operations.ts`。
+
+**进目录的与不进的**：进的是 Copilot `argument` 工具的业务动作——`read`、`create`、`update`、`delete`、`undo_delete`、`add_edge`、`remove_edge`、`replace`、`clear`；打开论证图是 05 的 `argument.open`（`open argument-graph`）。不进的：`select`、`exit`（只改变某个浏览器标签正显示的东西，CLI 没有对应的「标签」）和 `guide`（方法全文是 Copilot 一侧的，措辞针对 Copilot 的 `reader` 工具；外部 agent 的方法在 skill 里，由票 12 处理）。
+
+**CLI 命名：挂在 `argument` 组下，不另取组名。** 组里已有冻结的 `argument get` / `argument put`（[contracts](contracts.md)「CLI 论证图命令冻结契约」）；`registerOperationCommands` 遇到已存在的组就地增加子命令，不动已有的两个，所以它们的 `--help`、参数与行为不受影响（测试把两者的 `--help` 全文钉死，其行为仍由 `argument.test.ts` 的 golden 钉住）。新子命令名 `read create update delete undo-delete add-edge remove-edge replace clear` 与 `get`/`put` 不冲突。取舍：另取组名（如 `argument-graph`）可以避免 `argument` 组里 `get` 与 `read` 并存带来的困惑，但会让「操作目录一个领域一个组」的名字对应（ADR 0015）出现例外，Copilot 的工具名也是 `argument`；这里选择保持对应，并在两处帮助里点明分工：`get`/`put` 是以文件整进整出的冻结命令（读出的 JSON 可直接给 `put`），目录命令是同 Copilot 一样的按条编辑，输出是操作结果而不是图本身。
+
+**嵌套参数只能用 `--json`。** `create` 的 `argument`、`update` 的 `patch`、`replace` 的 `graph`、`read` 的 `ids` 是对象或数组，没有扁平选项（`operationJsonOnlyParams` 列出它们，`--help` 的 `--json` 一行点明）；`--json` 仍不能与参数选项同用，所以这些命令整个参数对象（含 `workId`、`expectedRev`）写在一个 JSON 里，如 `argelanderspace argument create --json params.json` 或 `... --json -`。标量参数的命令（`delete`、`add-edge`、`remove-edge`、`clear`、不带 `ids` 的 `read`）可以只用选项。
+
+**执行与两条路径。** `OperationRuntime` 新增可选的 `argument: ArgumentOpDeps`（`dataDir`、论证图锁、Work 查询、变更通知、撤销记忆）。工作台里就是 Copilot 工具、页面 PUT 共用的那一份（`app.ts` 的 `argumentOps`：同一把锁、同一个 `argument-graph.changed` 广播、同一个撤销记忆）；`createLocalOperationRuntime` 为本进程路径造自己的（自己的锁、无通知）。读与逐条编辑 = 工具的纯编辑（`argument-edit.ts`）＋页面 PUT 的写入函数（`writeArgumentGraph`：锁内 rev 检查与「Work 仍在库」检查），措辞（冲突带 `latest`、被拒的编辑、Work 不存在、图文件读不了）与 Copilot 共用 `copilot-argument-tool.ts` 导出的构件，同一句话只写一处；读没有「窗口还剩多少」可依，按固定上限分批，`note` 说明如何续读。写入要 `expectedRev`，与存储不符答 `conflict` 并带最新图，不写。
+
+`undo_delete` 的记忆在工作台进程里（与 Copilot 同一份）：经运行中的工作台，`delete` 之后的 `undo-delete` 可用；本进程路径每条命令一个新进程，没有记忆，`undo-delete` 答 `not_found`（措辞与 Copilot 重启后同）。
+
+**确认：`conditional`。** 论证图没有论证时 `replace` 直接写、`clear` 答 `noop`（与页面和 Copilot 同）。有论证时先校验提议的新图（不合法的在出卡前就以 `invalid` 返回，不打扰用户），再放一张 `replace_argument_graph` 卡（Copilot 的同一种卡，`mode` 为 `replace`/`clear`，写明文献标题、现有与新图的论证数和边数，绑定图的 rev 与内容摘要），批准后核对图仍是卡片所示，否则 `expired`，零写入。拒绝为 `denied`（退出码 3），CLI 离开为 `interrupted`/130，工作台没运行为 `workbench_required`（退出 1，零写入；处理器自己答，所以 CLI 对 `conditional` 不像对 `card` 那样一律先拒绝——空图的 `replace` 在无工作台时本进程照常执行）。`conditional` 的 CLI 命令与 `card` 一样在 Ctrl-C 时撤回卡片。覆盖有论证的图只能经确认卡，没有 `--replace` 之类的参数可代替（[contracts](contracts.md)「操作目录与外部 agent」）；冻结的 `argument put --replace` 是另一条老路径，照旧。
+
+工作台一侧，卡片内容用 Copilot 的 `replace_argument_graph` 卡，`ExternalRequests.tsx` 的 `summaryOf`（队列与折叠栏的一行）与结果文案（`externalRequests.*Argument`）按 action 补，批准成功后不做 Shell 的 Doc 三态更新（页面按 `argument-graph.changed` 自行刷新）。

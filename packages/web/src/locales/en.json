@@ -2969,6 +2969,15 @@
     "doneBodyRefresh": "The arXiv source is being fetched; the command line waits for the result.",
     "deniedBodyRefresh": "The command received error code denied; nothing was replaced.",
     "notDoneTitleRefresh": "Nothing was replaced"
+,
+    "summaryReplaceArgument": "Replace the argument graph of “{{title}}”",
+    "summaryClearArgument": "Clear the argument graph of “{{title}}”",
+    "doneTitleReplaceArgument": "Argument graph replaced",
+    "doneTitleClearArgument": "Argument graph cleared",
+    "doneBodyArgument": "The result went back to the command line.",
+    "deniedBodyArgument": "The command received error code denied; the argument graph was not changed.",
+    "withdrawnBodyArgument": "The argument graph was not changed.",
+    "notDoneTitleArgument": "The argument graph was not changed"
   },
   "tutorial": {
     "ui": {

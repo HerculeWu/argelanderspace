@@ -2969,6 +2969,15 @@
     "doneBodyRefresh": "正在获取 arXiv 源码；命令行会等待最终结果。",
     "deniedBodyRefresh": "命令行收到错误码 denied；没有替换任何内容。",
     "notDoneTitleRefresh": "没有替换"
+,
+    "summaryReplaceArgument": "替换「{{title}}」的论证图",
+    "summaryClearArgument": "清空「{{title}}」的论证图",
+    "doneTitleReplaceArgument": "论证图已替换",
+    "doneTitleClearArgument": "论证图已清空",
+    "doneBodyArgument": "结果已返回命令行。",
+    "deniedBodyArgument": "命令行收到错误码 denied；论证图没有改变。",
+    "withdrawnBodyArgument": "论证图没有改变。",
+    "notDoneTitleArgument": "论证图没有改变"
   },
   "tutorial": {
     "ui": {
