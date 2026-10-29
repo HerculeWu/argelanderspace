@@ -64,7 +64,7 @@ import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { FILE_TOOL_NAMES } from "../../contracts/dist/index.js";
 import { lockfileClosure, pnpmVersion } from "./dep-dir-lib.mjs";
-import { checkPackContents } from "./pack-contents.mjs";
+import { checkAgentPluginIn, checkPackContents } from "./pack-contents.mjs";
 import { checkTutorialLoadable, tutorialSize } from "./tutorial-smoke-lib.mjs";
 
 const appRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -207,6 +207,12 @@ const extracted = join(work, "extracted");
 mkdirSync(extracted);
 run("tar", ["-xzf", tarball, "-C", extracted]);
 const shipped = JSON.parse(readFileSync(join(extracted, "package/package.json"), "utf8"));
+const pluginProblems = checkAgentPluginIn(join(extracted, "package"));
+check(
+  pluginProblems.length === 0,
+  "the Agent plugin in the tarball has its manifests at the package version and the bundled guides",
+  pluginProblems.join("; ")
+);
 check(
   shipped.engines?.node === ">=24",
   "shipped package.json declares engines.node >=24",
@@ -458,6 +464,21 @@ const env = {
   XDG_CACHE_HOME: join(home, ".cache"),
   NO_COLOR: "1",
 };
+// The installed CLI prints the installed plugin's path and the two Claude Code commands (release-0.2 ticket 14).
+const pluginCli = spawnSync(join(bin, "node"), [join(pkgDir, "dist/bin.js"), "agent-plugin"], {
+  cwd,
+  env,
+  encoding: "utf8",
+  timeout: 60000,
+});
+const pluginDir = join(realpathSync(pkgDir), "dist/agent-plugin");
+check(
+  pluginCli.status === 0 &&
+    pluginCli.stdout.includes(`/plugin marketplace add ${pluginDir}\n`) &&
+    /\/plugin install argelanderspace@argelanderspace-local\n?$/.test(pluginCli.stdout),
+  "installed `argelanderspace agent-plugin` prints the installed plugin path and the two commands",
+  `exit ${pluginCli.status} ${pluginCli.stdout}${pluginCli.stderr}`
+);
 // No global pi on any PATH a process of this run gets. The spawn itself must work (a failed spawn would "pass").
 function piReachable(path) {
   const r = spawnSync("/bin/sh", ["-c", "command -v pi"], {

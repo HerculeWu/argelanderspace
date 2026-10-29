@@ -8,6 +8,7 @@
 // private prototype may be in it.
 
 import { readFileSync } from "node:fs";
+import { checkAgentPlugin } from "./agent-plugin-lib.mjs";
 
 /**
  * The vendored license texts (packages/app/licenses, desktop-app tickets 23 and 26): the runtime packages that ship no
@@ -56,6 +57,17 @@ export const REQUIRED_FILES = [
   "dist/skills/argelander-project-intake/SKILL.md",
   "dist/skills/argelander-query-paper-library/SKILL.md",
   "dist/skills/argelander-read-paper/SKILL.md",
+  // The Agent plugin (release-0.2 ticket 14): marketplace and plugin manifests, and the copy of the guides it carries
+  // (agent-plugin-lib.mjs checks versions and that skills/ equals dist/skills in the built folder).
+  "dist/agent-plugin/.claude-plugin/marketplace.json",
+  "dist/agent-plugin/.claude-plugin/plugin.json",
+  "dist/agent-plugin/skills/README.md",
+  "dist/agent-plugin/skills/argelander-argument-graph/SKILL.md",
+  "dist/agent-plugin/skills/argelander-find-papers/SKILL.md",
+  "dist/agent-plugin/skills/argelander-paper-ingest/SKILL.md",
+  "dist/agent-plugin/skills/argelander-project-intake/SKILL.md",
+  "dist/agent-plugin/skills/argelander-query-paper-library/SKILL.md",
+  "dist/agent-plugin/skills/argelander-read-paper/SKILL.md",
   ...VENDORED_LICENSE_FILES,
 ];
 
@@ -94,6 +106,19 @@ const FORBIDDEN = [
   [/\.map$/, "a source map (it would embed sources)"],
   [/\.test\.|(^|\/)tests?\//, "a test file"],
 ];
+
+/**
+ * The content checks that need the files themselves (versions, the plugin's skills equal to dist/skills): run on a built
+ * `dist` folder by check-pack.mjs (prepack) and on the installed package by smoke-pack.mjs.
+ */
+export function checkAgentPluginIn(packageRoot) {
+  const version = JSON.parse(readFileSync(`${packageRoot}/package.json`, "utf8")).version;
+  return checkAgentPlugin(
+    `${packageRoot}/dist/agent-plugin`,
+    `${packageRoot}/dist/skills`,
+    version
+  );
+}
 
 export function checkPackContents(paths) {
   const files = paths.map((p) => p.replace(/^package\//, ""));

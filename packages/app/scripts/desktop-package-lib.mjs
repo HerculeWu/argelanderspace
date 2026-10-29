@@ -175,6 +175,10 @@ export function sidecarRequiredFiles(target) {
     "sidecar/app/dist/bin.js",
     "sidecar/app/dist/argelander.sty",
     "sidecar/app/dist/pdfium-worker.js",
+    // The Agent plugin (release-0.2 ticket 14) stays in the app's dist: `argelanderspace agent-plugin` from the shim
+    // prints this path, so it points into the package that runs the CLI.
+    "sidecar/app/dist/agent-plugin/.claude-plugin/plugin.json",
+    "sidecar/app/dist/agent-plugin/.claude-plugin/marketplace.json",
     "sidecar/app/dist/web/index.html",
     "sidecar/app/dist/THIRD-PARTY-BUNDLED-NOTICES.txt",
     "sidecar/app/dist/THIRD-PARTY-EDITOR-NOTICES.txt",

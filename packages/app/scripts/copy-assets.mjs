@@ -16,6 +16,7 @@
 //    PDF upload, page and text read fails;
 //  - the repository's skills/ is copied to dist/skills (the folder bundledSkillsDir finds in the npm layout,
 //    project-intake ticket 12), without test files;
+//  - dist/agent-plugin is the Claude Code Agent plugin built from dist/skills (agent-plugin-lib.mjs);
 //  - the root README.md / LICENSE are copied to the package root because npm
 //    only auto-includes them from there (both are git-ignored here).
 // The @argelanderspace/web devDependency exists purely so `pnpm -r build`
@@ -32,6 +33,7 @@ import {
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildAgentPlugin } from "./agent-plugin-lib.mjs";
 
 const appRoot = fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
@@ -88,6 +90,11 @@ cpSync(skillsSrc, skillsTarget, {
   recursive: true,
   filter: (src) => !/\.test\.[^/\\]+$/.test(src),
 });
+
+// The Agent plugin (release-0.2 ticket 14): dist/agent-plugin, a single-plugin local marketplace for Claude Code whose
+// skills/ is copied from the dist/skills just made (one source), at the package version. See agent-plugin-lib.mjs.
+const appPkg = JSON.parse(readFileSync(join(appRoot, "package.json"), "utf8"));
+buildAgentPlugin(join(appRoot, "dist"), appPkg.version, appPkg.repository?.url);
 
 for (const name of ["README.md", "LICENSE"]) {
   copyFileSync(join(repoRoot, name), join(appRoot, name));

@@ -577,3 +577,16 @@ export function bundledTutorialDir(cliEntry: string): string | null {
       : resolve(dirname(cliEntry), "tutorial");
   return folderWith(dir, TUTORIAL_MARKER_FILE);
 }
+
+/**
+ * The Agent plugin that ships with the app (release-0.2 ticket 14), found from the CLI entry: `dist/agent-plugin` beside
+ * the entry in the npm install, the development form (`packages/app/dist`) and the desktop package alike (the sidecar's
+ * `app/dist/agent-plugin`, which the desktop assembly keeps), so the path always points into the package that runs the
+ * CLI. Only a folder holding `.claude-plugin/plugin.json` counts, and the entry must itself sit in a `dist` folder.
+ */
+export function bundledAgentPluginDir(cliEntry: string): string | null {
+  const bin = dirname(cliEntry);
+  return basename(bin) === "dist"
+    ? folderWith(join(bin, "agent-plugin"), join(".claude-plugin", "plugin.json"))
+    : null;
+}

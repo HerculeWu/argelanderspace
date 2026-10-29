@@ -18,12 +18,6 @@ import {
 
 const SKILLS = fileURLToPath(new URL("../../../skills", import.meta.url));
 
-/**
- * Commands a guide names before the CLI has them: release-0.2 ticket 14 adds `agent-plugin`, and the README points at it
- * (ticket 12). Remove the entry when the command exists; the test after the main one fails until then.
- */
-const PLANNED = ["agent-plugin"];
-
 const guides = (): { file: string; text: string }[] => {
   const files = [
     "README.md",
@@ -38,20 +32,9 @@ test("every command and option the guides show exists in the CLI, every operatio
   const found = guides();
   expect(found.length).toBeGreaterThanOrEqual(7);
   const problems = found.flatMap(({ file, text }) =>
-    checkSkillGuide(buildProgram(), text)
-      .filter((p) => !PLANNED.some((name) => p.includes(`unknown command "${name}"`)))
-      .map((p) => `${file}: ${p}`)
+    checkSkillGuide(buildProgram(), text).map((p) => `${file}: ${p}`)
   );
   expect(problems).toEqual([]);
-});
-
-test("a planned command is removed from the exemption once the CLI has it", () => {
-  const program = buildProgram();
-  for (const name of PLANNED)
-    expect(
-      program.commands.some((c) => c.name() === name),
-      `${name} exists now: drop it from PLANNED`
-    ).toBe(false);
 });
 
 test("the guides carry real commands, so the check above is not vacuous", () => {

@@ -28,6 +28,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, win32 } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import {
+  bundledAgentPluginDir,
   bundledSkillsDir,
   bundledTutorialDir,
   CLI_COMMAND,
@@ -818,5 +819,27 @@ describe("the bundled tutorial sample (in-app-tutorial ticket 15)", () => {
     mkdirSync(flat, { recursive: true });
     writeFileSync(join(flat, "tutorial"), "not a folder\n");
     expect(bundledTutorialDir(join(flat, "bin.js"))).toBeNull();
+  });
+});
+
+describe("the bundled Agent plugin (release-0.2 ticket 14)", () => {
+  test("found in dist/agent-plugin beside the entry, in the npm install and the desktop package alike", () => {
+    const home = tempHome();
+    for (const dist of [
+      join(home, "lib", "node_modules", "argelanderspace", "dist"),
+      join(home, "usr", "lib", "argelanderspace", "sidecar", "app", "dist"),
+    ]) {
+      mkdirSync(join(dist, "agent-plugin", ".claude-plugin"), { recursive: true });
+      expect(bundledAgentPluginDir(join(dist, "bin.js"))).toBeNull();
+      writeFileSync(join(dist, "agent-plugin", ".claude-plugin", "plugin.json"), "{}");
+      expect(bundledAgentPluginDir(join(dist, "bin.js"))).toBe(join(dist, "agent-plugin"));
+    }
+  });
+
+  test("an entry that is not in a dist folder takes nothing", () => {
+    const home = tempHome();
+    mkdirSync(join(home, "plain", "agent-plugin", ".claude-plugin"), { recursive: true });
+    writeFileSync(join(home, "plain", "agent-plugin", ".claude-plugin", "plugin.json"), "{}");
+    expect(bundledAgentPluginDir(join(home, "plain", "bin.js"))).toBeNull();
   });
 });

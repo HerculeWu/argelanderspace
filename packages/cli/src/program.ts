@@ -44,6 +44,7 @@ import {
 } from "@argelanderspace/server";
 import { Command } from "commander";
 import { registerAgentCommands } from "./agent.js";
+import { registerAgentPluginCommand } from "./agent-plugin.js";
 import { registerArgumentCommands } from "./argument.js";
 import { DATA_DIR_HELP, fail, realpathOr, resolveDataDir, withDataDir } from "./common.js";
 import { detectSource } from "./detect.js";
@@ -476,6 +477,9 @@ export function buildProgram(): Command {
 
   // In-app-tutorial ticket 26: the tutorial for the browser form
   registerTutorialCommand(program);
+
+  // Release-0.2 ticket 14: where the Claude Code Agent plugin is and how to install it (read-only)
+  registerAgentPluginCommand(program);
 
   program
     .command("desktop-host", { hidden: true })

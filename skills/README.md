@@ -108,14 +108,18 @@ The Copilot has no operation that writes a note, tags or flags, or that ingests 
 
 ### Claude Code
 
-The npm package carries an Agent plugin that installs these guides into Claude Code. `argelanderspace agent-plugin` prints the plugin's absolute path and the two commands to type inside Claude Code (`/plugin marketplace add <path>`, then `/plugin install …`); it changes no configuration. **Placeholder:** that command is implemented in release-0.2 ticket 14 and is not in this build yet. Until then, copy the guides you want into Claude Code's skills folder (`~/.claude/skills/` for all projects, `.claude/skills/` for one):
+The app and the npm package both carry an Agent plugin that installs these guides into Claude Code (it holds only the guides: no MCP server, hooks or agents, and not the CLI itself, which must be on `PATH` at the same version). Run
+
+```bash
+argelanderspace agent-plugin
+```
+
+It prints the plugin's absolute path and the two commands to type inside Claude Code, `/plugin marketplace add <path>` and `/plugin install argelanderspace@argelanderspace-local`; it is read-only and changes no Claude Code configuration. The plugin's version is the package's version, so update it again after upgrading ArgelanderSpace. Without the plugin, you can instead copy the guides you want into Claude Code's skills folder (`~/.claude/skills/` for all projects, `.claude/skills/` for one):
 
 ```bash
 mkdir -p ~/.claude/skills
 cp -r skills/argelander-* ~/.claude/skills/
 ```
-
-The plugin carries only the guides and uses the `argelanderspace` CLI already installed on the machine (same version); it brings no MCP server, hooks or agents.
 
 ### pi
 

@@ -167,3 +167,18 @@ for (const forbidden of [
     );
   });
 }
+
+test("the Agent plugin ships its two manifests and the guides copy (release-0.2 ticket 14)", () => {
+  for (const f of [
+    "dist/agent-plugin/.claude-plugin/marketplace.json",
+    "dist/agent-plugin/.claude-plugin/plugin.json",
+    "dist/agent-plugin/skills/README.md",
+    "dist/agent-plugin/skills/argelander-read-paper/SKILL.md",
+  ]) {
+    assert.ok(REQUIRED_FILES.includes(f), f);
+    assert.ok(
+      checkPackContents(good.filter((p) => p !== f)).some((p) => p.includes(f)),
+      f
+    );
+  }
+});
