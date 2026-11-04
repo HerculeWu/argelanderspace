@@ -1,7 +1,7 @@
 {
   "name": "argelanderspace",
   "version": "0.2.0",
-  "description": "Ingest arXiv LaTeX sources into a structured render IR, manage a citation-graph library, and read in a local web workspace.",
+  "description": "A local research workspace you share with your AI agent: read and annotate papers (PDF and arXiv LaTeX), a citation-graph library with NASA ADS discovery, argument graphs, plans and a LaTeX writer, with a Copilot and a CLI for agents such as Claude Code.",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -12,11 +12,20 @@
     "url": "git+https://github.com/HerculeWu/argelanderspace.git"
   },
   "keywords": [
+    "research",
+    "workspace",
+    "ai-agent",
+    "copilot",
+    "claude-code",
     "literature",
     "papers",
+    "pdf",
+    "annotation",
     "citation-graph",
+    "nasa-ads",
     "arxiv",
     "latex",
+    "argument-map",
     "astronomy"
   ],
   "bin": {

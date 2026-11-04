@@ -35,6 +35,7 @@
 | Writer 工作流、共享预览、陈旧保护与兼容性 | [writer](../writer.md)；文件协议用既有 [writer-data-model](../writer-data-model.md)；共享管线另读 tex-pipeline |
 | 构建、测试、打包、依赖与迁移教训 | [engineering](../engineering.md) |
 | 当前任务、推后或未验证问题 | [本地 tracker 规则](issue-tracker.md)，按任务读取 `.scratch/`；不把旧阶段视为待执行票据 |
+| 面向用户的英文说明（安装、配置、CLI、agent 集成） | [README](../../README.md)、[README.zh-CN](../../README.zh-CN.md) 与 [docs/user/](../user/)；只作对外说明，产品事实与契约仍以上列中文专题为准，冲突时以专题为准并修正用户文档 |
 | 历史决定、阶段结果、原文恢复 | [history](../history.md) |
 | 本次旧记忆去向与保真证据 | [迁移审计](../migrations/memory-to-domain-modeling.md) |
 
