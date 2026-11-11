@@ -45,7 +45,7 @@ import {
 } from "../acquire/bibtex.js";
 import { classify } from "../acquire/planner.js";
 import { resolveWork } from "../acquire/resolve.js";
-import { storedPlanFor } from "../acquire/run.js";
+import { bibExtrasOf, storedPlanFor } from "../acquire/run.js";
 import {
   followFolds,
   followFoldsAfterFailedSave,
@@ -59,6 +59,7 @@ import type { MetadataSources } from "./sources.js";
 import {
   canonicalId,
   emptyWork,
+  fillBibExtras,
   type LibraryPaths,
   LibraryStore,
   normArxiv,
@@ -574,6 +575,7 @@ function workFromBib(rec: BibRecord, extras: AdsBibFields | null, origin: string
   w.eid = extras?.eid ?? null;
   w.month = extras?.month ?? null;
   w.journal_macro = macro;
+  if (extras) fillBibExtras(w, bibExtrasOf(extras));
   return w;
 }
 

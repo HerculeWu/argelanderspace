@@ -18,8 +18,15 @@
 import { pyOr } from "../documents/pyregex.js";
 import { assignCiteKey } from "../library/graph.js";
 import type { MetadataSources } from "../library/sources.js";
-import { canonicalId, emptyWork, type LibraryStore, type Work } from "../library/store.js";
-import type { BibRecord } from "./bibtex.js";
+import {
+  type BibExtras,
+  canonicalId,
+  emptyWork,
+  fillBibExtras,
+  type LibraryStore,
+  type Work,
+} from "../library/store.js";
+import type { AdsBibFields, BibRecord } from "./bibtex.js";
 import { isConf, parseAdsBibtexFields } from "./bibtex.js";
 import { type AcquisitionPlan, classify, planSources, planToDict } from "./planner.js";
 import { resolveWork } from "./resolve.js";
@@ -76,6 +83,20 @@ export function storedPlanFor(w: Work): Record<string, unknown> {
   return acq;
 }
 
+/** The BibTeX-entry fields a Work keeps, from a parsed entry. */
+export function bibExtrasOf(f: AdsBibFields): BibExtras {
+  return {
+    author_names: f.authorNames,
+    title_protected: f.titleProtected,
+    booktitle: f.booktitle,
+    archive_prefix: f.archivePrefix,
+    primary_class: f.primaryClass,
+    keywords: f.keywords,
+    adsurl: f.adsurl,
+    adsnote: f.adsnote,
+  };
+}
+
 /** Resolve metadata + compute the source plan for every saved work. */
 export async function enrichAndPlan(
   store: LibraryStore,
@@ -114,7 +135,11 @@ export async function enrichBibFields(
   store: LibraryStore,
   ads: MetadataSources["ads"]
 ): Promise<void> {
-  const pending = store.works.filter((w) => w.bibcode && !w.bib_fields);
+  // Also a Work back-filled before the entry's own names and ADS fields were kept (issue 1): it is asked for once
+  // more and only its blank fields are filled.
+  const pending = store.works.filter(
+    (w) => w.bibcode && (!w.bib_fields || (w.bib_fields === "ads" && w.author_names.length === 0))
+  );
   if (!pending.length) return;
   const text = await ads.exportBibtex(pending.map((w) => w.bibcode as string));
   if (!text) return;
@@ -128,6 +153,7 @@ export async function enrichBibFields(
     w.eid = w.eid ?? f.eid;
     w.month = w.month ?? f.month;
     w.journal_macro = w.journal_macro ?? f.journalMacro;
+    fillBibExtras(w, bibExtrasOf(f));
     w.bib_fields = "ads";
   }
 }
