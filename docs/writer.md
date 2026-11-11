@@ -90,5 +90,6 @@
 - Stage 10 工程四门/合成浏览器通过，但用户 smoke 指出引用插入/样式、xref、正文公式无号、overlay 光标四类问题后决定关闭；不能把 UI Gate 通过当整个产品通过。
 - Stage 11 四门、65 组合成引用与 PDF 文本对拍、A&A 临时类测试、发布包离线安装与真实 Chrome/CDP 通过均有原始记录；仅证明受测范围。用户 Report citation 仍未通过、自动编译影响输入（当时记 I030/I031），其余 smoke 用户确认通过。不以工程绿覆盖用户反馈。
 - Stage 12 修复 I030（根因：`workToBibtex` 不转义，`journal = {A&A}` 裸 `&` 导致编译失败）与 I031：四门 1066 passed+1 skip；真实 Chrome/CDP 探针验证打开/输入/暂停 0 编译、Shift+Enter 恰好 1 次、Render 第 2 次；迁移后真实稿件编译与导出 zip 自编译 EXIT=0；**用户 smoke“渲染没问题”**。latexmk 缓存自愈与全角逗号边界（I034）见文头与[工程](engineering.md)。
+- **按键只重渲染正在编辑的单元**（2026-11-11，用户反馈打字不跟手）。原因：每次按键深拷贝整份稿件并重渲染所有单元，其余单元的 KaTeX 排版、表格解析和图标全部重跑。现在：按键只替换被编辑单元的对象，其余单元保持对象身份（保存应答与重新获取带回的相等单元也复用旧对象，`shareWriterCells`）；单元及其下方的添加按钮整体记忆化，传下去的回调、编号结果与交叉引用目标集合在内容不变时保持同一对象；大纲随输入低优先级更新。陈旧保护不变：`writerNumberingForDraft` 仍对每份草稿做精确源码比对，渲染后的第一次按键使整份预览变陈旧（所有单元各重渲染一次以显示提示），之后的按键不再触及其他单元。显式渲染、保存链与冲突处理不变。回归：`writer-view.test.tsx`「typing in one cell does not typeset the other cells again」统计 KaTeX 调用次数。**证据范围**：无 TeX 的容器里用 headless Chromium、拦截的合成预览（60 个单元、480 个公式）测得每次按键的脚本时间约 290 ms → 约 31 ms；不是真实稿件或用户机器上的测量，绝对值不作承诺。
 - 未用真实大稿做性能基准；Texifier 只是性能参照，不是延迟承诺或新增 PDF 目标。OS IME/任意浏览器/宏包不作全称保证。
 - 持久回归入口：contracts writer-rendering、infra tex-cache、server writer-preview/writer-numbering、web writer-preview/writer-codemirror/writer-view；源码提交和验收摘要见[历史](history.md)。

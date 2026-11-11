@@ -75,8 +75,12 @@ export function libraryRefIdentityMatches(
   );
 }
 
-/** The BibTeX tab's text (derived from the displayed fields, exactly as the tab shows it). */
+/**
+ * The BibTeX tab's text: the Work's `library.bib` entry when the payload carries it; otherwise (the built-in demo
+ * data, a ref from another response) a short entry derived from the displayed fields.
+ */
 export function libraryRefBibtex(r: LibraryRef): string {
+  if (r.bibtex !== undefined) return r.bibtex;
   return (
     "@" +
     (r.type === "conf" ? "inproceedings" : "article") +

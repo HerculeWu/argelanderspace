@@ -66,6 +66,16 @@ export function planFor(w: Work): AcquisitionPlan {
   });
 }
 
+/**
+ * The acquisition plan as it is stored on a Work: the plan plus `ingested_doc` when the Work already has a reader
+ * rendering. Every writer of `Work.acquisition` uses this, so re-planning an unchanged Work stores the same object.
+ */
+export function storedPlanFor(w: Work): Record<string, unknown> {
+  const acq = planToDict(planFor(w));
+  if (w.doc_ids.length > 0) acq.ingested_doc = w.doc_ids[0];
+  return acq;
+}
+
 /** Resolve metadata + compute the source plan for every saved work. */
 export async function enrichAndPlan(
   store: LibraryStore,
@@ -85,12 +95,7 @@ export async function enrichAndPlan(
     const [pub, label] = classify(w.doi, w.journal || w.venue);
     if (pub && label && !w.journal) w.journal = label;
     if (!w.cite_key) w.cite_key = assignCiteKey(w, usedKeys);
-    const acq = planToDict(planFor(w));
-    if (w.doc_ids.length > 0) {
-      // already has a reader rendering
-      acq.ingested_doc = w.doc_ids[0];
-    }
-    w.acquisition = acq;
+    w.acquisition = storedPlanFor(w);
   }
   await enrichBibFields(store, sources.ads);
   return store;

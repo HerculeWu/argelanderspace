@@ -174,7 +174,14 @@ function existsBib(paths: ReturnType<typeof libraryPaths>): string | null {
 }
 
 // ---- byte comparison against the real HEAD (typed whole-file save) implementation ---------------------- //
-const noStamp = (works: object[]) => works.map((w) => ({ ...w, added_at: undefined }));
+// `acquisition.ingested_doc` is the one intended difference from HEAD (issue 1): an import that touches a Work with
+// Docs keeps the marker the library build wrote, where HEAD's re-plan dropped it (and so reported an update).
+const noStamp = (works: object[]) =>
+  works.map((w) => {
+    const acquisition = (w as { acquisition?: Record<string, unknown> | null }).acquisition;
+    const { ingested_doc: _kept, ...plan } = acquisition ?? {};
+    return { ...w, added_at: undefined, acquisition: acquisition ? plan : acquisition };
+  });
 async function sameAsHead(
   initial: (paths: ReturnType<typeof libraryPaths>) => void,
   entry: string
@@ -362,4 +369,28 @@ test("a hand-edited numeric work id is matched like its string form, so the impo
   expect(works).toHaveLength(3);
   expect(works[0]).toMatchObject({ venue: "MNRAS", note: "mine", x_work: "keep-work" });
   expect(works[1]).toMatchObject({ x_other: 5 });
+});
+
+// ---- issue 1 --------------------------------------------------------------------------------------------- //
+test("re-importing the entry of a Work that has Docs and a built plan changes nothing and is not an update", async () => {
+  const paths = seed();
+  // the first import stores the plan (with the ingested-Doc marker, as the library build writes it)
+  const entry =
+    "@article{ann2001,\n author={Ann},\n title={Alpha galaxies},\n year={2001},\n doi={10.1/a}\n}\n";
+  await addManualBibText(paths, entry);
+  const stored = (disk(paths).works as { acquisition?: Record<string, unknown> }[])[0];
+  expect(stored?.acquisition?.ingested_doc).toBe("d1");
+  const before = bytes(paths);
+  const again = await addManualBibText(paths, entry);
+  expect(again[0]).toMatchObject({ status: "exists", changed: false });
+  expect(bytes(paths)).toBe(before);
+});
+
+test("an AAS DOI outside ApJ is not labelled ApJ (RNAAS, PSJ)", async () => {
+  const paths = seed();
+  const out = await addManualBibText(
+    paths,
+    "@article{qin2025,\n author={Qin},\n title={A note},\n year={2025},\n doi={10.3847/2515-5172/ae2ed7},\n journal={Research Notes of the American Astronomical Society}\n}\n@article{psj2024,\n author={Roe},\n title={A planet},\n year={2024},\n doi={10.3847/2632-3338/abc123},\n journal={The Planetary Science Journal}\n}\n"
+  );
+  expect(out.map((o) => o.ref?.journal)).toEqual(["RNAAS", "PSJ"]);
 });

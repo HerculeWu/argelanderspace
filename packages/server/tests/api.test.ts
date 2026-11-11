@@ -291,16 +291,28 @@ describe("PATCH /api/library/refs", () => {
     expect((await refOf())?.doc_id).toBe("arxiv-2603.03522");
     expect((await refOf())?.doc_ids).toEqual(["arxiv-2603.03522", "2603.03522"]);
 
-    // N5: a no-op doc_id patch has no side effects — patchWork returns false
-    // (→ 404 from the not-found mapping), no save, no library.changed
+    // N5: a no-op doc_id patch has no side effects — no save, no library.changed. The Work exists, so the
+    // answer is never "not found" (issue 1): a foreign Doc is a 400 that names it, an already-main Doc is ok.
     const nChanged = messages.filter((m) => m.type === "library.changed").length;
-    for (const body of [
-      { id: KNOWN_WORK_ID, doc_id: "arxiv-ghost" }, // foreign doc
-      { id: KNOWN_WORK_ID, doc_id: "arxiv-2603.03522" }, // already main
-    ]) {
-      const noop = await patch("/api/library/refs", body);
-      expect(noop.status).toBe(404);
-    }
+    const foreign = await patch("/api/library/refs", { id: KNOWN_WORK_ID, doc_id: "arxiv-ghost" });
+    expect(foreign.status).toBe(400);
+    expect(await foreign.json()).toEqual({
+      detail: `doc 'arxiv-ghost' is not attached to work '${KNOWN_WORK_ID}'`,
+    });
+    const already = await patch("/api/library/refs", {
+      id: KNOWN_WORK_ID,
+      doc_id: "arxiv-2603.03522",
+    });
+    expect(already.status).toBe(200);
+    // a patch that names no field this route applies (e.g. a bibliographic field) says so; nothing is written
+    const before = readFileSync(join(dataDir, "library", "library.json"), "utf8");
+    const biblio = await patch("/api/library/refs", { id: KNOWN_WORK_ID, journal: "RNAAS" });
+    expect(biblio.status).toBe(400);
+    expect(await biblio.json()).toEqual({
+      detail:
+        "nothing to change: this route only sets label, read, star, note, tags, doc_id; bibliographic fields cannot be edited here",
+    });
+    expect(readFileSync(join(dataDir, "library", "library.json"), "utf8")).toBe(before);
     expect((await refOf())?.doc_ids).toEqual(["arxiv-2603.03522", "2603.03522"]);
     expect(messages.filter((m) => m.type === "library.changed")).toHaveLength(nChanged);
   });

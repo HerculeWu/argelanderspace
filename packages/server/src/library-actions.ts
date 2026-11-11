@@ -217,9 +217,10 @@ export async function readLibrary(
   const payload = await deps.readPayload();
   if (op.refId !== undefined) {
     const ref = payload.refs.find((candidate) => candidate.id === op.refId);
-    return ref
-      ? { ok: true, ref, bibtex: libraryRefBibtex(ref) }
-      : { ok: false, status: "not_found" };
+    if (!ref) return { ok: false, status: "not_found" };
+    // The entry is reported once, as `bibtex` (the Work's library.bib entry), not again inside `ref`.
+    const { bibtex: _entry, ...rest } = ref;
+    return { ok: true, ref: rest, bibtex: libraryRefBibtex(ref) };
   }
   const matched = payload.refs.filter(
     (ref) =>

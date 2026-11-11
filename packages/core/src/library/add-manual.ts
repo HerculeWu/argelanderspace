@@ -43,9 +43,9 @@ import {
   parseAdsBibtexFields,
   parseBibtexText,
 } from "../acquire/bibtex.js";
-import { classify, planToDict } from "../acquire/planner.js";
+import { classify } from "../acquire/planner.js";
 import { resolveWork } from "../acquire/resolve.js";
-import { planFor } from "../acquire/run.js";
+import { storedPlanFor } from "../acquire/run.js";
 import {
   followFolds,
   followFoldsAfterFailedSave,
@@ -207,7 +207,7 @@ async function commitWork(
   const removeIds = matches.slice(1).map((m) => m.id);
   const saved = store.upsert(w);
   if (!saved.cite_key) saved.cite_key = assignCiteKey(saved, usedKeys(store));
-  saved.acquisition = planToDict(planFor(saved));
+  saved.acquisition = storedPlanFor(saved);
   let changedIds: Set<string>;
   try {
     changedIds = saveWorksNarrow(
@@ -463,7 +463,7 @@ export async function addManualBibcodes(
     const saved = store.upsert(w);
     if (!saved.cite_key) saved.cite_key = assignCiteKey(saved, used);
     else used.add(saved.cite_key);
-    saved.acquisition = planToDict(planFor(saved));
+    saved.acquisition = storedPlanFor(saved);
     const samePaper = matched !== undefined && created.includes(matched);
     if (matched === undefined) created.push(saved);
     if (!touched.includes(saved)) touched.push(saved);
@@ -650,7 +650,7 @@ export async function addManualBibText(
     for (const fold of store.folds.slice(foldsBefore)) foldAt.set(fold, outcomes.length);
     if (!saved.cite_key) saved.cite_key = assignCiteKey(saved, used);
     else used.add(saved.cite_key);
-    saved.acquisition = planToDict(planFor(saved));
+    saved.acquisition = storedPlanFor(saved);
     if (matched === undefined) created.push(saved);
     if (!touched.includes(saved)) touched.push(saved);
     const outcome: ManualAddOutcome = {

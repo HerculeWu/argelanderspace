@@ -4,7 +4,7 @@
  * insert-label buttons that auto-complete a missing \label first.
  */
 
-import { useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import { ActionButton } from "../ui";
@@ -19,7 +19,7 @@ const GROUPS = [
   { kind: "code", labelKey: "writer.outline.code" },
 ] as const satisfies readonly { kind: CrossrefTarget["kind"]; labelKey: string }[];
 
-export function OutlinePanel({
+export const OutlinePanel = memo(function OutlinePanel({
   cells,
   numbering,
   onJump,
@@ -33,7 +33,7 @@ export function OutlinePanel({
 }) {
   const { t } = useTranslation();
   const [q, setQ] = useState("");
-  const targets = writerCrossrefs(cells, numbering);
+  const targets = useMemo(() => writerCrossrefs(cells, numbering), [cells, numbering]);
   const needle = q.trim().toLowerCase();
   const visible = (x: CrossrefTarget) =>
     !needle || `${x.title} ${x.label}`.toLowerCase().includes(needle);
@@ -93,4 +93,4 @@ export function OutlinePanel({
       })}
     </div>
   );
-}
+});
