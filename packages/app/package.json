@@ -1,6 +1,6 @@
 {
   "name": "argelanderspace",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A local research workspace you share with your AI agent: read and annotate papers (PDF and arXiv LaTeX), a citation-graph library with NASA ADS discovery, argument graphs, plans and a LaTeX writer, with a Copilot and a CLI for agents such as Claude Code.",
   "license": "MIT",
   "type": "module",
