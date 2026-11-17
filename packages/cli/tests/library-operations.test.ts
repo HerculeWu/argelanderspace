@@ -11,7 +11,7 @@
  * a child would read this machine's real credential store or reach arXiv; their in-process path is covered in the server
  * package (`library-operations.test.ts`) with injected token, stubs and network.
  */
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import {
   copyFileSync,
   existsSync,
@@ -47,6 +47,9 @@ const PKG = fileURLToPath(new URL("..", import.meta.url));
 const BIN = join(PKG, "dist", "bin.js");
 const PDF = join(PKG, "..", "server", "tests", "fixtures", "pdf", "scanned-no-text.pdf");
 const W_DOCLESS = "arxiv:2603.00001";
+const HAVE_LATEXMK =
+  spawnSync("latexmk", ["--version"], { stdio: "ignore" }).status === 0 &&
+  spawnSync("pdflatex", ["--version"], { stdio: "ignore" }).status === 0;
 const W_REFRESH = "arxiv:2603.00002";
 const W_NOARXIV = "doi:10.1000/noarxiv";
 const REFRESH_DOC = "arxiv-2603.00002";
@@ -342,12 +345,20 @@ test("without a workbench attach-arxiv that would replace a Doc's text is refuse
     irBefore
   );
   expect(existsSync(join(dataDir, "jobs"))).toBe(false); // refused before any runner was made
-  // The same command on a Work that only gets a new Doc needs no workbench (it runs in the process).
-  const added = await run(["library", "attach-arxiv", "--ref-id", W_DOCLESS]);
-  expect(added.status).toBe(0);
-  expect(json(added.stdout)).toMatchObject({ ok: true, status: "ok", docId: "arxiv-2603.00001" });
-  expect(docsOf(dataDir, W_DOCLESS)).toEqual(["arxiv-2603.00001"]);
 });
+
+// It compiles the arXiv LaTeX in the process, so it needs TeX Live on PATH (as the ingest smoke does).
+test.skipIf(!HAVE_LATEXMK)(
+  "without a workbench attach-arxiv on a Work that only gets a new Doc runs in the process (exit 0)",
+  { timeout: 90_000 },
+  async () => {
+    const { run, dataDir } = setup();
+    const added = await run(["library", "attach-arxiv", "--ref-id", W_DOCLESS]);
+    expect(added.status).toBe(0);
+    expect(json(added.stdout)).toMatchObject({ ok: true, status: "ok", docId: "arxiv-2603.00001" });
+    expect(docsOf(dataDir, W_DOCLESS)).toEqual(["arxiv-2603.00001"]);
+  }
+);
 
 test("with a running workbench the commands go through it: ADS libraries, a local PDF, and the card for replacing a Doc", {
   timeout: 120_000,
