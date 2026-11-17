@@ -389,41 +389,49 @@ describe("start: what fails is announced, nothing is left for", () => {
     expect(await h.quit()).toBe(0);
   }, 30_000);
 
-  test("copy_failed in a read-only folder: nothing is made", async () => {
-    const w = world();
-    const parent = join(w.root, "ReadOnly");
-    mkdirSync(parent);
-    writeFileSync(join(parent, "mine.txt"), "the user's");
-    chmodSync(parent, 0o555);
-    const h = await startHost(w);
-    await h.pick(parent);
-    expect(await h.result()).toMatchObject({
-      reason: "copy_failed",
-      path: { path: join(parent, "ArgelanderSpace-Tutorial") },
-    });
-    expect(readdirSync(parent)).toEqual(["mine.txt"]);
-    expect(existsSync(w.progressFile)).toBe(false);
-    expect(h.lines.map((l) => l.type)).toEqual(["ready", "menu", "request"]);
-    expect(await h.quit()).toBe(0);
-  }, 30_000);
+  test.skipIf(process.getuid?.() === 0)(
+    "copy_failed in a read-only folder: nothing is made",
+    async () => {
+      const w = world();
+      const parent = join(w.root, "ReadOnly");
+      mkdirSync(parent);
+      writeFileSync(join(parent, "mine.txt"), "the user's");
+      chmodSync(parent, 0o555);
+      const h = await startHost(w);
+      await h.pick(parent);
+      expect(await h.result()).toMatchObject({
+        reason: "copy_failed",
+        path: { path: join(parent, "ArgelanderSpace-Tutorial") },
+      });
+      expect(readdirSync(parent)).toEqual(["mine.txt"]);
+      expect(existsSync(w.progressFile)).toBe(false);
+      expect(h.lines.map((l) => l.type)).toEqual(["ready", "menu", "request"]);
+      expect(await h.quit()).toBe(0);
+    },
+    30_000
+  );
 
-  test("copy_failed in the middle: only the folder the host made is removed; the user's files stay; not left for", async () => {
-    const w = world();
-    writeFileSync(join(w.sample, "zz-unreadable.bin"), "x");
-    chmodSync(join(w.sample, "zz-unreadable.bin"), 0o000);
-    const parent = join(w.root, "Work");
-    mkdirSync(parent);
-    writeFileSync(join(parent, "mine.txt"), "the user's");
-    const h = await startHost(w);
-    await h.pick(parent);
-    expect(await h.result()).toMatchObject({ reason: "copy_failed" });
-    expect(readdirSync(parent)).toEqual(["mine.txt"]);
-    expect(readFileSync(join(parent, "mine.txt"), "utf8")).toBe("the user's");
-    expect(existsSync(w.progressFile)).toBe(false);
-    await new Promise((r) => setTimeout(r, 100));
-    expect(h.lines.some((l) => l.type === "stopping")).toBe(false);
-    expect(await h.quit()).toBe(0);
-  }, 30_000);
+  test.skipIf(process.getuid?.() === 0)(
+    "copy_failed in the middle: only the folder the host made is removed; the user's files stay; not left for",
+    async () => {
+      const w = world();
+      writeFileSync(join(w.sample, "zz-unreadable.bin"), "x");
+      chmodSync(join(w.sample, "zz-unreadable.bin"), 0o000);
+      const parent = join(w.root, "Work");
+      mkdirSync(parent);
+      writeFileSync(join(parent, "mine.txt"), "the user's");
+      const h = await startHost(w);
+      await h.pick(parent);
+      expect(await h.result()).toMatchObject({ reason: "copy_failed" });
+      expect(readdirSync(parent)).toEqual(["mine.txt"]);
+      expect(readFileSync(join(parent, "mine.txt"), "utf8")).toBe("the user's");
+      expect(existsSync(w.progressFile)).toBe(false);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(h.lines.some((l) => l.type === "stopping")).toBe(false);
+      expect(await h.quit()).toBe(0);
+    },
+    30_000
+  );
 
   test("no sample in this installation: 409 no_sample, no dialog", async () => {
     const w = world({ sample: false });
@@ -549,43 +557,51 @@ describe("restart", () => {
     expect(await again.quit()).toBe(0);
   }, 30_000);
 
-  test("a copy that fails during the restart of the open tutorial project: announced, the folder byte for byte as it was, nothing beside it, not left for", async () => {
-    const w = world();
-    writeFileSync(join(w.sample, "zz-unreadable.bin"), "x");
-    chmodSync(join(w.sample, "zz-unreadable.bin"), 0o000);
-    const existing = tutorialFolder(join(w.root, "ArgelanderSpace-Tutorial"));
-    bind(w, existing);
-    const h = await startHost(w, existing);
-    const before = tree(existing);
-    const progressBefore = readFileSync(w.progressFile, "utf8");
-    expect((await h.post("/api/host/tutorial/restart")).status).toBe(202);
-    expect(await h.result()).toMatchObject({ reason: "copy_failed", path: { path: existing } });
-    expect(tree(existing)).toEqual(before);
-    expect(readdirSync(w.root).filter((name) => name.startsWith(".ArgelanderSpace"))).toEqual([]);
-    expect(readFileSync(w.progressFile, "utf8")).toBe(progressBefore);
-    expect(h.lines.some((l) => l.type === "stopping")).toBe(false);
-    expect(await h.quit()).toBe(0);
-    expect(logRecords(w).find((r) => r.event === "desktop.tutorial_failed")).toMatchObject({
-      action: "restart",
-      reason: "copy_failed",
-    });
-  }, 30_000);
+  test.skipIf(process.getuid?.() === 0)(
+    "a copy that fails during the restart of the open tutorial project: announced, the folder byte for byte as it was, nothing beside it, not left for",
+    async () => {
+      const w = world();
+      writeFileSync(join(w.sample, "zz-unreadable.bin"), "x");
+      chmodSync(join(w.sample, "zz-unreadable.bin"), 0o000);
+      const existing = tutorialFolder(join(w.root, "ArgelanderSpace-Tutorial"));
+      bind(w, existing);
+      const h = await startHost(w, existing);
+      const before = tree(existing);
+      const progressBefore = readFileSync(w.progressFile, "utf8");
+      expect((await h.post("/api/host/tutorial/restart")).status).toBe(202);
+      expect(await h.result()).toMatchObject({ reason: "copy_failed", path: { path: existing } });
+      expect(tree(existing)).toEqual(before);
+      expect(readdirSync(w.root).filter((name) => name.startsWith(".ArgelanderSpace"))).toEqual([]);
+      expect(readFileSync(w.progressFile, "utf8")).toBe(progressBefore);
+      expect(h.lines.some((l) => l.type === "stopping")).toBe(false);
+      expect(await h.quit()).toBe(0);
+      expect(logRecords(w).find((r) => r.event === "desktop.tutorial_failed")).toMatchObject({
+        action: "restart",
+        reason: "copy_failed",
+      });
+    },
+    30_000
+  );
 
-  test("a copy that fails during the restart from the welcome state: announced, the folder as it was, not left for", async () => {
-    const w = world();
-    writeFileSync(join(w.sample, "zz-unreadable.bin"), "x");
-    chmodSync(join(w.sample, "zz-unreadable.bin"), 0o000);
-    const existing = tutorialFolder(join(w.root, "ArgelanderSpace-Tutorial"));
-    bind(w, existing);
-    const before = tree(existing);
-    const h = await startHost(w);
-    expect((await h.post("/api/host/tutorial/restart")).status).toBe(202);
-    expect(await h.result()).toMatchObject({ reason: "copy_failed", path: { path: existing } });
-    expect(tree(existing)).toEqual(before);
-    expect(readdirSync(w.root).filter((name) => name.startsWith(".ArgelanderSpace"))).toEqual([]);
-    expect(h.lines.some((l) => l.type === "stopping")).toBe(false);
-    expect(await h.quit()).toBe(0);
-  }, 30_000);
+  test.skipIf(process.getuid?.() === 0)(
+    "a copy that fails during the restart from the welcome state: announced, the folder as it was, not left for",
+    async () => {
+      const w = world();
+      writeFileSync(join(w.sample, "zz-unreadable.bin"), "x");
+      chmodSync(join(w.sample, "zz-unreadable.bin"), 0o000);
+      const existing = tutorialFolder(join(w.root, "ArgelanderSpace-Tutorial"));
+      bind(w, existing);
+      const before = tree(existing);
+      const h = await startHost(w);
+      expect((await h.post("/api/host/tutorial/restart")).status).toBe(202);
+      expect(await h.result()).toMatchObject({ reason: "copy_failed", path: { path: existing } });
+      expect(tree(existing)).toEqual(before);
+      expect(readdirSync(w.root).filter((name) => name.startsWith(".ArgelanderSpace"))).toEqual([]);
+      expect(h.lines.some((l) => l.type === "stopping")).toBe(false);
+      expect(await h.quit()).toBe(0);
+    },
+    30_000
+  );
 
   test("continue with the tutorial project open: 409 current_project", async () => {
     const w = world();

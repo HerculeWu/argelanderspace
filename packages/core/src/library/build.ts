@@ -46,6 +46,7 @@ import {
   LibraryStore,
   normDoi,
   type Work,
+  workToBibtex,
 } from "./store.js";
 
 /** Options for {@link rebuild} / {@link acquireReferences}. */
@@ -187,7 +188,9 @@ export function libraryPayload(paths: LibraryPaths, graph: GraphData): LibraryPa
   const tags = [...new Set(store.works.flatMap((w) => w.tags))].sort();
   return {
     project: store.project as LibraryPayload["project"],
-    refs: store.works.map(workToRef),
+    // `bibtex` is the Work's library.bib entry, so the BibTeX tab, the Copilot page and `library read` show the
+    // same text the file holds (issue 1), not one rebuilt from the short display fields.
+    refs: store.works.map((w) => ({ ...workToRef(w), bibtex: workToBibtex(w) })),
     tags,
     graph,
   };

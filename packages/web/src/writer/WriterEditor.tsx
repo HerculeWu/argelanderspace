@@ -17,7 +17,7 @@
  * list with a note.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useDeferredValue, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ActionButton, Select } from "../ui";
 import {
@@ -47,6 +47,8 @@ import {
   randomLabel,
   withEnsuredLabel,
   convertCellData,
+  shareWriterCells,
+  writerPreviewTargets,
 } from "./model";
 import { CellWrap, TYPE_LABEL_KEY, type CellCtx } from "./cells";
 import { OutlinePanel } from "./outline";
@@ -54,6 +56,35 @@ import { RightTabs, type RightTab } from "./rightTabs";
 import { InfoModal, PreambleModal } from "./modals";
 import type { WriterTextTarget } from "./latexSource";
 import { captureEditorPage, type WriterEditorControls, type WriterEditorPage, writerAutoFold } from "./writer-context";
+
+/** The callbacks handed to cells and the outline; `stableCell` keeps one identity for each across renders. */
+type CellHandlers = Required<Omit<CellCtx, "docId" | "targets" | "numbering">> & {
+  onInsertLabel: (targetCell: string, label: string, envIndex?: number, sectionIndex?: number) => void;
+  onOpenAddMenu: (index: number, e: React.MouseEvent) => void;
+};
+
+/** One cell and the add row under it. Memoized as a whole: a keystroke elsewhere renders neither. */
+const CellBlock = memo(function CellBlock({ cell, index, supported, active, editing, ctx, onOpenAddMenu }: {
+  cell: WriterManuscript["cells"][number];
+  index: number;
+  supported: boolean;
+  active: boolean;
+  editing: boolean;
+  ctx: CellCtx;
+  onOpenAddMenu: (index: number, e: React.MouseEvent) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="w-cell-block" data-ui="manuscript-cell" data-ui-key={cell.id}>
+      <CellWrap cell={cell} supported={supported} active={active} editing={editing} ctx={ctx} />
+      <div className="w-add-row">
+        <ActionButton unstyled mode="icon" iconName="plus" className="w-add-cell"
+          data-add-index={index + 1} data-ui="add-cell-after" label={t("writer.cell.addCell")} tooltip={t("writer.cell.addCell")}
+          onClick={(e) => onOpenAddMenu(index + 1, e)} />
+      </div>
+    </div>
+  );
+});
 
 type Menu =
   | { kind: "add"; index: number; x: number; y: number }
@@ -138,9 +169,43 @@ export function WriterEditor({
   /** What the server last confirmed. The local doc minus this is the unsaved draft. */
   const baseRef = useRef<WriterManuscript | null>(null);
   const applyDoc = (d: WriterManuscript | null) => {
-    docRef.current = d;
-    setDoc(d);
+    // Unchanged cells keep their object identity (a save's answer or a refetch brings equal copies), so the memoized
+    // cells are not typeset again for a document that only got a new rev.
+    const next = d ? shareWriterCells(docRef.current, d) : d;
+    docRef.current = next;
+    setDoc(next);
   };
+
+  // ---- render stability: a keystroke re-renders the cell being typed in, not the manuscript ------------------
+  /** The cell callbacks of the latest render; the stable ones below forward to them. */
+  const liveCell = useRef<CellHandlers | null>(null);
+  const [stableCell] = useState<CellHandlers>(() => {
+    const forward =
+      <K extends keyof CellHandlers>(name: K) =>
+      (...args: Parameters<CellHandlers[K]>) =>
+        (liveCell.current?.[name] as ((...a: unknown[]) => void) | undefined)?.(...args);
+    return {
+      onJump: forward("onJump"),
+      onCite: forward("onCite"),
+      onActivate: forward("onActivate"),
+      onEdit: forward("onEdit"),
+      onCommit: forward("onCommit"),
+      onDelete: forward("onDelete"),
+      onComment: forward("onComment"),
+      onOpenTypeMenu: forward("onOpenTypeMenu"),
+      onField: forward("onField"),
+      onCaret: forward("onCaret"),
+      onImageFile: forward("onImageFile"),
+      onInsertLabel: forward("onInsertLabel"),
+      onOpenAddMenu: forward("onOpenAddMenu"),
+    };
+  });
+  /** The last numbering, cross-reference targets and cell context handed down, reused while they say the same. */
+  const stableNumbering = useRef<{ input: WriterNumberingResponse | null; key: string; value: WriterNumberingResponse | null } | null>(null);
+  const stableTargets = useRef<{ key: string; value: ReadonlySet<string> } | null>(null);
+  const stableCtx = useRef<CellCtx | null>(null);
+  // The outline is derived from every cell's source: it follows the typing at low priority instead of per keystroke.
+  const outlineCells = useDeferredValue(doc?.cells);
   /** A manuscript that came from the server as is (load, refetch): it is also the saved one. */
   const adoptServerDoc = (d: WriterManuscript | null) => {
     baseRef.current = d;
@@ -454,6 +519,20 @@ export function WriterEditor({
   }
 
   // ---- mutation helpers ------------------------------------------------------
+  /**
+   * The hot path (every keystroke in a cell): only the edited cell is a new object, every other cell keeps its
+   * identity, and nothing is deep-copied. Same optimistic update and save scheduling as `mutate`.
+   */
+  const setCellField = (cellId: string, field: string, value: unknown) => {
+    const prev = docRef.current;
+    if (!prev) return;
+    if (!prev.cells.some((c) => c.id === cellId)) return;
+    const cells = prev.cells.map((c) =>
+      c.id === cellId ? ({ ...c, data: { ...c.data, [field]: value } } as typeof c) : c
+    );
+    applyDoc({ ...prev, cells });
+    scheduleSave();
+  };
   const mutate = (fn: (draft: WriterManuscript) => void) => {
     const prev = docRef.current;
     if (!prev) return;
@@ -667,14 +746,21 @@ export function WriterEditor({
   };
 
   // ---- cell context -------------------------------------------------------------
-  const currentNumbering = writerNumberingForDraft(numbering, doc, template);
-  const ctx: CellCtx = {
-    numbering: currentNumbering,
+  // The gate is recomputed for every draft (exact source comparison, as before), but the object handed down is the
+  // previous one while it says the same thing: the first keystroke after a render turns the preview stale (every
+  // cell shows the note once), later keystrokes change nothing the other cells depend on.
+  const gated = writerNumberingForDraft(numbering, doc, template);
+  const gatedKey = JSON.stringify([gated?.status, gated?.lastError, gated?.facts, gated?.preview === null]);
+  if (stableNumbering.current?.input !== numbering || stableNumbering.current.key !== gatedKey)
+    stableNumbering.current = { input: numbering, key: gatedKey, value: gated };
+  const currentNumbering = stableNumbering.current.value;
+  const targetSet = writerPreviewTargets(currentNumbering?.preview, doc.cells);
+  const targetKey = JSON.stringify([...targetSet]);
+  if (stableTargets.current?.key !== targetKey) stableTargets.current = { key: targetKey, value: targetSet };
+  const targets = stableTargets.current.value;
+  liveCell.current = {
     onJump,
     onCite: () => { setRightTab("references"); setRightCollapsed(false); },
-    docId: id,
-    activeId,
-    editingId,
     onActivate: setActiveId,
     onEdit: editCell,
     onCommit: commitCell,
@@ -684,10 +770,7 @@ export function WriterEditor({
       setMenu({ kind: "type", cellId, x: e.clientX, y: e.clientY });
     },
     onField: (cellId, field, value) => {
-      mutate((d) => {
-        const cell = d.cells.find((c) => c.id === cellId);
-        if (cell) (cell.data as Record<string, unknown>)[field] = value;
-      });
+      setCellField(cellId, field, value);
       setActiveId(cellId);
     },
     onCaret: (cellId, field, el) => {
@@ -695,7 +778,19 @@ export function WriterEditor({
       setActiveId(cellId);
     },
     onImageFile,
+    onInsertLabel,
+    onOpenAddMenu: (index, e) => openAddMenu(index, e),
   };
+  if (
+    stableCtx.current === null ||
+    stableCtx.current.numbering !== currentNumbering ||
+    stableCtx.current.targets !== targets ||
+    stableCtx.current.docId !== id
+  ) {
+    const { onInsertLabel: _outlineOnly, onOpenAddMenu: _shellOnly, ...cellHandlers } = stableCell;
+    stableCtx.current = { ...cellHandlers, numbering: currentNumbering, targets, docId: id };
+  }
+  const ctx = stableCtx.current;
 
   const openAddMenu = (index: number, e: React.MouseEvent) =>
     setMenu({ kind: "add", index, x: e.clientX, y: e.clientY });
@@ -769,10 +864,10 @@ export function WriterEditor({
           <span className="w-rail-label">{t("writer.outline.title")}</span>
           {!leftCollapsed && (
             <OutlinePanel
-              cells={doc.cells}
+              cells={outlineCells ?? doc.cells}
               numbering={currentNumbering}
-              onJump={onJump}
-              onInsertLabel={onInsertLabel}
+              onJump={stableCell.onJump}
+              onInsertLabel={stableCell.onInsertLabel}
             />
           )}
         </aside>
@@ -813,19 +908,16 @@ export function WriterEditor({
                   </div>
                 )}
                 {doc.cells.map((cell, idx) => (
-                  <div key={cell.id} className="w-cell-block" data-ui="manuscript-cell" data-ui-key={cell.id}>
-                    <CellWrap
-                      cell={cell}
-                      cells={doc.cells}
-                      supported={template.types.includes(cell.type)}
-                      ctx={ctx}
-                    />
-                    <div className="w-add-row">
-                      <ActionButton unstyled mode="icon" iconName="plus" className="w-add-cell"
-                        data-add-index={idx + 1} data-ui="add-cell-after" label={t("writer.cell.addCell")} tooltip={t("writer.cell.addCell")}
-                        onClick={(e) => openAddMenu(idx + 1, e)} />
-                    </div>
-                  </div>
+                  <CellBlock
+                    key={cell.id}
+                    cell={cell}
+                    index={idx}
+                    supported={template.types.includes(cell.type)}
+                    active={activeId === cell.id}
+                    editing={editingId === cell.id}
+                    ctx={ctx}
+                    onOpenAddMenu={stableCell.onOpenAddMenu}
+                  />
                 ))}
               </div>
             </main>

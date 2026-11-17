@@ -222,6 +222,28 @@ export interface AdsBibFields {
   month: string | null;
   /** journal shorthand without the backslash when ADS uses one (`{\aap}`) */
   journalMacro: string | null;
+  /**
+   * The entry's authors as BibTeX names, verbatim and in order (`{Kroupa}, Pavel`): given names and initials, which
+   * the family-name list of a Work does not have (issue 1). Empty when the entry has no author field.
+   */
+  authorNames: string[];
+  /** The title is brace-protected in the entry (`title = "{…}"` / `{{…}}`), so styles keep its capitalisation. */
+  titleProtected: boolean;
+  booktitle: string | null;
+  archivePrefix: string | null;
+  primaryClass: string | null;
+  keywords: string | null;
+  adsurl: string | null;
+  adsnote: string | null;
+}
+
+/** Whether the entry with this key writes its title brace-protected. Read from the text: the grammar drops the braces. */
+function titleIsProtected(text: string, key: string): boolean {
+  const at = text.indexOf(`{${key},`);
+  if (at < 0) return false;
+  const next = text.indexOf("\n@", at);
+  const body = text.slice(at, next < 0 ? undefined : next);
+  return /(?:^|[\s,])title\s*=\s*(?:"\s*\{|\{\s*\{)/i.test(body);
 }
 
 /**
@@ -241,7 +263,12 @@ export function parseAdsBibtexFields(text: string): Map<string, AdsBibFields> {
   for (const e of db.entries) {
     const f = e.fields as Record<string, unknown>;
     const str = (v: unknown): string | null =>
-      typeof v === "string" && v.trim() ? v.trim() : null;
+      typeof v === "string" && v.trim()
+        ? v.trim()
+        : Array.isArray(v) && v.length > 0
+          ? v.map(String).join(", ")
+          : null;
+    const author = str(f.author);
     const journal = str(f.journal);
     const macro = journal ? /^(?:\{)?\\([A-Za-z]+)(?:\})?$/.exec(journal) : null;
     const key = String(e.key ?? "");
@@ -253,6 +280,19 @@ export function parseAdsBibtexFields(text: string): Map<string, AdsBibFields> {
       eid: str(f.eid),
       month: str(f.month),
       journalMacro: macro?.[1] ?? null,
+      authorNames: author
+        ? author
+            .split(/\s+and\s+/)
+            .map((name) => name.replace(/\s+/g, " ").trim())
+            .filter((name) => name !== "")
+        : [],
+      titleProtected: titleIsProtected(text, key),
+      booktitle: str(f.booktitle),
+      archivePrefix: str(f.archiveprefix),
+      primaryClass: str(f.primaryclass),
+      keywords: str(f.keywords),
+      adsurl: str(f.adsurl),
+      adsnote: str(f.adsnote),
     });
   }
   return out;

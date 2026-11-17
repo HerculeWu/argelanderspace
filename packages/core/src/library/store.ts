@@ -192,6 +192,17 @@ export interface Work {
   journal_macro: string | null;
   /** provider that back-filled the bibliography fields ("ads"); null = not yet */
   bib_fields: string | null;
+  // ---- kept from the BibTeX entry the Work came from (ADS export or the user's own), for library.bib (issue 1) ----
+  /** BibTeX author names, verbatim and in order (`{Kroupa}, Pavel`); `authors` stays the family-name list. */
+  author_names: string[];
+  /** the entry brace-protects its title, so library.bib does too */
+  title_protected: boolean;
+  booktitle: string | null;
+  archive_prefix: string | null;
+  primary_class: string | null;
+  keywords: string | null;
+  adsurl: string | null;
+  adsnote: string | null;
   /** acquisition: where to read the full text (planner output, see acquire/) */
   acquisition: Record<string, unknown> | null;
   /** resolution: which source answered for citation metadata (ads|crossref|openalex) */
@@ -231,6 +242,14 @@ export function emptyWork(id: string): Work {
     month: null,
     journal_macro: null,
     bib_fields: null,
+    author_names: [],
+    title_protected: false,
+    booktitle: null,
+    archive_prefix: null,
+    primary_class: null,
+    keywords: null,
+    adsurl: null,
+    adsnote: null,
     acquisition: null,
     resolution: null,
   };
@@ -275,6 +294,14 @@ export function workFromJson(rec: Record<string, unknown>): Work {
   w.month = str(rec.month);
   w.journal_macro = str(rec.journal_macro);
   w.bib_fields = str(rec.bib_fields);
+  w.author_names = strList(rec.author_names);
+  w.title_protected = rec.title_protected === true;
+  w.booktitle = str(rec.booktitle);
+  w.archive_prefix = str(rec.archive_prefix);
+  w.primary_class = str(rec.primary_class);
+  w.keywords = str(rec.keywords);
+  w.adsurl = str(rec.adsurl);
+  w.adsnote = str(rec.adsnote);
   w.acquisition =
     rec.acquisition && typeof rec.acquisition === "object" && !Array.isArray(rec.acquisition)
       ? (rec.acquisition as Record<string, unknown>)
@@ -325,6 +352,15 @@ export function workToDict(w: Work): Record<string, unknown> {
   put("month", w.month);
   put("journal_macro", w.journal_macro);
   put("bib_fields", w.bib_fields);
+  put("author_names", w.author_names);
+  // only when set: a stored Work without it keeps its bytes
+  if (w.title_protected) put("title_protected", true);
+  put("booktitle", w.booktitle);
+  put("archive_prefix", w.archive_prefix);
+  put("primary_class", w.primary_class);
+  put("keywords", w.keywords);
+  put("adsurl", w.adsurl);
+  put("adsnote", w.adsnote);
   put("acquisition", w.acquisition);
   put("resolution", w.resolution);
   return out;
@@ -549,10 +585,40 @@ export function mergeInto(dst: Work, src: Work): void {
     dst.cited_by_count = src.cited_by_count;
   }
   if (dst.authors.length === 0 && src.authors.length > 0) dst.authors = src.authors;
+  fillBibExtras(dst, src);
   if (src.type && dst.type === "article") dst.type = src.type;
   for (const f of ["doc_ids", "tags", "referenced_works"] as const) {
     dst[f] = [...new Set([...dst[f], ...src[f]])];
   }
+}
+
+/** The BibTeX-entry fields of a Work (see `Work.author_names` …), as one object. */
+export type BibExtras = Pick<
+  Work,
+  | "author_names"
+  | "title_protected"
+  | "booktitle"
+  | "archive_prefix"
+  | "primary_class"
+  | "keywords"
+  | "adsurl"
+  | "adsnote"
+>;
+
+/** Fill the blank BibTeX-entry fields of `dst` from `src`; a filled one is never replaced. */
+export function fillBibExtras(dst: Work, src: BibExtras): void {
+  if (dst.author_names.length === 0 && src.author_names.length > 0)
+    dst.author_names = [...src.author_names];
+  if (src.title_protected) dst.title_protected = true;
+  for (const f of [
+    "booktitle",
+    "archive_prefix",
+    "primary_class",
+    "keywords",
+    "adsurl",
+    "adsnote",
+  ] as const)
+    if (!dst[f] && src[f]) dst[f] = src[f];
 }
 
 // --------------------------------------------------------------------------- //
@@ -602,11 +668,25 @@ export function workToBibtex(w: Work): string {
   const kind = w.type === "conf" ? "inproceedings" : "article";
   // ADS journal shorthand wins (Stage 12): `{\aap}` with the compile-time
   // \providecommand group; plain-text venues fall back to escaped text.
-  const journal = w.journal_macro ? `\\${w.journal_macro}` : escapeBibtexText(w.venue ?? "");
+  // A proceedings entry that kept its booktitle is not given the same text again as a journal.
+  const journal = w.journal_macro
+    ? `\\${w.journal_macro}`
+    : w.booktitle
+      ? ""
+      : escapeBibtexText(w.venue ?? "");
+  // The entry's own names (given names, initials, brace-protected families) are already BibTeX: written as they
+  // came. Without them the family names are all there is.
+  const author =
+    w.author_names.length > 0
+      ? w.author_names.join(" and ")
+      : escapeBibtexText(bibAuthors(w.authors));
+  const title = escapeBibtexText(w.title);
   const fields: [string, string][] = [
-    ["title", escapeBibtexText(w.title)],
-    ["author", escapeBibtexText(bibAuthors(w.authors))],
+    ["title", w.title_protected && title ? `{${title}}` : title],
+    ["author", author],
     ["journal", journal],
+    ["booktitle", w.booktitle ?? ""],
+    ["keywords", w.keywords ?? ""],
     ["year", w.year ? String(w.year) : ""],
     ["volume", w.volume ?? ""],
     ["number", w.number ?? ""],
@@ -614,8 +694,22 @@ export function workToBibtex(w: Work): string {
     ["pages", w.pages ?? ""],
     ["doi", w.doi ?? ""],
     ["eprint", w.arxiv_id ?? ""],
+    // only with an eprint: on their own they say nothing
+    ["archivePrefix", w.arxiv_id ? (w.archive_prefix ?? "") : ""],
+    ["primaryClass", w.arxiv_id ? (w.primary_class ?? "") : ""],
+    ["adsurl", w.adsurl ?? ""],
+    ["adsnote", w.adsnote ?? ""],
   ];
-  const body = fields.filter(([, v]) => v).map(([k, v]) => `  ${k.padEnd(8)}= {${v}}`);
+  // names of 8 characters or more (keywords, archivePrefix …) still get a space before the `=`
+  const body = fields
+    .filter(([, v]) => v)
+    .map(
+      ([k, v]) =>
+        `  ${k
+          .padEnd(8)
+          .trimEnd()
+          .padEnd(Math.max(8, k.length + 1))}= {${v}}`
+    );
   // BibTeX month convention is the bare macro (`month = feb`), not a braced
   // string: the .bst formats it per style. The stored value is normalized
   // "01".."12" by the parser; anything unrecognized stays braced verbatim.

@@ -44,6 +44,13 @@ Stage 12：enrichAndPlan 中有 bibcode 且无已存字段时，批量 ADS expor
 
 `workToBibtex` 输出全部非空字段，生成层转义 `& % # _`；**`$` 除外**，保标题数学。有 journal_macro 输出 `journal = {\aap}` 一类宏，无则转义纯文本；venue/journal 显示层仍纯文本。Writer 编译与 zip 导出注入同一组 `\providecommand` 期刊宏，不改 reader 管线，详见 [writer](writer.md)。
 
+**局部修订（2026-11-11，GitHub issue 1，用户要求修复）**：
+- **保留条目自带的作者全名与 ADS 字段**（用户 2026-11-11 裁决：加结构化字段，仍不存 BibTeX 原文）。旧行为：Work 只存姓（`authors`），`library.bib` 的作者只有姓；ADS 的 `adsurl`、`adsnote`、`keywords`、`archivePrefix`、`primaryClass`、会议条目的 `booktitle` 与标题的保护花括号都丢弃。新行为：Work 另存 `author_names`（BibTeX 名字原样、按序，如 `{Kroupa}, Pavel`）、`title_protected`、`booktitle`、`archive_prefix`、`primary_class`、`keywords`、`adsurl`、`adsnote`；来源是 ADS 导出或用户给的 BibTeX（同一通道），只补空、不覆盖；`workToBibtex` 有 `author_names` 时原样输出它，否则仍输出姓；标题受保护时写成 `{{…}}`；`archivePrefix`/`primaryClass` 只随 `eprint` 输出；留有 `booktitle` 且无期刊宏时不再把同一文字另写成 `journal`。`authors`（只存姓）不变，冻结的 CLI 输出不受影响；没有这些字段的已存 Work 字节不变。**已存 Work 的补全**：`bib_fields` 为 `"ads"` 但没有 `author_names` 的 Work 在下一次联网的库构建/刷新中再向 ADS 导出一次，只补空字段。上文「不存 BibTeX 原文 blob」「`library.bib` 是唯一派生出口」不变。
+- **读到的 BibTeX 与 `library.bib` 一致**。旧行为：Library 页 BibTeX 标签页、Copilot 页面上下文与 `library read --ref-id` 的 `bibtex` 由显示用的短字段现拼（作者缩成 “X and others”，没有卷期页码、DOI、eprint、月份）。新行为：`GET /api/library` 的每条 ref 带 `bibtex`＝该 Work 的 `workToBibtex` 输出，三处都显示它；`library read` 的 `ref` 里不重复这一键。其他响应里的 ref（导入结果等）不带；内置示例数据没有它，仍用短字段现拼。
+- **AAS 的 `10.3847` DOI 不再一律标成 ApJ**。旧行为：只认 ApJ/ApJS/AJ/ApJL 四个子前缀，其余落到出版商默认标签 “ApJ”，RNAAS（`10.3847/2515-5172`）、PSJ（`10.3847/2632-3338`）的 `journal`/`venue` 因此被写成 ApJ。新行为：两者有自己的标签。已存 Work 的旧值不会被改写（导入只补空，见下「Web 手动建立条目」）。
+- **重复导入不再谎报更新**。旧行为：导入命中已有正文的 Work 时重算获取计划，丢掉库构建写入的 `acquisition.ingested_doc`，存储对象因此变化并被列入 `updated`，尽管没有书目字段变化。新行为：所有写 `Work.acquisition` 的导入路径用与库构建相同的 `storedPlanFor`，重算结果不变就不写盘、不列入 `updated`。
+- **`PATCH /api/library/refs` 不再把“没改动”报成 404**（修订下文 Copilot `library` 工具一节中「404 语义不变」）。旧行为：Work 存在但没有写入时一律 404 `work … not found`。新行为：404 只表示 Work 不存在；请求里没有本路由会应用的字段（label、read、star、note、tags、doc_id）→ 400 并说明本路由不改书目字段；`doc_id` 不属于该 Work → 400 并点名；`doc_id` 已是主 Doc → 200，不写盘、不广播。成功响应与 `library.changed{cause:"patch"}` 不变。
+
 **I034 — 已接受语法边界**：分号分隔 cite key、全角逗号等命令错误由用户负责，以 LaTeX/bibtex 真值报错，不新增 server/web 诊断提示；用户明确要求语法辅助时再议。
 
 ## Web 手动建立条目（Stage 13）

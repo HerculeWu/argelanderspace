@@ -888,35 +888,41 @@ test("a Doc deleted elsewhere while the card waits ends the card and the tool do
   expect(ops(await host.snapshot(id))[0]).not.toMatchObject({ status: "ok" });
 });
 
-test("a delete that fails part-way is an error that says so (files may be gone, library still lists the Doc); library.json keeps its bytes", async () => {
-  const nested = join(paths.outputDir, SOLO, "assets", "nested");
-  mkdirSync(nested, { recursive: true });
-  writeFileSync(join(nested, "deep.png"), "x");
-  chmodSync(nested, 0o555);
-  const libBefore = bytes();
-  let payload: Record<string, unknown> = {};
-  script = [
-    () => del(SOLO),
-    (ctx) => {
-      payload = lastResult(ctx);
-      return { text: "done" };
-    },
-  ];
-  const view = page();
-  const id = await start(view);
-  try {
-    await answerCard(await card(id), view.viewId, "approve");
-    await settled(id);
-  } finally {
-    chmodSync(nested, 0o755);
+test.skipIf(process.getuid?.() === 0)(
+  "a delete that fails part-way is an error that says so (files may be gone, library still lists the Doc); library.json keeps its bytes",
+  async () => {
+    const nested = join(paths.outputDir, SOLO, "assets", "nested");
+    mkdirSync(nested, { recursive: true });
+    writeFileSync(join(nested, "deep.png"), "x");
+    chmodSync(nested, 0o555);
+    const libBefore = bytes();
+    let payload: Record<string, unknown> = {};
+    script = [
+      () => del(SOLO),
+      (ctx) => {
+        payload = lastResult(ctx);
+        return { text: "done" };
+      },
+    ];
+    const view = page();
+    const id = await start(view);
+    try {
+      await answerCard(await card(id), view.viewId, "approve");
+      await settled(id);
+    } finally {
+      chmodSync(nested, 0o755);
+    }
+    expect(payload).toMatchObject({ ok: false, status: "error" });
+    expect(String(payload.detail)).toContain("part-way");
+    expect(bytes()).toBe(libBefore);
+    expect(changed()).toHaveLength(0);
+    expect(docMutations.isDeleting(SOLO)).toBe(false);
+    expect(ops(await host.snapshot(id))[0]).toMatchObject({
+      action: "delete_doc",
+      status: "error",
+    });
   }
-  expect(payload).toMatchObject({ ok: false, status: "error" });
-  expect(String(payload.detail)).toContain("part-way");
-  expect(bytes()).toBe(libBefore);
-  expect(changed()).toHaveLength(0);
-  expect(docMutations.isDeleting(SOLO)).toBe(false);
-  expect(ops(await host.snapshot(id))[0]).toMatchObject({ action: "delete_doc", status: "error" });
-});
+);
 
 test("an unreadable library.json refuses the delete before anything is removed", async () => {
   writeFileSync(paths.libraryJson, "{ not json");

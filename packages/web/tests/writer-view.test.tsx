@@ -12,6 +12,7 @@
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { serializeCell, writerDraftKey, writerTemplateKey, type WriterManuscript, type WriterNumberingResponse, type WriterTemplate, type WriterPreview } from "@argelanderspace/contracts";
+import katex from "katex";
 import type { ComponentProps } from "react";
 import type { LatexSourceField } from "../src/writer/latexSource";
 import type { LibraryData } from "../src/library/types";
@@ -569,6 +570,42 @@ describe("editor", () => {
       expect(cellEl.querySelector(".w-math .katex-display")).not.toBeNull();
       expect(cellEl.querySelector("p .katex")).not.toBeNull();
     });
+  });
+
+  it("typing in one cell does not typeset the other cells again (only the first keystroke, which turns them stale)", async () => {
+    const compiled = h.store.get("m_0a1b2c3d")!;
+    const preview = previewFor(compiled);
+    preview.cells.c_0ab50003!.items = [
+      { kind: "block", block: { id: "p-1", type: "paragraph", segments: [{ type: "text", text: "We fit " }, { type: "math", latex: "v_c" }] } },
+      { kind: "block", block: { id: "eq-1", type: "equation", latex: "v_c^2 = GM/r", number: "1.2" }, rows: [{ latex: "v_c^2 = GM/r", number: "1.2" }] },
+    ];
+    h.setNumbering({ status: "ok", facts: { sections: [], equations: [], labels: {} }, lastError: null, preview });
+    const view = render(<WriterView />);
+    const { container } = await openSample(view);
+    const other = container.querySelector('[data-cell="c_0ab50003"]')!;
+    await waitFor(() => expect(other.querySelector(".w-math .katex-display")).not.toBeNull());
+    expect(other.querySelector('[data-preview-state="ok"]')).not.toBeNull();
+    const typeset = vi.spyOn(katex, "renderToString");
+    try {
+      const cellEl = container.querySelector('[data-cell="c_0ab50002"]')!;
+      fireEvent.click(cellEl.querySelector('[data-action="edit"]')!);
+      const textarea = cellEl.querySelector('textarea[data-field="source"]')!;
+      fireEvent.change(textarea, { target: { value: "\\section{Introduction}\n\na" } });
+      // The unsaved edit makes the whole preview stale: the untouched cell says so (and is typeset for that once).
+      await waitFor(() => expect(other.querySelector('[data-preview-state="stale"]')).not.toBeNull());
+      const afterFirst = typeset.mock.calls.length;
+      for (const text of ["ab", "abc", "abcd", "abcde"])
+        fireEvent.change(textarea, { target: { value: `\\section{Introduction}\n\n${text}` } });
+      expect((textarea as HTMLTextAreaElement).value).toContain("abcde");
+      // … and the autosave's answer (a new rev, equal cells) does not typeset it again either.
+      await waitStore("m_0a1b2c3d", (m) => String((m.cells[1]!.data as Record<string, unknown>).source).endsWith("abcde"));
+      await waitFor(() => expect(view.container.querySelector('[data-ui="manuscript-editor"]')).not.toBeNull());
+      expect(typeset.mock.calls.length).toBe(afterFirst);
+      // the untouched cell still shows its compiled math, marked stale
+      expect(other.querySelector(".w-math .katex-display")).not.toBeNull();
+    } finally {
+      typeset.mockRestore();
+    }
   });
 
   it("a 409 conflict adopts the server's current doc, keeps the unsaved edit on top of it (ticket 22) and toasts", async () => {

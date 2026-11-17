@@ -1,4 +1,5 @@
 /** Cell layout adapter for shared IR: no LaTeX parsing or citation formatting here. */
+import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import { currentWriterCellPreview, serializeCell, type IrSegment, type WriterCell, type WriterNumberingResponse } from "@argelanderspace/contracts";
 import { Math as TexMath, htmlWithMath } from "../lib/math";
@@ -6,9 +7,15 @@ import { safeTableHtml } from "../lib/safe-table-html";
 import { MathText, renderIrSegments } from "../lib/segments";
 import { assetUrl } from "../api/writer";
 
-export function WriterCellPreview({ cell, cells, docId, numbering, onJump, onCite }: {
+/**
+ * Memoized: typesetting a cell (KaTeX, table parsing) is the expensive part of the editor, and a keystroke in one
+ * cell must not redo it for the others. Everything the output depends on is a prop: the cell, the numbering, and
+ * `targets` (which cells a cross-reference may still point at, see `writerPreviewTargets`).
+ */
+export const WriterCellPreview = memo(function WriterCellPreview({ cell, targets, docId, numbering, onJump, onCite }: {
   cell: WriterCell;
-  cells: WriterCell[];
+  /** Ids of the cells whose compiled projection is still current. */
+  targets: ReadonlySet<string>;
   docId: string;
   numbering?: WriterNumberingResponse | null;
   onJump?: (id: string) => void;
@@ -30,8 +37,7 @@ export function WriterCellPreview({ cell, cells, docId, numbering, onJump, onCit
     </span>,
     xref: (seg, key) => {
       const owner = preview?.targetCells[seg.target.id];
-      const target = cells.find((c) => c.id === owner);
-      const valid = target && currentWriterCellPreview(preview, target);
+      const valid = owner !== undefined && targets.has(owner);
       const text = valid ? seg.raw ?? seg.target.number ?? "?" : seg.raw?.startsWith("(") ? "(?)" : "?";
       return valid && owner ? <button key={key} type="button" className="w-xref w-inline-link" data-ui="preview-crossref" data-ui-key={key} onClick={() => onJump?.(owner)}><MathText text={text} /></button>
         : <span key={key} className="w-xref w-unresolved" title={t("writer.preview.unresolved")}><MathText text={text} /></span>;
@@ -71,4 +77,4 @@ export function WriterCellPreview({ cell, cells, docId, numbering, onJump, onCit
       return <div key={b.id}>{caption}<pre className="w-code-render">{b.body ?? ""}</pre></div>;
     })}
   </div>;
-}
+});

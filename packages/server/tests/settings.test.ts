@@ -519,16 +519,19 @@ describe("PUT /api/settings/:key", () => {
     expect(readFileSync(configPath, "utf-8")).toContain('theme = "light"');
   });
 
-  test("a file that does not allow writing: refused as such, the bytes as they were", async () => {
-    writeFileSync(configPath, COMMENTED);
-    chmodSync(configPath, 0o400);
-    await start();
-    const { res, body } = await put("ui.theme", { set: "light" });
-    // Root may write a read-only file's directory but `writeSetting` asks the file itself.
-    expect(res.status).toBe(500);
-    expect(body).toEqual({ ok: false, reason: "not_writable" });
-    expect(readFileSync(configPath, "utf-8")).toBe(COMMENTED);
-  });
+  test.skipIf(process.getuid?.() === 0)(
+    "a file that does not allow writing: refused as such, the bytes as they were",
+    async () => {
+      writeFileSync(configPath, COMMENTED);
+      chmodSync(configPath, 0o400);
+      await start();
+      const { res, body } = await put("ui.theme", { set: "light" });
+      // Skipped as root: root writes a 0o400 file all the same, so the refusal cannot be made here.
+      expect(res.status).toBe(500);
+      expect(body).toEqual({ ok: false, reason: "not_writable" });
+      expect(readFileSync(configPath, "utf-8")).toBe(COMMENTED);
+    }
+  );
 
   test("every refusal the writer and the line editor can give has a status of its own class", async () => {
     // The endpoint passes the category on; this pins that none of them is missing from the page's list.

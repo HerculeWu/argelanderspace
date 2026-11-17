@@ -7,6 +7,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -15,6 +16,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { sandboxLatexmk, sandboxReach, sandboxTexState } from "../src/tex/sandbox-view.js";
+
+function optStandIn(): boolean {
+  const path = "/opt/google/chrome/chrome";
+  return existsSync(path) && realpathSync(path).startsWith("/opt/");
+}
 
 const roots: string[] = [];
 afterEach(() => {
@@ -88,7 +94,8 @@ describe("the sandbox's latexmk", () => {
 
   // (4) of the second revision: the latexmk found is on PATH in a bindable place (/opt), the system directories hold
   // another TeX: `different`, `bindable`. The stand-in is a link to an existing file under /opt; nothing is run.
-  test.skipIf(!existsSync("/opt/google/chrome/chrome"))(
+  // Skipped where that file is itself a link out of /opt (some images link it to /usr/bin/google-chrome).
+  test.skipIf(!optStandIn())(
     "a TeX under /opt found on PATH, another in the system directories: different, bindable",
     () => {
       const { r, exe } = setup();

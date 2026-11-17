@@ -658,25 +658,28 @@ describe("the annotations access path after a publish reports the contract's sta
     expect(invalidations()).toHaveLength(1);
   });
 
-  test("an archive directory that cannot be written into (write/rename of the copy fails): 500, the original current stays untouched", async () => {
-    const { docId, oldCurrent } = await replaced();
-    mkdirSync(archiveDir(docId));
-    chmodSync(archiveDir(docId), 0o555);
-    try {
-      const res = await coherent(docId);
-      expect(res.status).toBe(500);
-      expect(((await res.json()) as { detail: string }).detail).toMatch(
-        /could not be moved to the archive/
-      );
-    } finally {
-      chmodSync(archiveDir(docId), 0o755);
+  test.skipIf(process.getuid?.() === 0)(
+    "an archive directory that cannot be written into (write/rename of the copy fails): 500, the original current stays untouched",
+    async () => {
+      const { docId, oldCurrent } = await replaced();
+      mkdirSync(archiveDir(docId));
+      chmodSync(archiveDir(docId), 0o555);
+      try {
+        const res = await coherent(docId);
+        expect(res.status).toBe(500);
+        expect(((await res.json()) as { detail: string }).detail).toMatch(
+          /could not be moved to the archive/
+        );
+      } finally {
+        chmodSync(archiveDir(docId), 0o755);
+      }
+      expect(readFileSync(currentFile(docId)).equals(oldCurrent)).toBe(true);
+      expect(archive(docId)).toEqual([]);
+      expect(invalidations()).toHaveLength(0);
+      expect((await coherent(docId)).status).toBe(200);
+      expect(archive(docId)).toHaveLength(1);
     }
-    expect(readFileSync(currentFile(docId)).equals(oldCurrent)).toBe(true);
-    expect(archive(docId)).toEqual([]);
-    expect(invalidations()).toHaveLength(0);
-    expect((await coherent(docId)).status).toBe(200);
-    expect(archive(docId)).toHaveLength(1);
-  });
+  );
 
   test("archive done but the new current cannot be created: 500 saying so, the batch is safe in the archive, no invalidate; the next access rebuilds", async () => {
     const { docId, oldCurrent } = await replaced();

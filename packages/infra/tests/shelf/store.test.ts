@@ -574,42 +574,48 @@ describe("entries this build cannot use", () => {
     expect(await s.delete(notJson, 1)).toEqual({ ok: true });
   });
 
-  test("an entry that cannot be read for a system reason is unreadable, never damaged; read throws", async () => {
-    const s = createShelfStore({ dir });
-    const id = ok(await s.put(input(), { mode: "new" })).entryId;
-    const entry = join(dir, "entries", `${id}.r1`);
-    chmodSync(join(entry, SHELF_MANIFEST_FILE), 0o000);
-    try {
-      expect(await s.list()).toEqual([
-        { status: "unreadable", entryId: id, rev: 1, bytes: 0, code: "EACCES" },
-      ]);
-      await expect(s.read(id)).rejects.toBeInstanceOf(ShelfIoError);
-      await expect(s.verify(id)).rejects.toMatchObject({ code: "EACCES" });
-    } finally {
-      chmodSync(join(entry, SHELF_MANIFEST_FILE), 0o600);
+  test.skipIf(process.getuid?.() === 0)(
+    "an entry that cannot be read for a system reason is unreadable, never damaged; read throws",
+    async () => {
+      const s = createShelfStore({ dir });
+      const id = ok(await s.put(input(), { mode: "new" })).entryId;
+      const entry = join(dir, "entries", `${id}.r1`);
+      chmodSync(join(entry, SHELF_MANIFEST_FILE), 0o000);
+      try {
+        expect(await s.list()).toEqual([
+          { status: "unreadable", entryId: id, rev: 1, bytes: 0, code: "EACCES" },
+        ]);
+        await expect(s.read(id)).rejects.toBeInstanceOf(ShelfIoError);
+        await expect(s.verify(id)).rejects.toMatchObject({ code: "EACCES" });
+      } finally {
+        chmodSync(join(entry, SHELF_MANIFEST_FILE), 0o600);
+      }
+      chmodSync(entry, 0o000);
+      try {
+        expect((await s.list())[0]).toMatchObject({ status: "unreadable", code: "EACCES" });
+        await expect(s.read(id)).rejects.toMatchObject({ code: "EACCES" });
+      } finally {
+        chmodSync(entry, 0o700);
+      }
+      expect((await s.verify(id)).status).toBe("ok");
     }
-    chmodSync(entry, 0o000);
-    try {
-      expect((await s.list())[0]).toMatchObject({ status: "unreadable", code: "EACCES" });
-      await expect(s.read(id)).rejects.toMatchObject({ code: "EACCES" });
-    } finally {
-      chmodSync(entry, 0o700);
-    }
-    expect((await s.verify(id)).status).toBe("ok");
-  });
+  );
 
-  test("adding while another entry cannot be read stops with ShelfIoError instead of treating it as a different paper", async () => {
-    const s = createShelfStore({ dir });
-    const id = ok(await s.put(input(), { mode: "new" })).entryId;
-    const manifest = join(dir, "entries", `${id}.r1`, SHELF_MANIFEST_FILE);
-    chmodSync(manifest, 0o000);
-    try {
-      await expect(s.put(input(), { mode: "new" })).rejects.toMatchObject({ code: "EACCES" });
-    } finally {
-      chmodSync(manifest, 0o600);
+  test.skipIf(process.getuid?.() === 0)(
+    "adding while another entry cannot be read stops with ShelfIoError instead of treating it as a different paper",
+    async () => {
+      const s = createShelfStore({ dir });
+      const id = ok(await s.put(input(), { mode: "new" })).entryId;
+      const manifest = join(dir, "entries", `${id}.r1`, SHELF_MANIFEST_FILE);
+      chmodSync(manifest, 0o000);
+      try {
+        await expect(s.put(input(), { mode: "new" })).rejects.toMatchObject({ code: "EACCES" });
+      } finally {
+        chmodSync(manifest, 0o600);
+      }
+      expect((await s.list()).map((i) => i.entryId)).toEqual([id]);
     }
-    expect((await s.list()).map((i) => i.entryId)).toEqual([id]);
-  });
+  );
 });
 
 describe("the lock", () => {

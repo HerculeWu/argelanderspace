@@ -3,7 +3,7 @@ import { afterEach, expect, it } from "vitest";
 import { ManuscriptSchema, BUILTIN_WRITER_TEMPLATES, serializeCell, writerDraftKey, writerTemplateKey, writerNumberingForDraft, type WriterNumberingResponse, type WriterPreview } from "@argelanderspace/contracts";
 import { WriterCellPreview } from "../src/writer/preview";
 import { OutlinePanel } from "../src/writer/outline";
-import { writerCrossrefs } from "../src/writer/model";
+import { writerCrossrefs, writerPreviewTargets } from "../src/writer/model";
 
 afterEach(cleanup);
 const template = BUILTIN_WRITER_TEMPLATES.find((t) => t.id === "report")!;
@@ -27,11 +27,11 @@ const preview: WriterPreview = {
 const numbering: WriterNumberingResponse = { status: "ok", facts: { sections: [], equations: [{ cell: "c_00000002", number: "2.1,2.2", env: "align", label: "eq:a" }], labels: { "eq:a": "2.1" } }, lastError: null, preview };
 
 it("consumes citation raw verbatim and displays each compiled equation row number", () => {
-  const first = render(<WriterCellPreview cell={doc.cells[0]!} cells={doc.cells} docId={doc.id} numbering={numbering} />);
+  const first = render(<WriterCellPreview cell={doc.cells[0]!} targets={writerPreviewTargets(numbering?.preview, doc.cells)} docId={doc.id} numbering={numbering} />);
   expect(first.container.querySelector(".w-cite")?.textContent).toBe("[see Smith et al., 2020, sec. 2]");
   expect(first.container.querySelector(".w-cite")?.getAttribute("data-ui")).toBe("preview-cite");
   expect(first.container.querySelector(".w-xref")?.textContent).toBe("(2.1)");
-  const second = render(<WriterCellPreview cell={doc.cells[1]!} cells={doc.cells} docId={doc.id} numbering={numbering} />);
+  const second = render(<WriterCellPreview cell={doc.cells[1]!} targets={writerPreviewTargets(numbering?.preview, doc.cells)} docId={doc.id} numbering={numbering} />);
   expect([...second.container.querySelectorAll(".w-equation-number")].map((e) => e.textContent)).toEqual(["(2.1)", "(2.2)"]);
   expect(second.container.querySelectorAll(".katex-display")).toHaveLength(2);
 });
@@ -43,10 +43,10 @@ it("cannot bind old numbers to changed targets, even if the label and cell id st
   expect(guarded.status).toBe("stale");
   expect(guarded.facts?.equations).toEqual([]);
   expect(guarded.facts?.labels).toEqual({});
-  const first = render(<WriterCellPreview cell={draft.cells[0]!} cells={draft.cells} docId={draft.id} numbering={guarded} />);
+  const first = render(<WriterCellPreview cell={draft.cells[0]!} targets={writerPreviewTargets(guarded?.preview, draft.cells)} docId={draft.id} numbering={guarded} />);
   expect(first.container.querySelector(".w-xref")?.textContent).toBe("(?)");
   expect(first.container.querySelector(".w-preview-stale")).not.toBeNull();
-  const second = render(<WriterCellPreview cell={draft.cells[1]!} cells={draft.cells} docId={draft.id} numbering={guarded} />);
+  const second = render(<WriterCellPreview cell={draft.cells[1]!} targets={writerPreviewTargets(guarded?.preview, draft.cells)} docId={draft.id} numbering={guarded} />);
   expect(second.container.querySelector(".w-source-preview")?.textContent).toContain("NEW");
   expect(second.container.querySelector(".w-equation-number")).toBeNull();
 });

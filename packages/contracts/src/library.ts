@@ -62,6 +62,11 @@ export const LibraryRefSchema = z.object({
    */
   doc_ids: z.array(z.string()).optional(),
   citedBy: z.number().int().optional(),
+  /**
+   * The Work's entry exactly as `library.bib` holds it. Only the Library page payload (`GET /api/library`) carries
+   * it; refs in other responses do not.
+   */
+  bibtex: z.string().optional(),
   /** Color-label key (red|amber|green|blue|violet). */
   label: z.string().optional(),
   /** Short journal label, e.g. "A&A". */

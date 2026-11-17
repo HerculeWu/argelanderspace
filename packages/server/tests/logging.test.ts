@@ -302,45 +302,48 @@ describe("a Doc whose id is made from a title or a folder name", () => {
 
   for (const { docId, words, kind } of cases) {
     for (const route of ["ir", "annotations"] as const) {
-      test(`${kind}… on /${route}: a file that cannot be read is named in the log by the id's hash, never by the id`, async () => {
-        vi.spyOn(console, "error").mockImplementation(() => {});
-        const { log, dir } = fileLog();
-        const { url, dataDir } = await serve(log);
-        const docDir = join(dataDir, "output", docId);
-        mkdirSync(docDir, { recursive: true });
-        const file = join(docDir, `${docId}.json`);
-        writeFileSync(file, JSON.stringify({ doc_id: docId, meta: { title: "x" } }));
-        chmodSync(file, 0o000);
+      test.skipIf(process.getuid?.() === 0)(
+        `${kind}… on /${route}: a file that cannot be read is named in the log by the id's hash, never by the id`,
+        async () => {
+          vi.spyOn(console, "error").mockImplementation(() => {});
+          const { log, dir } = fileLog();
+          const { url, dataDir } = await serve(log);
+          const docDir = join(dataDir, "output", docId);
+          mkdirSync(docDir, { recursive: true });
+          const file = join(docDir, `${docId}.json`);
+          writeFileSync(file, JSON.stringify({ doc_id: docId, meta: { title: "x" } }));
+          chmodSync(file, 0o000);
 
-        const response = await fetch(`${url}/api/paper/${docId}/${route}`);
-        expect(response.status).toBe(500);
-        chmodSync(file, 0o600);
+          const response = await fetch(`${url}/api/paper/${docId}/${route}`);
+          expect(response.status).toBe(500);
+          chmodSync(file, 0o600);
 
-        const { records, text } = readLog(dir);
-        expect(records).toHaveLength(1);
-        expect(records[0]).toMatchObject({
-          level: "error",
-          event: "request.failed",
-          route: `/api/paper/:doc_id/${route}`,
-          status: 500,
-        });
-        expect(text).not.toMatch(words);
-        const hash = written(docId);
-        expect(hash).toMatch(new RegExp(`^${kind}#[0-9a-f]{12}$`));
-        // The file is still named — by the same hash a record about the Doc itself would carry.
-        const paths: string[] = [];
-        for (
-          let error = (records[0] as { error?: Record_ }).error;
-          error;
-          error = error.cause as Record_ | undefined
-        ) {
-          if (typeof error.path === "string") paths.push(error.path);
+          const { records, text } = readLog(dir);
+          expect(records).toHaveLength(1);
+          expect(records[0]).toMatchObject({
+            level: "error",
+            event: "request.failed",
+            route: `/api/paper/:doc_id/${route}`,
+            status: 500,
+          });
+          expect(text).not.toMatch(words);
+          const hash = written(docId);
+          expect(hash).toMatch(new RegExp(`^${kind}#[0-9a-f]{12}$`));
+          // The file is still named — by the same hash a record about the Doc itself would carry.
+          const paths: string[] = [];
+          for (
+            let error = (records[0] as { error?: Record_ }).error;
+            error;
+            error = error.cause as Record_ | undefined
+          ) {
+            if (typeof error.path === "string") paths.push(error.path);
+          }
+          expect(paths.length).toBeGreaterThan(0);
+          for (const path of paths) {
+            expect(path.endsWith(`/output/${hash}/${hash}.json`), path).toBe(true);
+          }
         }
-        expect(paths.length).toBeGreaterThan(0);
-        for (const path of paths) {
-          expect(path.endsWith(`/output/${hash}/${hash}.json`), path).toBe(true);
-        }
-      });
+      );
     }
   }
 });

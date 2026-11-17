@@ -275,3 +275,38 @@ export function applyNumbering(
 // Shared with the Copilot `writer` tool (copilot ticket 23): one definition in contracts, so the page's menus and the
 // service's cell operations mean the same thing.
 export { convertCellData, randomLabel, withEnsuredLabel } from "@argelanderspace/contracts";
+
+// ---- render stability (typing must not re-render the cells it does not touch) ---- //
+
+/**
+ * The cells whose compiled projection is still current: what a cross-reference may point at. A cell edited since the
+ * last render drops out (its source no longer matches), exactly as `currentWriterCellPreview` decides.
+ */
+export function writerPreviewTargets(
+  preview: NonNullable<WriterNumberingResponse["preview"]> | null | undefined,
+  cells: readonly WriterCell[]
+): ReadonlySet<string> {
+  return new Set(cells.filter((c) => currentWriterCellPreview(preview, c)).map((c) => c.id));
+}
+
+/**
+ * `next` with the cell objects of `prev` wherever a cell is unchanged (same id, same stored content), so a document
+ * that came back from a save or a refetch keeps the identity of the cells it did not change and their previews are
+ * not rendered again. Content is never altered: a reused object is equal to the one it replaces.
+ */
+export function shareWriterCells<D extends { cells: WriterCell[] }>(
+  prev: { cells: WriterCell[] } | null | undefined,
+  next: D
+): D {
+  if (!prev || prev.cells === next.cells) return next;
+  const byId = new Map(prev.cells.map((c) => [c.id, c]));
+  let reused = false;
+  const cells = next.cells.map((cell) => {
+    const old = byId.get(cell.id);
+    if (old === undefined || old === cell) return cell;
+    if (JSON.stringify(old) !== JSON.stringify(cell)) return cell;
+    reused = true;
+    return old;
+  });
+  return reused ? { ...next, cells } : next;
+}

@@ -368,6 +368,9 @@ function parseBoolQuery(raw: string | undefined): boolean | null {
 }
 
 /** Document images are data, never a page: no sniffing, and a script inside an SVG that is opened directly cannot run. */
+/** The fields `PATCH /api/library/refs` applies (core `patchWorkNarrow`). */
+const PATCHABLE_REF_FIELDS = ["label", "read", "star", "note", "tags", "doc_id"] as const;
+
 const IMAGE_HARDENING = {
   "X-Content-Type-Options": "nosniff",
   "Content-Security-Policy": "default-src 'none'; sandbox",
@@ -2085,10 +2088,30 @@ export function createApp(deps: AppDeps): Hono {
     }
     const patch = Object.fromEntries(Object.entries(rec).filter(([k]) => k !== "id"));
     // Same narrow, field-preserving seam as the Copilot tool; this route sends no expectation.
-    const ok = (await commitWorkPatch(libraryOps, workId, patch)).status === "ok";
-    if (!ok) {
+    const result = await commitWorkPatch(libraryOps, workId, patch);
+    if (result.status === "not_found") {
       const e = detail(`work ${pyRepr(workId)} not found`, 404);
       return c.json(e.body, e.status);
+    }
+    // The Work exists but nothing was written: say why instead of "not found" (issue 1). This route only changes
+    // user state and the main Doc; it does not edit bibliographic fields.
+    if (result.status === "noop") {
+      if (result.reason === "not_linked") {
+        const e = detail(
+          `doc ${pyRepr(String(patch.doc_id))} is not attached to work ${pyRepr(workId)}`,
+          400
+        );
+        return c.json(e.body, e.status);
+      }
+      if (!PATCHABLE_REF_FIELDS.some((k) => patch[k] !== undefined && patch[k] !== null)) {
+        const e = detail(
+          `nothing to change: this route only sets ${PATCHABLE_REF_FIELDS.join(", ")}; bibliographic fields cannot be edited here`,
+          400
+        );
+        return c.json(e.body, e.status);
+      }
+      // e.g. the named Doc is already the main one
+      return c.json({ ok: true });
     }
     return c.json({ ok: true });
   });

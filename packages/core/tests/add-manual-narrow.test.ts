@@ -174,7 +174,21 @@ function existsBib(paths: ReturnType<typeof libraryPaths>): string | null {
 }
 
 // ---- byte comparison against the real HEAD (typed whole-file save) implementation ---------------------- //
-const noStamp = (works: object[]) => works.map((w) => ({ ...w, added_at: undefined }));
+// `acquisition.ingested_doc` is the one intended difference from HEAD (issue 1): an import that touches a Work with
+// Docs keeps the marker the library build wrote, where HEAD's re-plan dropped it (and so reported an update).
+const noStamp = (works: object[]) =>
+  works.map((w) => {
+    const acquisition = (w as { acquisition?: Record<string, unknown> | null }).acquisition;
+    const { ingested_doc: _kept, ...plan } = acquisition ?? {};
+    // … and the entry's own author names, which HEAD did not keep (same issue; one-name authors read the same in
+    // library.bib, which is still compared byte for byte).
+    return {
+      ...w,
+      added_at: undefined,
+      author_names: undefined,
+      acquisition: acquisition ? plan : acquisition,
+    };
+  });
 async function sameAsHead(
   initial: (paths: ReturnType<typeof libraryPaths>) => void,
   entry: string
@@ -205,8 +219,11 @@ const fixtureInto = (paths: ReturnType<typeof libraryPaths>) =>
   );
 
 test("a created entry: library.bib and the typed projection equal what HEAD's typed save wrote (seed and core fixture)", async () => {
-  await sameAsHead(seedInto, BIB);
-  await sameAsHead(fixtureInto, BIB);
+  // family names only: HEAD wrote nothing else, and the entry's given names are now kept on purpose (issue 1)
+  const familyOnly = BIB.replace("Doe, J.", "Doe");
+  expect(familyOnly).not.toBe(BIB);
+  await sameAsHead(seedInto, familyOnly);
+  await sameAsHead(fixtureInto, familyOnly);
 });
 
 test("an exists entry that fills fields: library.bib equals HEAD's", async () => {
@@ -362,4 +379,66 @@ test("a hand-edited numeric work id is matched like its string form, so the impo
   expect(works).toHaveLength(3);
   expect(works[0]).toMatchObject({ venue: "MNRAS", note: "mine", x_work: "keep-work" });
   expect(works[1]).toMatchObject({ x_other: 5 });
+});
+
+// ---- issue 1 --------------------------------------------------------------------------------------------- //
+test("re-importing the entry of a Work that has Docs and a built plan changes nothing and is not an update", async () => {
+  const paths = seed();
+  // the first import stores the plan (with the ingested-Doc marker, as the library build writes it)
+  const entry =
+    "@article{ann2001,\n author={Ann},\n title={Alpha galaxies},\n year={2001},\n doi={10.1/a}\n}\n";
+  await addManualBibText(paths, entry);
+  const stored = (disk(paths).works as { acquisition?: Record<string, unknown> }[])[0];
+  expect(stored?.acquisition?.ingested_doc).toBe("d1");
+  const before = bytes(paths);
+  const again = await addManualBibText(paths, entry);
+  expect(again[0]).toMatchObject({ status: "exists", changed: false });
+  expect(bytes(paths)).toBe(before);
+});
+
+test("an AAS DOI outside ApJ is not labelled ApJ (RNAAS, PSJ)", async () => {
+  const paths = seed();
+  const out = await addManualBibText(
+    paths,
+    "@article{qin2025,\n author={Qin},\n title={A note},\n year={2025},\n doi={10.3847/2515-5172/ae2ed7},\n journal={Research Notes of the American Astronomical Society}\n}\n@article{psj2024,\n author={Roe},\n title={A planet},\n year={2024},\n doi={10.3847/2632-3338/abc123},\n journal={The Planetary Science Journal}\n}\n"
+  );
+  expect(out.map((o) => o.ref?.journal)).toEqual(["RNAAS", "PSJ"]);
+});
+
+test("the entry's own author names, ADS fields and title protection reach library.bib; the family names stay", async () => {
+  const paths = seed();
+  const out = await addManualBibText(
+    paths,
+    `@ARTICLE{2024ApJ...970...94K,
+       author = {{Kroupa}, Pavel and {Pflamm-Altenburg}, Jan and {Gaia Collaboration}},
+        title = "{Open Star Clusters and Their Asymmetrical Tidal Tails}",
+      journal = {\\apj},
+     keywords = {Open star clusters (1160), Tidal tails (1701)},
+         year = 2024,
+        month = jul,
+       volume = {970},
+          doi = {10.3847/1538-4357/ad52a9},
+archivePrefix = {arXiv},
+       eprint = {2405.09609},
+ primaryClass = {astro-ph.GA},
+       adsurl = {https://ui.adsabs.harvard.edu/abs/2024ApJ...970...94K},
+      adsnote = {Provided by the SAO/NASA Astrophysics Data System}
+}
+`
+  );
+  expect(out[0]?.status).toBe("created");
+  const stored = (disk(paths).works as Record<string, unknown>[]).at(-1);
+  expect(stored?.authors).toEqual(["Kroupa", "Pflamm-Altenburg", "Gaia Collaboration"]);
+  const bib = existsBib(paths) ?? "";
+  const entry = bib.slice(bib.indexOf("@article{2024ApJ...970...94K,"));
+  expect(entry).toContain(
+    "author  = {{Kroupa}, Pavel and {Pflamm-Altenburg}, Jan and {Gaia Collaboration}}"
+  );
+  expect(entry).toContain("title   = {{Open Star Clusters and Their Asymmetrical Tidal Tails}}");
+  expect(entry).toContain("journal = {\\apj}");
+  expect(entry).toContain("keywords = {Open star clusters (1160), Tidal tails (1701)}");
+  expect(entry).toContain("archivePrefix = {arXiv}");
+  expect(entry).toContain("primaryClass = {astro-ph.GA}");
+  expect(entry).toContain("adsurl  = {https://ui.adsabs.harvard.edu/abs/2024ApJ...970...94K}");
+  expect(entry).toContain("adsnote = {Provided by the SAO/NASA Astrophysics Data System}");
 });

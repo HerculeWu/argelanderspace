@@ -3,6 +3,7 @@
  * projection; the source editor is CodeMirror. No local LaTeX renderer.
  */
 
+import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import { ActionButton } from "../ui";
 import type { CellPlacement, CellType, WriterCell, WriterNumberingResponse } from "@argelanderspace/contracts";
@@ -30,12 +31,16 @@ const ABSTRACT_PARTS = [
   { dataKey: "Conclusions", labelKey: "writer.abstract.conclusions" },
 ] as const;
 
-/** Callbacks the editor shell hands down to every cell. */
+/**
+ * What the editor shell hands down to every cell. The object keeps its identity while nothing in it changes (the
+ * callbacks are stable), so a memoized cell is rendered again only for its own changes. Which cell is active or
+ * being edited is NOT here: it is a pair of booleans on each cell, so moving the selection touches two cells.
+ */
 export interface CellCtx {
   /** owning manuscript id (figure asset URLs) */
   docId: string;
-  activeId: string | null;
-  editingId: string | null;
+  /** Ids of the cells whose compiled projection is still current (cross-reference targets). */
+  targets: ReadonlySet<string>;
   onActivate: (cellId: string) => void;
   onEdit: (cellId: string) => void;
   onCommit: (cellId: string) => void;
@@ -52,12 +57,12 @@ export interface CellCtx {
 
 // ---------------------------------------------------------------- render ----
 
-export function CellRender({ cell, cells, ctx }: { cell: WriterCell; cells: WriterCell[]; ctx: CellCtx }) {
+export function CellRender({ cell, ctx }: { cell: WriterCell; ctx: CellCtx }) {
   const d = cell.data;
   const style: React.CSSProperties | undefined = cell.type === "figure" || cell.type === "table"
     ? { width: `${d.width}%`, marginLeft: d.placement === "left" ? 0 : "auto", marginRight: d.placement === "right" ? 0 : "auto" }
     : undefined;
-  return <div style={style}><WriterCellPreview cell={cell} cells={cells} docId={ctx.docId} numbering={ctx.numbering} onJump={ctx.onJump} onCite={ctx.onCite} /></div>;
+  return <div style={style}><WriterCellPreview cell={cell} targets={ctx.targets} docId={ctx.docId} numbering={ctx.numbering} onJump={ctx.onJump} onCite={ctx.onCite} /></div>;
 }
 
 // ----------------------------------------------------------------- edit ----
@@ -352,22 +357,23 @@ export function CellEditor({ cell, ctx }: FieldProps) {
 // ------------------------------------------------------------- cell wrap ----
 
 /** One cell in the paper flow: hover tools + unsupported banner + body. */
-export function CellWrap({
+export const CellWrap = memo(function CellWrap({
   cell,
-  cells,
   supported,
+  active,
+  editing,
   ctx,
 }: {
   cell: WriterCell;
-  cells: WriterCell[];
   supported: boolean;
+  active: boolean;
+  editing: boolean;
   ctx: CellCtx;
 }) {
   const { t } = useTranslation();
-  const editing = ctx.editingId === cell.id;
   const cls =
     "w-cell-wrap" +
-    (ctx.activeId === cell.id ? " active" : "") +
+    (active ? " active" : "") +
     (editing ? " editing" : "");
   return (
     <section
@@ -404,7 +410,7 @@ export function CellWrap({
         </div>
       </div>
       {!supported && <div className="w-unsupported">{t("writer.cell.unsupported")}</div>}
-      {editing ? <CellEditor cell={cell} ctx={ctx} /> : <CellRender cell={cell} cells={cells} ctx={ctx} />}
+      {editing ? <CellEditor cell={cell} ctx={ctx} /> : <CellRender cell={cell} ctx={ctx} />}
     </section>
   );
-}
+});

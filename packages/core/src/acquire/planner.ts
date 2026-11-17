@@ -99,6 +99,9 @@ const PUBLISHERS: readonly Publisher[] = [
       ["10.3847/1538-4365", "ApJS"],
       ["10.3847/1538-3881", "AJ"],
       ["10.3847/2041-8213", "ApJL"],
+      // Not ApJ: without these the publisher's default label named them "ApJ" (issue 1).
+      ["10.3847/2515-5172", "RNAAS"],
+      ["10.3847/2632-3338", "PSJ"],
     ],
   }),
   // Pre-2017 AAS journals had IOP DOIs (also iopscience, bot-walled).

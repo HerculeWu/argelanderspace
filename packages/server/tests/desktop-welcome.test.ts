@@ -411,26 +411,29 @@ describe("with no project open", () => {
     expect(readRecentProjects(recentFile()).projects.map((p) => p.path)).toEqual([start, a]);
   });
 
-  test("a list that cannot be written: remove answers 500 write_failed, the failure is logged, the old list stays", async () => {
-    const a = folder("a");
-    const gone = join(folder("parent"), "gone");
-    recordRecentProject(recentFile(), a, new Date("2026-01-01T00:00:00Z"));
-    recordRecentProject(recentFile(), gone, new Date("2026-01-02T00:00:00Z"));
-    const h = await startHost();
-    const dir = dirname(recentFile());
-    chmodSync(dir, 0o500);
-    try {
-      const r = await h.post("/api/host/recent-projects/remove", { path: gone });
-      expect([r.status, r.body]).toEqual([
-        500,
-        { code: "write_failed", detail: "the list could not be written" },
-      ]);
-    } finally {
-      chmodSync(dir, 0o700);
+  test.skipIf(process.getuid?.() === 0)(
+    "a list that cannot be written: remove answers 500 write_failed, the failure is logged, the old list stays",
+    async () => {
+      const a = folder("a");
+      const gone = join(folder("parent"), "gone");
+      recordRecentProject(recentFile(), a, new Date("2026-01-01T00:00:00Z"));
+      recordRecentProject(recentFile(), gone, new Date("2026-01-02T00:00:00Z"));
+      const h = await startHost();
+      const dir = dirname(recentFile());
+      chmodSync(dir, 0o500);
+      try {
+        const r = await h.post("/api/host/recent-projects/remove", { path: gone });
+        expect([r.status, r.body]).toEqual([
+          500,
+          { code: "write_failed", detail: "the list could not be written" },
+        ]);
+      } finally {
+        chmodSync(dir, 0o700);
+      }
+      expect(events(h, "recent_projects.write_failed")).toHaveLength(1);
+      expect(readRecentProjects(recentFile()).projects.map((p) => p.path)).toEqual([gone, a]);
     }
-    expect(events(h, "recent_projects.write_failed")).toHaveLength(1);
-    expect(readRecentProjects(recentFile()).projects.map((p) => p.path)).toEqual([gone, a]);
-  });
+  );
 
   test("the WebSocket answers: a change of config.toml from outside reaches the page; another origin is refused", async () => {
     const h = await startHost();

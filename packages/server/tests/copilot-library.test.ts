@@ -16,7 +16,7 @@ import {
   summarizeLibraryRef,
   type WsServerMessage,
 } from "@argelanderspace/contracts";
-import { libraryPaths, plansPath } from "@argelanderspace/core";
+import { LibraryStore, libraryPaths, plansPath } from "@argelanderspace/core";
 import {
   type Api,
   type AssistantMessage,
@@ -443,6 +443,10 @@ test("read uses the page's filter and pages through the whole library; one work 
       const one = lastResult(ctx);
       expect(one.ref.note).toBe("Private note");
       expect(one.bibtex).toContain("@article{author1,");
+      // issue 1: the entry is the Work's library.bib entry, not one rebuilt from the short display fields
+      expect(LibraryStore.load(paths).toBibtex()).toContain(one.bibtex);
+      expect(one.bibtex).toContain("  year    = {");
+      expect(one.ref.bibtex).toBeUndefined();
       return { call: { action: "read", refId: "doi:nope" } };
     },
     (ctx) => {
