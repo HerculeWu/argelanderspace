@@ -825,24 +825,27 @@ describe("delete", () => {
     expect(tree(pathsB.dataDir)).toEqual(bBefore);
   });
 
-  test("an entry that cannot be looked at when the user clicks is a system error, not a change: nothing deleted, said so", async () => {
-    const entry = await shelveB();
-    const view = page();
-    script = [() => ({ call: { action: "delete", entryId: entry.entryId, rev: entry.rev } })];
-    const id = await start(view);
-    const c = await card(id);
-    const dir = join(root, "global", "shelf", "entries", `${entry.entryId}.r${entry.rev}`);
-    chmodSync(dir, 0o000);
-    try {
-      expect((await answer(c, view.viewId, "approve")).status).toBe(500);
-      await settled(id);
-      expect(resultSeenAt(1)).toMatchObject({ ok: false, status: "error" });
-      expect(resultSeenAt(1).detail).toContain("not a change");
-    } finally {
-      chmodSync(dir, 0o700);
+  test.skipIf(process.getuid?.() === 0)(
+    "an entry that cannot be looked at when the user clicks is a system error, not a change: nothing deleted, said so",
+    async () => {
+      const entry = await shelveB();
+      const view = page();
+      script = [() => ({ call: { action: "delete", entryId: entry.entryId, rev: entry.rev } })];
+      const id = await start(view);
+      const c = await card(id);
+      const dir = join(root, "global", "shelf", "entries", `${entry.entryId}.r${entry.rev}`);
+      chmodSync(dir, 0o000);
+      try {
+        expect((await answer(c, view.viewId, "approve")).status).toBe(500);
+        await settled(id);
+        expect(resultSeenAt(1)).toMatchObject({ ok: false, status: "error" });
+        expect(resultSeenAt(1).detail).toContain("not a change");
+      } finally {
+        chmodSync(dir, 0o700);
+      }
+      expect(await shelfRows()).toMatchObject([{ entryId: entry.entryId, rev: entry.rev }]);
     }
-    expect(await shelfRows()).toMatchObject([{ entryId: entry.entryId, rev: entry.rev }]);
-  });
+  );
 
   test("a rev the Shelf no longer has is refused without a card", async () => {
     const entry = await shelveB();

@@ -352,33 +352,36 @@ describe("DELETE /api/paper/:doc_id", () => {
     expect((await runner.waitFor(job.id)).status).toBe("done");
   });
 
-  test("mid-delete fs failure → 500; library.json byte-untouched, annotations never reached, pin released", async () => {
-    seedLibraryWithDemo();
-    saveAnnotationsFile(dataDir, "demo", {
-      version: 1,
-      rev: 0,
-      content_fingerprint: "f".repeat(64),
-      annotations: [],
-    });
-    const libBefore = readFileSync(paths.libraryJson, "utf8");
-    // rmSync can unlink demo/assets/logo.png but not nested/deep.png (a
-    // non-writable directory) → the physical delete fails halfway through.
-    const nested = join(dataDir, "output", "demo", "assets", "nested");
-    chmodSync(nested, 0o555);
-    try {
-      const res = await del("/api/paper/demo");
-      expect(res.status).toBe(500);
-      expect(((await res.json()) as { detail: string }).detail).toMatch(/^delete failed: /);
-      expect(readFileSync(paths.libraryJson, "utf8")).toBe(libBefore); // library step never ran
-      expect(existsSync(join(dataDir, "annotations", "demo", "current.json"))).toBe(true);
-      expect(messages).toHaveLength(0); // no library.changed on failure
-    } finally {
-      chmodSync(nested, 0o755);
+  test.skipIf(process.getuid?.() === 0)(
+    "mid-delete fs failure → 500; library.json byte-untouched, annotations never reached, pin released",
+    async () => {
+      seedLibraryWithDemo();
+      saveAnnotationsFile(dataDir, "demo", {
+        version: 1,
+        rev: 0,
+        content_fingerprint: "f".repeat(64),
+        annotations: [],
+      });
+      const libBefore = readFileSync(paths.libraryJson, "utf8");
+      // rmSync can unlink demo/assets/logo.png but not nested/deep.png (a
+      // non-writable directory) → the physical delete fails halfway through.
+      const nested = join(dataDir, "output", "demo", "assets", "nested");
+      chmodSync(nested, 0o555);
+      try {
+        const res = await del("/api/paper/demo");
+        expect(res.status).toBe(500);
+        expect(((await res.json()) as { detail: string }).detail).toMatch(/^delete failed: /);
+        expect(readFileSync(paths.libraryJson, "utf8")).toBe(libBefore); // library step never ran
+        expect(existsSync(join(dataDir, "annotations", "demo", "current.json"))).toBe(true);
+        expect(messages).toHaveLength(0); // no library.changed on failure
+      } finally {
+        chmodSync(nested, 0o755);
+      }
+      // the delete slot was released: the retry succeeds
+      expect((await del("/api/paper/demo")).status).toBe(200);
+      expect(existsSync(join(dataDir, "output", "demo"))).toBe(false);
     }
-    // the delete slot was released: the retry succeeds
-    expect((await del("/api/paper/demo")).status).toBe(200);
-    expect(existsSync(join(dataDir, "output", "demo"))).toBe(false);
-  });
+  );
 
   test("ticket 16: the library write is narrow — unknown keys, other Works and library.bib survive a delete", async () => {
     seedLibraryWithDemo();

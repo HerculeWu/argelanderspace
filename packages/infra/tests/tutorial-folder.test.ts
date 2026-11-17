@@ -101,18 +101,21 @@ describe("copyTutorialSample", () => {
     expect(() => copyTutorialSample(from, from)).toThrow(/not missing or empty/);
   });
 
-  test("a copy that fails leaves nothing behind: the folder it made is gone, an empty one is empty again", () => {
-    const root = tempDir();
-    const from = sample(root);
-    // The marker cannot be read: everything else was copied first, then removed.
-    chmodSync(join(from, TUTORIAL_MARKER_FILE), 0o000);
-    expect(() => copyTutorialSample(from, join(root, "made"))).toThrow();
-    expect(existsSync(join(root, "made"))).toBe(false);
-    mkdirSync(join(root, "empty"));
-    expect(() => copyTutorialSample(from, join(root, "empty"))).toThrow();
-    expect(readdirSync(join(root, "empty"))).toEqual([]);
-    chmodSync(join(from, TUTORIAL_MARKER_FILE), 0o600);
-  });
+  test.skipIf(process.getuid?.() === 0)(
+    "a copy that fails leaves nothing behind: the folder it made is gone, an empty one is empty again",
+    () => {
+      const root = tempDir();
+      const from = sample(root);
+      // The marker cannot be read: everything else was copied first, then removed.
+      chmodSync(join(from, TUTORIAL_MARKER_FILE), 0o000);
+      expect(() => copyTutorialSample(from, join(root, "made"))).toThrow();
+      expect(existsSync(join(root, "made"))).toBe(false);
+      mkdirSync(join(root, "empty"));
+      expect(() => copyTutorialSample(from, join(root, "empty"))).toThrow();
+      expect(readdirSync(join(root, "empty"))).toEqual([]);
+      chmodSync(join(from, TUTORIAL_MARKER_FILE), 0o600);
+    }
+  );
 });
 
 describe("emptyTutorialFolder", () => {
@@ -153,20 +156,23 @@ describe("replaceTutorialFolder (in-app-tutorial ticket 25)", () => {
     expect(readdirSync(root).sort()).toEqual([TUTORIAL_FOLDER_NAME, "sample"]);
   });
 
-  test("a copy that fails leaves the folder byte for byte as it was, and no staging folder", () => {
-    const root = tempDir();
-    const from = sample(root);
-    writeFileSync(join(from, "zz-unreadable"), "x");
-    chmodSync(join(from, "zz-unreadable"), 0o000);
-    const dir = tutorial(root);
-    const before = tree(dir);
-    expect(() => replaceTutorialFolder(from, dir)).toThrow();
-    expect(tree(dir)).toEqual(before);
-    expect(readdirSync(root).sort()).toEqual([TUTORIAL_FOLDER_NAME, "sample"]);
-    chmodSync(join(from, "zz-unreadable"), 0o600);
-  });
+  test.skipIf(process.getuid?.() === 0)(
+    "a copy that fails leaves the folder byte for byte as it was, and no staging folder",
+    () => {
+      const root = tempDir();
+      const from = sample(root);
+      writeFileSync(join(from, "zz-unreadable"), "x");
+      chmodSync(join(from, "zz-unreadable"), 0o000);
+      const dir = tutorial(root);
+      const before = tree(dir);
+      expect(() => replaceTutorialFolder(from, dir)).toThrow();
+      expect(tree(dir)).toEqual(before);
+      expect(readdirSync(root).sort()).toEqual([TUTORIAL_FOLDER_NAME, "sample"]);
+      chmodSync(join(from, "zz-unreadable"), 0o600);
+    }
+  );
 
-  test("a parent that cannot be written: nothing changes", () => {
+  test.skipIf(process.getuid?.() === 0)("a parent that cannot be written: nothing changes", () => {
     const root = tempDir();
     const from = sample(root);
     const parent = join(root, "parent");
